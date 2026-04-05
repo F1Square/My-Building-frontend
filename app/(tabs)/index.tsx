@@ -9,14 +9,13 @@ import api from '../../utils/api';
 
 // Modules that require subscription to access
 const GATED_ROUTES = [
-  '/complaints', '/maintenance', '/announcements', '/visitors',
+  '/maintenance', '/announcements', '/visitors',
   '/parking', '/chat', '/join-requests', '/my-details', '/helpline',
+  '/members', '/expenses',
 ];
 
 // Map notification types → module route for badge counts
 const TYPE_TO_ROUTE: Record<string, string> = {
-  complaint: '/complaints',
-  complaint_update: '/complaints',
   bill: '/maintenance',
   payment: '/maintenance',
   reminder: '/maintenance',
@@ -56,7 +55,7 @@ export default function HomeScreen() {
   const allModules = [
     { title: 'My Details', icon: 'person-circle', color: '#1E3A8A', route: '/my-details', userPramukhOnly: true },
     { title: 'Members', icon: 'people-circle', color: '#0891B2', route: '/members', userPramukhOnly: true },
-    { title: 'Complaints', icon: 'alert-circle', color: '#EF4444', route: '/complaints' },
+    { title: 'Expenses', icon: 'wallet', color: '#7C3AED', route: '/expenses' },
     { title: 'Maintenance', icon: 'wallet', color: '#10B981', route: '/maintenance' },
     { title: 'Announcements', icon: 'megaphone', color: '#F59E0B', route: '/announcements' },
     { title: 'Visitors', icon: 'people', color: '#6366F1', route: '/visitors' },
@@ -71,6 +70,7 @@ export default function HomeScreen() {
     { title: 'Inquiries', icon: 'mail-open', color: '#0891B2', route: '/inquiries', adminOnly: true },
     { title: 'Helpline', icon: 'call', color: '#EF4444', route: '/helpline', adminOnly: true },
     { title: 'Subscriptions', icon: 'card', color: '#7C3AED', route: '/subscriptions-admin', adminOnly: true },
+    { title: 'Promo Codes', icon: 'pricetag', color: '#EC4899', route: '/promos', adminOnly: true },
   ];
 
   const modules = allModules.filter((m: any) => {

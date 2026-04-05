@@ -36,7 +36,7 @@ export default function MyVehiclesScreen() {
   const addVehicle = async () => {
     const num = form.vehicle_number.toUpperCase().replace(/\s/g, '');
     if (!num) return Alert.alert('Error', 'Vehicle number is required');
-    if (!VEHICLE_RE.test(num)) return Alert.alert('Invalid', 'Enter a valid number e.g. GJ01AB1234');
+    if (!VEHICLE_RE.test(num)) return Alert.alert('Invalid', 'Enter a valid number e.g. GJ05HR4533');
     setSubmitting(true);
     try {
       await api.post('/vehicles', { vehicle_number: num, vehicle_type: form.vehicle_type });

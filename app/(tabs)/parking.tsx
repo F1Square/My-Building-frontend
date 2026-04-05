@@ -35,7 +35,9 @@ export default function ParkingScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [showAddVehicle, setShowAddVehicle] = useState(false);
   const [showReport, setShowReport] = useState(false);
+  const [showEditVehicle, setShowEditVehicle] = useState<any>(null);
   const [vehicleForm, setVehicleForm] = useState({ vehicle_number: '', vehicle_type: 'two_wheeler' });
+  const [editForm, setEditForm] = useState({ vehicle_number: '', vehicle_type: 'two_wheeler' });
   const [reportForm, setReportForm] = useState({ description: '', vehicle_number: '', location: '' });
   const [submitting, setSubmitting] = useState(false);
   const [search, setSearch] = useState('');
@@ -109,6 +111,35 @@ export default function ParkingScreen() {
     }
   };
 
+  const adminDeleteVehicle = (id: string, num: string) => {
+    Alert.alert('Delete Vehicle', `Delete ${num}?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        try {
+          await api.delete(`/vehicles/admin/${id}`);
+          setVehicles(prev => prev.filter(v => v.id !== id));
+        } catch (e: any) { Alert.alert('Error', e.response?.data?.error || 'Failed'); }
+      }},
+    ]);
+  };
+
+  const openAdminEdit = (item: any) => {
+    setEditForm({ vehicle_number: item.vehicle_number, vehicle_type: item.vehicle_type });
+    setShowEditVehicle(item);
+  };
+
+  const saveAdminEdit = async () => {
+    if (!showEditVehicle) return;
+    setSubmitting(true);
+    try {
+      const res = await api.patch(`/vehicles/admin/${showEditVehicle.id}`, editForm);
+      setVehicles(prev => prev.map(v => v.id === showEditVehicle.id ? { ...v, ...res.data.vehicle } : v));
+      setShowEditVehicle(null);
+    } catch (e: any) {
+      Alert.alert('Error', e.response?.data?.error || 'Failed');
+    } finally { setSubmitting(false); }
+  };
+
   const filteredVehicles = vehicles.filter((v) =>
     !search || v.vehicle_number.includes(search.toUpperCase())
   );
@@ -131,10 +162,22 @@ export default function ParkingScreen() {
         )}
       </View>
       {(user?.role === 'pramukh' || isAdmin) && (
-        <TouchableOpacity style={styles.reminderBtn} onPress={() => sendReminder(item.vehicle_number)}>
-          <Ionicons name="notifications-outline" size={14} color={Colors.warning} />
-          <Text style={styles.reminderBtnText}>Send Reminder</Text>
-        </TouchableOpacity>
+        <View style={styles.cardFooterRow}>
+          <TouchableOpacity style={styles.reminderBtn} onPress={() => sendReminder(item.vehicle_number)}>
+            <Ionicons name="notifications-outline" size={14} color={Colors.warning} />
+            <Text style={styles.reminderBtnText}>Send Reminder</Text>
+          </TouchableOpacity>
+          {isAdmin && (
+            <View style={styles.adminBtns}>
+              <TouchableOpacity style={styles.editBtn} onPress={() => openAdminEdit(item)}>
+                <Ionicons name="pencil-outline" size={15} color={Colors.primary} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.deleteBtn} onPress={() => adminDeleteVehicle(item.id, item.vehicle_number)}>
+                <Ionicons name="trash-outline" size={15} color={Colors.danger} />
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
       )}
     </View>
   );
@@ -257,6 +300,39 @@ export default function ParkingScreen() {
         </View>
       </Modal>
 
+      {/* Admin Edit Vehicle Modal */}
+      <Modal visible={!!showEditVehicle} animationType="slide" presentationStyle="pageSheet">
+        {showEditVehicle && (
+          <View style={styles.modal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Edit Vehicle</Text>
+              <TouchableOpacity onPress={() => setShowEditVehicle(null)}>
+                <Ionicons name="close" size={24} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.label}>Vehicle Number *</Text>
+            <TextInput style={styles.input} value={editForm.vehicle_number}
+              onChangeText={v => setEditForm({ ...editForm, vehicle_number: v.toUpperCase() })}
+              placeholder="e.g. GJ05HR4533" autoCapitalize="characters"
+              placeholderTextColor={Colors.textMuted} />
+            <Text style={styles.label}>Vehicle Type</Text>
+            <View style={styles.typeRow}>
+              {[{ key: 'two_wheeler', label: '🏍️ Two Wheeler' }, { key: 'four_wheeler', label: '🚗 Four Wheeler' }].map(t => (
+                <TouchableOpacity key={t.key}
+                  style={[styles.typeBtn, editForm.vehicle_type === t.key && styles.typeBtnActive]}
+                  onPress={() => setEditForm({ ...editForm, vehicle_type: t.key })}
+                >
+                  <Text style={[styles.typeBtnText, editForm.vehicle_type === t.key && styles.typeBtnTextActive]}>{t.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TouchableOpacity style={styles.submitBtn} onPress={saveAdminEdit} disabled={submitting}>
+              {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>Save Changes</Text>}
+            </TouchableOpacity>
+          </View>
+        )}
+      </Modal>
+
       {/* Report Modal */}
       <Modal visible={showReport} animationType="slide" presentationStyle="pageSheet">
         <View style={styles.modal}>
@@ -315,8 +391,12 @@ const styles = StyleSheet.create({
   ownerInfo: { alignItems: 'flex-end' },
   ownerName: { fontSize: 14, fontWeight: '700', color: Colors.text },
   ownerFlat: { fontSize: 12, color: Colors.textMuted },
-  reminderBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 10 },
+  reminderBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: 10 },
   reminderBtnText: { fontSize: 13, color: Colors.warning, fontWeight: '600' },
+  cardFooterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 10 },
+  adminBtns: { flexDirection: 'row', gap: 8 },
+  editBtn: { padding: 8, backgroundColor: Colors.primary + '15', borderRadius: 8 },
+  deleteBtn: { padding: 8, backgroundColor: Colors.danger + '15', borderRadius: 8 },
   reportHeader: { flexDirection: 'row', gap: 10 },
   reportIcon: { fontSize: 22 },
   reportDesc: { fontSize: 14, fontWeight: '600', color: Colors.text },

@@ -4,7 +4,7 @@ import { API_BASE } from '../constants/api';
 
 const api = axios.create({
   baseURL: API_BASE,
-  timeout: 10000, // 10 second timeout
+  timeout: 30000, // 30 seconds — handles cold start delays
 });
 
 api.interceptors.request.use(async (config) => {

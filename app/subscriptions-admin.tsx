@@ -84,6 +84,17 @@ export default function SubscriptionsAdminScreen() {
         Started: {new Date(item.started_at).toLocaleDateString('en-IN')}
         {item.expires_at ? `  ·  Expires: ${new Date(item.expires_at).toLocaleDateString('en-IN')}` : '  ·  Lifetime'}
       </Text>
+      {item.paid_amount != null && (
+        <View style={styles.paidRow}>
+          <Text style={styles.paidAmt}>₹{Number(item.paid_amount).toLocaleString('en-IN')} paid</Text>
+          {item.promo_code_used && (
+            <View style={styles.promoChip}>
+              <Ionicons name="pricetag-outline" size={11} color="#7C3AED" />
+              <Text style={styles.promoChipText}>{item.promo_code_used}</Text>
+            </View>
+          )}
+        </View>
+      )}
       {item.remark ? (
         <View style={styles.remarkChip}>
           <Ionicons name="chatbox-ellipses-outline" size={12} color="#7C3AED" />
@@ -145,6 +156,8 @@ export default function SubscriptionsAdminScreen() {
                 ['Role', selected.users?.role],
                 ['Plan', selected.plan],
                 ['Status', selected.status],
+                ['Paid Amount', selected.paid_amount != null ? `₹${Number(selected.paid_amount).toLocaleString('en-IN')}` : '—'],
+                ['Promo Used', selected.promo_code_used || '—'],
                 ['Started', new Date(selected.started_at).toLocaleString('en-IN')],
                 ['Expires', selected.expires_at ? new Date(selected.expires_at).toLocaleString('en-IN') : 'Never (Lifetime)'],
                 ['Payment ID', selected.razorpay_payment_id || '—'],
@@ -231,6 +244,10 @@ const styles = StyleSheet.create({
   actionRow: { flexDirection: 'row', gap: 8 },
   actionBtn: { flex: 1, borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
   actionBtnText: { color: Colors.white, fontWeight: '700', fontSize: 13 },
+  paidRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
+  paidAmt: { fontSize: 13, fontWeight: '700', color: Colors.success },
+  promoChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F5F3FF', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+  promoChipText: { fontSize: 11, color: '#7C3AED', fontWeight: '700' },
   // Remark
   remarkChip: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6, backgroundColor: '#F5F3FF', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, alignSelf: 'flex-start' },
   remarkChipText: { fontSize: 12, color: '#7C3AED', fontWeight: '600', maxWidth: 260 },

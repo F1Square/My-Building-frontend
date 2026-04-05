@@ -81,8 +81,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await AsyncStorage.multiSet([['token', t], ['user', JSON.stringify(u)]]);
     setToken(t);
     setUser(u);
-    fetchSubscription(t); // fetch & cache in background
-    registerPushToken(t);
+    // Await subscription so home screen renders with correct locked/unlocked state
+    await fetchSubscription(t);
+    registerPushToken(t); // push token is non-critical, keep in background
   };
 
   const registerPushToken = async (t: string) => {

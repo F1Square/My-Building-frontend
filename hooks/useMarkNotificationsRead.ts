@@ -9,7 +9,11 @@ import api from '../utils/api';
 export function useMarkNotificationsRead(types: string[]) {
   useFocusEffect(
     useCallback(() => {
-      api.patch('/notifications/read-by-types', { types }).catch(() => {});
+      // Fire and forget with a small delay so it doesn't compete with the main data fetch
+      const timer = setTimeout(() => {
+        api.patch('/notifications/read-by-types', { types }).catch(() => {});
+      }, 1000);
+      return () => clearTimeout(timer);
     }, [])
   );
 }

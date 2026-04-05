@@ -168,7 +168,6 @@ export default function AdminScreen() {
     r === 'pramukh' ? Colors.primary : r === 'user' ? Colors.success : Colors.textMuted;
 
   const BUILD_ACTIONS = [
-    { route: '/(tabs)/complaints',    icon: 'alert-circle', color: '#EF4444', label: 'Complaints' },
     { route: '/(tabs)/maintenance',   icon: 'wallet',       color: '#10B981', label: 'Maintenance' },
     { route: '/(tabs)/announcements', icon: 'megaphone',    color: '#F59E0B', label: 'Notices' },
     { route: '/(tabs)/visitors',      icon: 'people',       color: '#6366F1', label: 'Visitors' },

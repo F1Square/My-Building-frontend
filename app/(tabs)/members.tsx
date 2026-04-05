@@ -1,12 +1,12 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TextInput,
-  TouchableOpacity, ActivityIndicator, RefreshControl, Linking,
+  TouchableOpacity, ActivityIndicator, RefreshControl,
+  Linking, ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { Colors } from '../../constants/colors';
-import { useAuth } from '../../context/AuthContext';
 import api from '../../utils/api';
 
 type Member = {
@@ -25,7 +25,6 @@ const ROLE_COLOR: Record<string, string> = {
   user: Colors.success,
   watchman: '#F59E0B',
 };
-
 const ROLE_LABEL: Record<string, string> = {
   pramukh: 'Pramukh',
   user: 'Member',
@@ -33,20 +32,21 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 export default function MembersScreen() {
-  const { user } = useAuth();
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
+  const [selectedWing, setSelectedWing] = useState<string>('All');
 
   const fetchMembers = async () => {
     try {
       const res = await api.get('/buildings/members');
-      // Sort: pramukh first, then by flat_no
       const sorted = [...res.data].sort((a: Member, b: Member) => {
         if (a.role === 'pramukh' && b.role !== 'pramukh') return -1;
         if (b.role === 'pramukh' && a.role !== 'pramukh') return 1;
-        return (a.flat_no || '').localeCompare(b.flat_no || '');
+        const wingCmp = (a.wing || '').localeCompare(b.wing || '');
+        if (wingCmp !== 0) return wingCmp;
+        return (a.flat_no || '').localeCompare(b.flat_no || '', undefined, { numeric: true });
       });
       setMembers(sorted);
     } catch {}
@@ -55,63 +55,87 @@ export default function MembersScreen() {
 
   useFocusEffect(useCallback(() => { fetchMembers(); }, []));
 
-  const filtered = members.filter(m =>
-    m.name.toLowerCase().includes(search.toLowerCase()) ||
-    (m.flat_no || '').toLowerCase().includes(search.toLowerCase()) ||
-    (m.wing || '').toLowerCase().includes(search.toLowerCase()) ||
-    (m.phone || '').includes(search)
-  );
+  // Derive unique wings from members
+  const wings = useMemo(() => {
+    const set = new Set<string>();
+    members.forEach(m => { if (m.wing) set.add(m.wing); });
+    return ['All', ...Array.from(set).sort()];
+  }, [members]);
+
+  const filtered = useMemo(() => members.filter(m => {
+    const matchWing = selectedWing === 'All' || m.wing === selectedWing;
+    const q = search.toLowerCase();
+    const matchSearch = !q ||
+      m.name.toLowerCase().includes(q) ||
+      (m.flat_no || '').toLowerCase().includes(q) ||
+      (m.wing || '').toLowerCase().includes(q) ||
+      (m.phone || '').includes(q);
+    return matchWing && matchSearch;
+  }), [members, selectedWing, search]);
+
+  // Count per wing for badges
+  const wingCounts = useMemo(() => {
+    const counts: Record<string, number> = { All: members.length };
+    members.forEach(m => {
+      if (m.wing) counts[m.wing] = (counts[m.wing] || 0) + 1;
+    });
+    return counts;
+  }, [members]);
 
   const renderItem = ({ item }: { item: Member }) => {
     const color = ROLE_COLOR[item.role] || Colors.textMuted;
     const isPramukh = item.role === 'pramukh';
     return (
       <View style={[styles.card, isPramukh && styles.pramukhCard]}>
-        <View style={[styles.avatar, { backgroundColor: color + '20' }]}>
+        {/* Avatar */}
+        <View style={[styles.avatar, { backgroundColor: color + '22' }]}>
           <Text style={[styles.avatarText, { color }]}>{item.name?.[0]?.toUpperCase()}</Text>
         </View>
 
+        {/* Info */}
         <View style={styles.info}>
           <View style={styles.nameRow}>
-            <Text style={styles.name}>{item.name}</Text>
+            <Text style={styles.name} numberOfLines={1}>{item.name}</Text>
             <View style={[styles.roleBadge, { backgroundColor: color + '18' }]}>
               <Text style={[styles.roleText, { color }]}>{ROLE_LABEL[item.role] || item.role}</Text>
             </View>
           </View>
 
-          {item.wing ? (
-            <View style={styles.detailRow}>
-              <Ionicons name="layers-outline" size={13} color={Colors.textMuted} />
-              <Text style={styles.detailText}>Wing {item.wing}</Text>
-            </View>
-          ) : null}
-
-          {item.flat_no ? (
-            <View style={styles.detailRow}>
-              <Ionicons name="home-outline" size={13} color={Colors.textMuted} />
-              <Text style={styles.detailText}>Flat {item.flat_no}</Text>
-            </View>
-          ) : null}
+          <View style={styles.metaRow}>
+            {item.wing ? (
+              <View style={styles.metaChip}>
+                <Ionicons name="layers-outline" size={11} color={Colors.textMuted} />
+                <Text style={styles.metaChipText}>Wing {item.wing}</Text>
+              </View>
+            ) : null}
+            {item.flat_no ? (
+              <View style={styles.metaChip}>
+                <Ionicons name="home-outline" size={11} color={Colors.textMuted} />
+                <Text style={styles.metaChipText}>Flat {item.flat_no}</Text>
+              </View>
+            ) : null}
+          </View>
 
           {item.phone ? (
-            <TouchableOpacity style={styles.detailRow} onPress={() => Linking.openURL(`tel:${item.phone}`)}>
-              <Ionicons name="call-outline" size={13} color={Colors.primary} />
-              <Text style={[styles.detailText, styles.phoneText]}>{item.phone}</Text>
+            <TouchableOpacity
+              style={styles.phoneRow}
+              onPress={() => Linking.openURL(`tel:${item.phone}`)}
+            >
+              <Ionicons name="call-outline" size={12} color={Colors.primary} />
+              <Text style={styles.phoneText}>{item.phone}</Text>
             </TouchableOpacity>
           ) : (
-            <View style={styles.detailRow}>
-              <Ionicons name="call-outline" size={13} color={Colors.border} />
-              <Text style={[styles.detailText, { color: Colors.border }]}>No phone</Text>
-            </View>
+            <Text style={styles.noPhone}>No phone added</Text>
           )}
         </View>
 
+        {/* Call button */}
         {item.phone ? (
           <TouchableOpacity
             style={styles.callBtn}
             onPress={() => Linking.openURL(`tel:${item.phone}`)}
           >
-            <Ionicons name="call" size={18} color={Colors.primary} />
+            <Ionicons name="call" size={17} color={Colors.primary} />
           </TouchableOpacity>
         ) : null}
       </View>
@@ -120,40 +144,87 @@ export default function MembersScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Members</Text>
-        <Text style={styles.headerSub}>{members.length} in your society</Text>
+        <Text style={styles.headerSub}>
+          {filtered.length} of {members.length} members
+          {selectedWing !== 'All' ? ` · Wing ${selectedWing}` : ''}
+        </Text>
       </View>
 
+      {/* Search */}
       <View style={styles.searchBox}>
-        <Ionicons name="search-outline" size={18} color={Colors.textMuted} />
+        <Ionicons name="search-outline" size={17} color={Colors.textMuted} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search by name, flat or phone..."
+          placeholder="Search name, flat, phone..."
           placeholderTextColor={Colors.textMuted}
           value={search}
           onChangeText={setSearch}
         />
         {search.length > 0 && (
           <TouchableOpacity onPress={() => setSearch('')}>
-            <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
+            <Ionicons name="close-circle" size={17} color={Colors.textMuted} />
           </TouchableOpacity>
         )}
       </View>
+
+      {/* Wing filter chips */}
+      {wings.length > 1 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.wingScroll}
+          contentContainerStyle={styles.wingRow}
+        >
+          {wings.map(w => {
+            const active = selectedWing === w;
+            return (
+              <TouchableOpacity
+                key={w}
+                style={[styles.wingChip, active && styles.wingChipActive]}
+                onPress={() => setSelectedWing(w)}
+              >
+                <Text style={[styles.wingChipText, active && styles.wingChipTextActive]}>
+                  {w === 'All' ? 'All Wings' : `Wing ${w}`}
+                </Text>
+                <View style={[styles.wingCount, active && styles.wingCountActive]}>
+                  <Text style={[styles.wingCountText, active && styles.wingCountTextActive]}>
+                    {wingCounts[w] || 0}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
 
       {loading ? (
         <ActivityIndicator style={{ marginTop: 48 }} size="large" color={Colors.primary} />
       ) : (
         <FlatList
           data={filtered}
-          keyExtractor={(i) => i.id}
+          keyExtractor={i => i.id}
           renderItem={renderItem}
           contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchMembers(); }} />}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => { setRefreshing(true); fetchMembers(); }}
+            />
+          }
           ListEmptyComponent={
             <View style={styles.empty}>
               <Ionicons name="people-outline" size={52} color={Colors.border} />
-              <Text style={styles.emptyText}>{search ? 'No members match your search' : 'No members yet'}</Text>
+              <Text style={styles.emptyTitle}>
+                {search || selectedWing !== 'All' ? 'No members found' : 'No members yet'}
+              </Text>
+              {(search || selectedWing !== 'All') && (
+                <TouchableOpacity onPress={() => { setSearch(''); setSelectedWing('All'); }}>
+                  <Text style={styles.clearFilter}>Clear filters</Text>
+                </TouchableOpacity>
+              )}
             </View>
           }
         />
@@ -164,22 +235,48 @@ export default function MembersScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
+
   header: {
     backgroundColor: Colors.primary,
     paddingTop: 56, paddingBottom: 20, paddingHorizontal: 20,
   },
   headerTitle: { color: Colors.white, fontSize: 22, fontWeight: '800' },
-  headerSub: { color: 'rgba(255,255,255,0.7)', fontSize: 13, marginTop: 2 },
+  headerSub: { color: 'rgba(255,255,255,0.75)', fontSize: 13, marginTop: 3 },
 
   searchBox: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: Colors.white, margin: 16, borderRadius: 12,
-    paddingHorizontal: 14, paddingVertical: 10,
+    backgroundColor: Colors.white,
+    marginHorizontal: 16, marginTop: 14, marginBottom: 4,
+    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10,
     borderWidth: 1.5, borderColor: Colors.border,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
   },
   searchInput: { flex: 1, fontSize: 14, color: Colors.text },
 
-  list: { paddingHorizontal: 16, paddingBottom: 32 },
+  wingScroll: { maxHeight: 52 },
+  wingRow: {
+    paddingHorizontal: 16, paddingVertical: 8, gap: 8, flexDirection: 'row',
+  },
+  wingChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    borderWidth: 1.5, borderColor: Colors.border,
+    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6,
+    backgroundColor: Colors.white,
+  },
+  wingChipActive: {
+    backgroundColor: Colors.primary, borderColor: Colors.primary,
+  },
+  wingChipText: { fontSize: 13, fontWeight: '600', color: Colors.text },
+  wingChipTextActive: { color: Colors.white },
+  wingCount: {
+    backgroundColor: Colors.bg, borderRadius: 10,
+    paddingHorizontal: 6, paddingVertical: 1, minWidth: 20, alignItems: 'center',
+  },
+  wingCountActive: { backgroundColor: 'rgba(255,255,255,0.25)' },
+  wingCountText: { fontSize: 11, fontWeight: '700', color: Colors.textMuted },
+  wingCountTextActive: { color: Colors.white },
+
+  list: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 32 },
 
   card: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
@@ -188,7 +285,7 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
   },
   pramukhCard: {
-    borderWidth: 1.5, borderColor: Colors.primary + '40',
+    borderWidth: 1.5, borderColor: Colors.primary + '50',
     backgroundColor: '#EFF6FF',
   },
 
@@ -198,15 +295,23 @@ const styles = StyleSheet.create({
   },
   avatarText: { fontSize: 18, fontWeight: '800' },
 
-  info: { flex: 1 },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+  info: { flex: 1, gap: 3 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   name: { fontSize: 15, fontWeight: '700', color: Colors.text, flexShrink: 1 },
-  roleBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2 },
-  roleText: { fontSize: 11, fontWeight: '700' },
+  roleBadge: { borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
+  roleText: { fontSize: 10, fontWeight: '800' },
 
-  detailRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
-  detailText: { fontSize: 13, color: Colors.textMuted },
-  phoneText: { color: Colors.primary, fontWeight: '600' },
+  metaRow: { flexDirection: 'row', gap: 6, marginTop: 2 },
+  metaChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: Colors.bg, borderRadius: 6,
+    paddingHorizontal: 7, paddingVertical: 3,
+  },
+  metaChipText: { fontSize: 12, color: Colors.textMuted, fontWeight: '500' },
+
+  phoneRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  phoneText: { fontSize: 13, color: Colors.primary, fontWeight: '600' },
+  noPhone: { fontSize: 12, color: Colors.border, marginTop: 2 },
 
   callBtn: {
     width: 38, height: 38, borderRadius: 19,
@@ -214,6 +319,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
 
-  empty: { alignItems: 'center', marginTop: 60, gap: 12 },
-  emptyText: { fontSize: 15, color: Colors.textMuted },
+  empty: { alignItems: 'center', marginTop: 60, gap: 10 },
+  emptyTitle: { fontSize: 15, color: Colors.textMuted, fontWeight: '600' },
+  clearFilter: { fontSize: 14, color: Colors.primary, fontWeight: '700', marginTop: 4 },
 });

@@ -32,7 +32,6 @@ export default function TabsLayout() {
       />
 
       {/* Hidden from tab bar — navigated to from Home screen cards */}
-      <Tabs.Screen name="complaints"   options={{ href: null }} />
       <Tabs.Screen name="maintenance"  options={{ href: null }} />
       <Tabs.Screen name="announcements" options={{ href: null }} />
       <Tabs.Screen name="parking"      options={{ href: null }} />
@@ -44,6 +43,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="bank-details"  options={{ href: null }} />
       <Tabs.Screen name="users"         options={{ href: null }} />
       <Tabs.Screen name="members"       options={{ href: null }} />
+      <Tabs.Screen name="expenses"      options={{ href: null }} />
 
       <Tabs.Screen
         name="profile"

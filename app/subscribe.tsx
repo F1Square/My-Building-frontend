@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert,
-  ActivityIndicator, ScrollView, Linking,
+  ActivityIndicator, ScrollView, Linking, TextInput,
 } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,9 +25,9 @@ const PLANS = [
   {
     key: 'yearly',
     title: 'Yearly Plan',
-    price: '₹150',
+    price: '₹180',
     period: '/ year',
-    desc: 'Save ₹30 vs monthly. Billed annually.',
+    desc: 'Billed annually. No monthly hassle.',
     icon: 'star-outline' as const,
     color: '#F59E0B',
     highlight: false,
@@ -54,6 +54,9 @@ export default function SubscribeScreen() {
   const router = useRouter();
   const [tab, setTab] = useState<'my-plan' | 'explore'>(hasActiveSubscription ? 'my-plan' : 'explore');
   const [loading, setLoading] = useState<string | null>(null);
+  const [promoCode, setPromoCode] = useState('');
+  const [promoResult, setPromoResult] = useState<any>(null);
+  const [promoLoading, setPromoLoading] = useState(false);
 
   // Handle deep link return from Razorpay
   useEffect(() => {
@@ -72,7 +75,10 @@ export default function SubscribeScreen() {
   const subscribe = async (plan: string) => {
     setLoading(plan);
     try {
-      const orderRes = await api.post('/subscriptions/order', { plan });
+      const orderRes = await api.post('/subscriptions/order', {
+        plan,
+        promo_id: promoResult?.promo_id || undefined,
+      });
       const { order_id, amount, key } = orderRes.data;
       const backendUrl = API_BASE.replace('/api', '');
       const checkoutUrl = `${backendUrl}/api/subscriptions/checkout/${order_id}?amount=${amount}&key=${key}&plan=${plan}&user_id=${user?.id}`;
@@ -81,11 +87,25 @@ export default function SubscribeScreen() {
         presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
       });
       await refreshSubscription();
+      setPromoCode('');
+      setPromoResult(null);
     } catch (e: any) {
       Alert.alert('Error', e.response?.data?.error || 'Failed to initiate payment');
     } finally {
       setLoading(null);
     }
+  };
+
+  const applyPromo = async (plan: string) => {
+    if (!promoCode.trim()) return;
+    setPromoLoading(true);
+    try {
+      const res = await api.post('/promos/validate', { code: promoCode.trim(), plan });
+      setPromoResult(res.data);
+    } catch (e: any) {
+      Alert.alert('Invalid Code', e.response?.data?.error || 'Promo code not valid');
+      setPromoResult(null);
+    } finally { setPromoLoading(false); }
   };
 
   const isExpired = subscription?.status === 'expired';
@@ -95,7 +115,7 @@ export default function SubscribeScreen() {
   const daysLeft = expiresAt ? Math.ceil((expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null;
 
   const planLabel = isLifetime ? 'Lifetime Plan' : isYearly ? 'Yearly Plan' : 'Monthly Plan';
-  const planPrice = isLifetime ? '₹1,500' : isYearly ? '₹150/yr' : '₹15/mo';
+  const planPrice = isLifetime ? '₹1,500' : isYearly ? '₹180/yr' : '₹15/mo';
   const planIcon  = isLifetime ? 'infinite-outline' : isYearly ? 'star-outline' : 'calendar-outline';
   const planColor = isLifetime ? Colors.success : isYearly ? '#F59E0B' : Colors.primary;
 
@@ -201,6 +221,42 @@ export default function SubscribeScreen() {
             <Text style={s.exploreHeading}>Choose a Plan</Text>
             <Text style={s.exploreSubheading}>Unlock all features with a simple subscription</Text>
 
+            {/* Promo code input */}
+            <View style={s.promoBox}>
+              <Ionicons name="pricetag-outline" size={18} color={Colors.primary} />
+              <TextInput
+                style={s.promoInput}
+                value={promoCode}
+                onChangeText={v => { setPromoCode(v.toUpperCase()); setPromoResult(null); }}
+                placeholder="Have a promo code?"
+                placeholderTextColor={Colors.textMuted}
+                autoCapitalize="characters"
+              />
+              <TouchableOpacity
+                style={[s.promoApplyBtn, !promoCode.trim() && { opacity: 0.4 }]}
+                onPress={() => applyPromo('monthly')}
+                disabled={!promoCode.trim() || promoLoading}
+              >
+                {promoLoading
+                  ? <ActivityIndicator size="small" color={Colors.white} />
+                  : <Text style={s.promoApplyText}>Apply</Text>}
+              </TouchableOpacity>
+            </View>
+            {promoResult && (
+              <View style={s.promoSuccess}>
+                <Ionicons name="checkmark-circle" size={16} color={Colors.success} />
+                <Text style={s.promoSuccessText}>
+                  {promoResult.type === 'percent'
+                    ? `${promoResult.value}% discount applied!`
+                    : `₹${promoResult.value} discount applied!`}
+                  {promoResult.description ? ` · ${promoResult.description}` : ''}
+                </Text>
+                <TouchableOpacity onPress={() => { setPromoCode(''); setPromoResult(null); }}>
+                  <Ionicons name="close-circle" size={16} color={Colors.textMuted} />
+                </TouchableOpacity>
+              </View>
+            )}
+
             {PLANS.map(plan => {
               const isCurrent = subscription?.plan === plan.key && hasActiveSubscription;
               const currentRank = hasActiveSubscription && subscription?.plan
@@ -257,6 +313,8 @@ export default function SubscribeScreen() {
                         ? <ActivityIndicator color={Colors.white} />
                         : <Text style={s.subscribeBtnText}>
                             {hasActiveSubscription ? `Upgrade — ${plan.price}` : `Subscribe — ${plan.price}`}
+                            {promoResult && promoResult.final_amount !== undefined
+                              ? ` → ₹${promoResult.final_amount}` : ''}
                           </Text>}
                     </TouchableOpacity>
                   )}
@@ -327,4 +385,10 @@ const s = StyleSheet.create({
   currentBtnText: { fontSize: 14, fontWeight: '700' },
   disabledBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 12, paddingVertical: 13, backgroundColor: Colors.bg },
   disabledBtnText: { fontSize: 14, fontWeight: '600', color: Colors.textMuted },
+  promoBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.white, borderRadius: 12, borderWidth: 1.5, borderColor: Colors.border, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 12 },
+  promoInput: { flex: 1, fontSize: 14, color: Colors.text, fontWeight: '600', letterSpacing: 1 },
+  promoApplyBtn: { backgroundColor: Colors.primary, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 },
+  promoApplyText: { color: Colors.white, fontWeight: '700', fontSize: 13 },
+  promoSuccess: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.success + '12', borderRadius: 10, padding: 10, marginBottom: 12 },
+  promoSuccessText: { flex: 1, fontSize: 13, color: Colors.success, fontWeight: '600' },
 });

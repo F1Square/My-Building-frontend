@@ -22,7 +22,6 @@ export default function ProfileScreen() {
 
   const menuItems = isAdmin ? [] : [
     { icon: 'car-outline', label: 'My Vehicles', onPress: () => router.push('/my-vehicles' as any) },
-    { icon: 'alert-circle-outline', label: 'My Complaints', onPress: () => router.push('/my-complaints' as any) },
     { icon: 'wallet-outline', label: 'Payment History', onPress: () => router.push('/my-payments' as any) },
   ];
 

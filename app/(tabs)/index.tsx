@@ -1,6 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Colors } from '../../constants/colors';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Alert, Modal } from 'react-native';
+import {
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  RefreshControl, Alert, Modal, TextInput, Dimensions,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,26 +12,65 @@ import { useAuth } from '../../context/AuthContext';
 import api from '../../utils/api';
 import { useActivityLog } from '../../hooks/useActivityLog';
 
-// Modules that require subscription to access
+const { width: SCREEN_W } = Dimensions.get('window');
+const CARD_SIZE = (SCREEN_W - 48) / 3;
+
 const GATED_ROUTES = [
   '/maintenance', '/announcements', '/visitors',
   '/parking', '/chat', '/join-requests', '/my-details', '/helpline',
   '/members', '/expenses',
 ];
 
-// Map notification types → module route for badge counts
 const TYPE_TO_ROUTE: Record<string, string> = {
-  bill: '/maintenance',
-  payment: '/maintenance',
-  reminder: '/maintenance',
-  visitor: '/visitors',
-  announcement: '/announcements',
+  bill: '/maintenance', payment: '/maintenance', reminder: '/maintenance',
+  visitor: '/visitors', announcement: '/announcements',
   announcement_urgent: '/announcements_urgent',
-  meeting: '/meetings',
-  join_request: '/join-requests',
-  join_response: '/join-requests',
-  parking_report: '/parking',
+  meeting: '/meetings', join_request: '/join-requests',
+  join_response: '/join-requests', parking_report: '/parking',
 };
+
+// Pastel bg + icon color pairs matching the reference design
+const MODULE_PALETTE: Record<string, { bg: string; icon: string }> = {
+  myDetails:     { bg: '#E8EEF9', icon: '#3B5FC0' },
+  members:       { bg: '#FFF3E0', icon: '#F59E0B' },
+  complaints:    { bg: '#FDE8E8', icon: '#EF4444' },
+  maintenance:   { bg: '#FFF3E0', icon: '#F59E0B' },
+  visitors:      { bg: '#EDE9FE', icon: '#7C3AED' },
+  parking:       { bg: '#E0F7F4', icon: '#0D9488' },
+  groupChat:     { bg: '#FEE2E2', icon: '#EF4444' },
+  helpline:      { bg: '#E0F2FE', icon: '#0EA5E9' },
+  subscription:  { bg: '#FEF9C3', icon: '#CA8A04' },
+  announcements: { bg: '#E0F2FE', icon: '#0EA5E9' },
+  expenses:      { bg: '#EDE9FE', icon: '#7C3AED' },
+  joinRequests:  { bg: '#DCFCE7', icon: '#16A34A' },
+  bankDetails:   { bg: '#EDE9FE', icon: '#7C3AED' },
+  adminPanel:    { bg: '#E8EEF9', icon: '#3B5FC0' },
+  users:         { bg: '#E0F7F4', icon: '#0D9488' },
+  inquiries:     { bg: '#E0F2FE', icon: '#0EA5E9' },
+  subscriptions: { bg: '#FEF9C3', icon: '#CA8A04' },
+  promoCodes:    { bg: '#FDE8E8', icon: '#EF4444' },
+  activityLogs:  { bg: '#F1F5F9', icon: '#475569' },
+};
+
+const MODULE_ICONS: Record<string, string> = {
+  myDetails: 'person-outline', members: 'people-outline',
+  complaints: 'alert-circle-outline', maintenance: 'construct-outline',
+  visitors: 'eye-outline', parking: 'car-outline',
+  groupChat: 'chatbubble-ellipses-outline', helpline: 'call-outline',
+  subscription: 'card-outline', announcements: 'megaphone-outline',
+  expenses: 'wallet-outline', joinRequests: 'person-add-outline',
+  bankDetails: 'business-outline', adminPanel: 'shield-checkmark-outline',
+  users: 'people-circle-outline', inquiries: 'mail-open-outline',
+  subscriptions: 'card-outline', promoCodes: 'pricetag-outline',
+  activityLogs: 'list-circle-outline',
+};
+
+function getGreeting() {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 17) return 'Good afternoon';
+  return 'Good evening';
+}
 
 export default function HomeScreen() {
   const { t } = useLanguage();
@@ -39,48 +81,46 @@ export default function HomeScreen() {
   const [badgeCounts, setBadgeCounts] = useState<Record<string, number>>({});
   const [urgentAnnouncements, setUrgentAnnouncements] = useState<any[]>([]);
   const [showUrgentModal, setShowUrgentModal] = useState(false);
+  const [latestAnnouncement, setLatestAnnouncement] = useState<any>(null);
+  const [search, setSearch] = useState('');
 
   const isPendingUser = user?.role === 'user' && !user?.building_id;
   const needsSubscription = user?.role !== 'admin' && !hasActiveSubscription;
 
-  const handleModuleTap = (route: string, title: string) => {
+  const handleModuleTap = (route: string, titleKey: string) => {
     if (needsSubscription && GATED_ROUTES.includes(route)) {
-      Alert.alert(
-        'Subscription Required',
-        'You need an active subscription to access this module. Activate your plan to unlock all features.',
-        [
-          { text: 'Not Now', style: 'cancel' },
-          { text: 'View Plans', onPress: () => router.push('/subscribe' as any) },
-        ]
-      );
+      Alert.alert(t('subscriptionRequired'), t('subscriptionRequiredMsg'), [
+        { text: t('notNow'), style: 'cancel' },
+        { text: t('viewPlans'), onPress: () => router.push('/subscribe' as any) },
+      ]);
       return;
     }
-    logEvent(`tap_module_${title.toLowerCase().replace(/\s+/g, '_')}`, route.replace('/', '') || 'home');
+    logEvent(`tap_module_${titleKey}`, route.replace('/', '') || 'home');
     router.push(route as any);
   };
 
   const allModules = [
-    { titleKey: 'myDetails', icon: 'person-circle', color: '#1E3A8A', route: '/my-details', userPramukhOnly: true },
-    { titleKey: 'members', icon: 'people-circle', color: '#0891B2', route: '/members', userPramukhOnly: true },
-    { titleKey: 'expenses', icon: 'wallet', color: '#7C3AED', route: '/expenses' },
-    { titleKey: 'maintenance', icon: 'wallet', color: '#10B981', route: '/maintenance' },
-    { titleKey: 'announcements', icon: 'megaphone', color: '#F59E0B', route: '/announcements' },
-    { titleKey: 'visitors', icon: 'people', color: '#6366F1', route: '/visitors' },
-    { titleKey: 'parking', icon: 'car', color: '#0EA5E9', route: '/parking' },
-    { titleKey: 'groupChat', icon: 'chatbubbles', color: '#EC4899', route: '/chat', hideForAdmin: true },
-    { titleKey: 'complaints', icon: 'warning', color: '#EF4444', route: '/complaints?view=society', userPramukhOnly: true },
-    { titleKey: 'joinRequests', icon: 'person-add', color: '#059669', route: '/join-requests', pramukhOnly: true },
-    { titleKey: 'helpline', icon: 'call', color: '#EF4444', route: '/helpline', hideForAdmin: true },
-    { titleKey: 'subscription', icon: 'card', color: '#F59E0B', route: '/subscribe', hideForAdmin: true },
-    { titleKey: 'bankDetails', icon: 'business', color: '#7C3AED', route: '/bank-details', adminOnly: true },
-    { titleKey: 'adminPanel', icon: 'shield-checkmark', color: '#7C3AED', route: '/admin', adminOnly: true },
-    { titleKey: 'users', icon: 'people', color: '#0F766E', route: '/users', adminOnly: true },
-    { titleKey: 'inquiries', icon: 'mail-open', color: '#0891B2', route: '/inquiries', adminOnly: true },
-    { titleKey: 'complaints', icon: 'warning', color: '#EF4444', route: '/complaints-admin', adminOnly: true },
-    { titleKey: 'helpline', icon: 'call', color: '#EF4444', route: '/helpline', adminOnly: true },
-    { titleKey: 'subscriptions', icon: 'card', color: '#7C3AED', route: '/subscriptions-admin', adminOnly: true },
-    { titleKey: 'promoCodes', icon: 'pricetag', color: '#EC4899', route: '/promos', adminOnly: true },
-    { titleKey: 'activityLogs', icon: 'list-circle', color: '#475569', route: '/activity-logs', adminOnly: true },
+    { titleKey: 'myDetails',    route: '/my-details',           userPramukhOnly: true },
+    { titleKey: 'members',      route: '/members',              userPramukhOnly: true },
+    { titleKey: 'expenses',     route: '/expenses' },
+    { titleKey: 'maintenance',  route: '/maintenance' },
+    { titleKey: 'announcements',route: '/announcements' },
+    { titleKey: 'visitors',     route: '/visitors' },
+    { titleKey: 'parking',      route: '/parking' },
+    { titleKey: 'groupChat',    route: '/chat',                 hideForAdmin: true },
+    { titleKey: 'complaints',   route: '/complaints?view=society', userPramukhOnly: true },
+    { titleKey: 'joinRequests', route: '/join-requests',        pramukhOnly: true },
+    { titleKey: 'helpline',     route: '/helpline',             hideForAdmin: true },
+    { titleKey: 'subscription', route: '/subscribe',            hideForAdmin: true },
+    { titleKey: 'bankDetails',  route: '/bank-details',         adminOnly: true },
+    { titleKey: 'adminPanel',   route: '/admin',                adminOnly: true },
+    { titleKey: 'users',        route: '/users',                adminOnly: true },
+    { titleKey: 'inquiries',    route: '/inquiries',            adminOnly: true },
+    { titleKey: 'complaints',   route: '/complaints-admin',     adminOnly: true },
+    { titleKey: 'helpline',     route: '/helpline',             adminOnly: true },
+    { titleKey: 'subscriptions',route: '/subscriptions-admin',  adminOnly: true },
+    { titleKey: 'promoCodes',   route: '/promos',               adminOnly: true },
+    { titleKey: 'activityLogs', route: '/activity-logs',        adminOnly: true },
   ];
 
   const modules = allModules.filter((m: any) => {
@@ -88,34 +128,34 @@ export default function HomeScreen() {
     if (m.hideForAdmin && user?.role === 'admin') return false;
     if (m.adminOnly && user?.role !== 'admin') return false;
     if (m.pramukhOnly && user?.role !== 'pramukh') return false;
-    if (m.hideIfSubscribed && hasActiveSubscription) return false;
     return true;
   }).map(m => ({ ...m, title: t(m.titleKey) }));
 
+  const filteredModules = search.trim()
+    ? modules.filter(m => m.title.toLowerCase().includes(search.toLowerCase()))
+    : modules;
+
   const fetchData = async () => {
-    // kept for pull-to-refresh compatibility
+    try {
+      if (user?.building_id) {
+        const res = await api.get('/announcements');
+        const all = res.data as any[];
+        setLatestAnnouncement(all[0] || null);
+      }
+    } catch {}
   };
 
   const openUrgentInbox = async () => {
-    // Immediately delete the urgent notifications from DB — one-time read
     api.delete('/notifications/dismiss-types', { data: { types: ['announcement_urgent'] } }).catch(() => {});
-    // Clear badge locally right away
     setBadgeCounts(prev => ({ ...prev, '/announcements_urgent': 0 }));
-
     try {
       const res = await api.get('/announcements');
-      const urgent = (res.data as any[]).filter((a: any) => a.priority === 'urgent');
-      setUrgentAnnouncements(urgent);
-    } catch {
-      setUrgentAnnouncements([]);
-    }
+      setUrgentAnnouncements((res.data as any[]).filter((a: any) => a.priority === 'urgent'));
+    } catch { setUrgentAnnouncements([]); }
     setShowUrgentModal(true);
   };
 
-  const dismissUrgentInbox = () => {
-    setShowUrgentModal(false);
-    setUrgentAnnouncements([]);
-  };
+  const dismissUrgentInbox = () => { setShowUrgentModal(false); setUrgentAnnouncements([]); };
 
   const fetchBadges = useCallback(async () => {
     if (!user?.building_id && user?.role !== 'admin') return;
@@ -126,17 +166,14 @@ export default function HomeScreen() {
         const route = TYPE_TO_ROUTE[type];
         if (route) routeCounts[route] = (routeCounts[route] || 0) + count;
       }
-      // Never restore urgent badge once cleared — it was already deleted from DB
-      routeCounts['/announcements_urgent'] = routeCounts['/announcements_urgent'] || 0;
       setBadgeCounts(prev => ({
         ...routeCounts,
-        // Keep urgent at 0 if we already dismissed it this session
         '/announcements_urgent': prev['/announcements_urgent'] === 0 ? 0 : (routeCounts['/announcements_urgent'] || 0),
       }));
     } catch {}
   }, [user]);
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); }, [user?.building_id]);
   useFocusEffect(useCallback(() => { fetchBadges(); }, [fetchBadges]));
 
   const onRefresh = async () => {
@@ -145,157 +182,238 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
-  
-
   if (isPendingUser) {
     return (
-      <ScrollView style={styles.container} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>{t('welcome')}</Text>
-            <Text style={styles.name}>{user?.name} 👋</Text>
-            <View style={styles.badge}><Text style={styles.badgeText}>USER</Text></View>
+      <View style={styles.container}>
+        <View style={styles.gradientHeader}>
+          <View style={styles.headerTop}>
+            <View style={styles.avatarCircle}>
+              <Text style={styles.avatarText}>{user?.name?.[0]?.toUpperCase()}</Text>
+            </View>
+            <Text style={styles.greetingText}>{t('welcome')}, {user?.name}</Text>
           </View>
-          <TouchableOpacity onPress={() => router.push('/profile' as any)} style={styles.avatar}>
-            <Text style={styles.avatarText}>{user?.name?.[0]?.toUpperCase()}</Text>
-          </TouchableOpacity>
         </View>
         <View style={styles.pendingContainer}>
           <Ionicons name="business-outline" size={64} color={Colors.primary} style={{ marginBottom: 16 }} />
-          <Text style={styles.pendingTitle}>You're not in a building yet</Text>
-          <Text style={styles.pendingSubtitle}>Join a building to access all features. Your Pramukh will approve your request.</Text>
+          <Text style={styles.pendingTitle}>{t('notInBuilding')}</Text>
+          <Text style={styles.pendingSubtitle}>{t('notInBuildingSub')}</Text>
           <TouchableOpacity style={styles.joinBtn} onPress={() => router.push('/join' as any)}>
             <Ionicons name="enter-outline" size={20} color={Colors.white} />
-            <Text style={styles.joinBtnText}>Join a Building</Text>
+            <Text style={styles.joinBtnText}>{t('joinBuilding')}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.registerBtn} onPress={() => router.push('/register-building' as any)}>
             <Ionicons name="add-circle-outline" size={20} color={Colors.primary} />
-            <Text style={styles.registerBtnText}>Register Your Building</Text>
+            <Text style={styles.registerBtnText}>{t('registerBuilding')}</Text>
           </TouchableOpacity>
         </View>
-      </ScrollView>
+      </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>{t('goodDay')}</Text>
-          <Text style={styles.name}>{user?.name} 👋</Text>
-          <View style={styles.badge}><Text style={styles.badgeText}>{user?.role?.toUpperCase()}</Text></View>
-        </View>
-        <View style={styles.headerRight}>
-          <TouchableOpacity onPress={openUrgentInbox} style={styles.inboxBtn}>
-            <Ionicons name="notifications-outline" size={22} color={Colors.white} />
-            {(badgeCounts['/announcements_urgent'] || 0) > 0 && (
-              <View style={styles.inboxBadge}>
-                <Text style={styles.inboxBadgeText}>
-                  {(badgeCounts['/announcements_urgent'] || 0) > 99 ? '99+' : badgeCounts['/announcements_urgent']}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push('/profile' as any)} style={styles.avatar}>
-            <Text style={styles.avatarText}>{user?.name?.[0]?.toUpperCase()}</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <Text style={styles.sectionTitle}>{t('modules')}</Text>
-      <View style={styles.grid}>
-        {modules.map((m) => {
-          const count = badgeCounts[m.route] || 0;
-          const isLocked = needsSubscription && GATED_ROUTES.includes(m.route);
-          return (
-            <TouchableOpacity key={m.title} style={[styles.moduleCard, isLocked && styles.moduleCardLocked]} onPress={() => handleModuleTap(m.route, m.title)}>
-              <View style={{ position: 'relative' }}>
-                <View style={[styles.moduleIcon, { backgroundColor: m.color + '20' }]}>
-                  <Ionicons name={m.icon as any} size={28} color={isLocked ? Colors.textMuted : m.color} />
-                </View>
-                {count > 0 && !isLocked && (
-                  <View style={styles.notifBadge}>
-                    <Text style={styles.notifBadgeText}>{count > 99 ? '99+' : count}</Text>
-                  </View>
-                )}
-                {isLocked && (
-                  <View style={styles.lockBadge}>
-                    <Ionicons name="lock-closed" size={10} color={Colors.white} />
-                  </View>
-                )}
-              </View>
-              <Text style={[styles.moduleTitle, isLocked && { color: Colors.textMuted }]}>{m.title}</Text>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
+        {/* ── Gradient Header ── */}
+        <View style={styles.gradientHeader}>
+          {/* Top row: avatar + bell */}
+          <View style={styles.headerTop}>
+            <TouchableOpacity onPress={() => router.push('/profile' as any)} style={styles.avatarCircle}>
+              <Text style={styles.avatarText}>{user?.name?.[0]?.toUpperCase()}</Text>
             </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      <View style={{ height: 20 }} />
-    </ScrollView>
-
-    {/* Urgent Announcements Modal */}
-    <Modal visible={showUrgentModal} transparent animationType="slide" onRequestClose={dismissUrgentInbox}>
-      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={dismissUrgentInbox}>
-        <TouchableOpacity activeOpacity={1} style={styles.modalSheet}>
-          <View style={styles.modalHandle} />
-          <View style={styles.modalTitleRow}>
-            <Text style={styles.modalTitle}>🚨 Urgent Announcements</Text>
-            <TouchableOpacity onPress={dismissUrgentInbox}>
-              <Ionicons name="close-circle" size={26} color={Colors.border} />
-            </TouchableOpacity>
-          </View>
-          {urgentAnnouncements.length === 0 ? (
-            <View style={styles.modalEmpty}>
-              <Ionicons name="checkmark-circle-outline" size={44} color={Colors.success} />
-              <Text style={styles.modalEmptyText}>No urgent announcements</Text>
-            </View>
-          ) : (
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {urgentAnnouncements.map((a) => (
-                <View key={a.id} style={styles.urgentCard}>
-                  <View style={styles.urgentCardTop}>
-                    <Text style={styles.urgentCardTitle}>{a.title}</Text>
-                    <View style={styles.urgentBadge}><Text style={styles.urgentBadgeText}>URGENT</Text></View>
-                  </View>
-                  <Text style={styles.urgentCardBody}>{a.body}</Text>
-                  <Text style={styles.urgentCardMeta}>
-                    {a.users?.name} · {new Date(a.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+            <TouchableOpacity onPress={openUrgentInbox} style={styles.bellBtn}>
+              <Ionicons name="notifications-outline" size={22} color={Colors.white} />
+              {(badgeCounts['/announcements_urgent'] || 0) > 0 && (
+                <View style={styles.bellBadge}>
+                  <Text style={styles.bellBadgeText}>
+                    {(badgeCounts['/announcements_urgent'] || 0) > 9 ? '9+' : badgeCounts['/announcements_urgent']}
                   </Text>
                 </View>
-              ))}
-              <View style={{ height: 20 }} />
-            </ScrollView>
-          )}
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Greeting */}
+          <Text style={styles.greetingText}>{getGreeting()}, {user?.name?.split(' ')[0]} 👋</Text>
+
+          {/* Search bar */}
+          <View style={styles.searchBar}>
+            <Ionicons name="search-outline" size={18} color={Colors.textMuted} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search modules..."
+              placeholderTextColor={Colors.textMuted}
+              value={search}
+              onChangeText={setSearch}
+            />
+            {search.length > 0 && (
+              <TouchableOpacity onPress={() => setSearch('')}>
+                <Ionicons name="close-circle" size={16} color={Colors.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
+        {/* ── Module Grid ── */}
+        <View style={styles.gridSection}>
+          <View style={styles.grid}>
+            {filteredModules.map((m) => {
+              const count = badgeCounts[m.route] || 0;
+              const isLocked = needsSubscription && GATED_ROUTES.includes(m.route);
+              const palette = MODULE_PALETTE[m.titleKey] || { bg: '#F1F5F9', icon: Colors.primary };
+              const iconName = MODULE_ICONS[m.titleKey] || 'grid-outline';
+              return (
+                <TouchableOpacity
+                  key={`${m.titleKey}-${m.route}`}
+                  style={[styles.moduleCard, isLocked && styles.moduleCardLocked]}
+                  onPress={() => handleModuleTap(m.route, m.titleKey)}
+                  activeOpacity={0.75}
+                >
+                  <View style={{ position: 'relative' }}>
+                    <View style={[styles.moduleIconCircle, { backgroundColor: palette.bg }]}>
+                      <Ionicons
+                        name={iconName as any}
+                        size={26}
+                        color={isLocked ? Colors.textMuted : palette.icon}
+                      />
+                    </View>
+                    {count > 0 && !isLocked && (
+                      <View style={styles.notifBadge}>
+                        <Text style={styles.notifBadgeText}>{count > 99 ? '99+' : count}</Text>
+                      </View>
+                    )}
+                    {isLocked && (
+                      <View style={styles.lockBadge}>
+                        <Ionicons name="lock-closed" size={9} color={Colors.white} />
+                      </View>
+                    )}
+                  </View>
+                  <Text style={[styles.moduleTitle, isLocked && { color: Colors.textMuted }]} numberOfLines={2}>
+                    {m.title}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={{ height: 32 }} />
+      </ScrollView>
+
+      {/* Urgent Modal */}
+      <Modal visible={showUrgentModal} transparent animationType="slide" onRequestClose={dismissUrgentInbox}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={dismissUrgentInbox}>
+          <TouchableOpacity activeOpacity={1} style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <View style={styles.modalTitleRow}>
+              <Text style={styles.modalTitle}>🚨 {t('urgentAnnouncements')}</Text>
+              <TouchableOpacity onPress={dismissUrgentInbox}>
+                <Ionicons name="close-circle" size={26} color={Colors.border} />
+              </TouchableOpacity>
+            </View>
+            {urgentAnnouncements.length === 0 ? (
+              <View style={styles.modalEmpty}>
+                <Ionicons name="checkmark-circle-outline" size={44} color={Colors.success} />
+                <Text style={styles.modalEmptyText}>{t('noUrgentAnnouncements')}</Text>
+              </View>
+            ) : (
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {urgentAnnouncements.map((a) => (
+                  <View key={a.id} style={styles.urgentCard}>
+                    <View style={styles.urgentCardTop}>
+                      <Text style={styles.urgentCardTitle}>{a.title}</Text>
+                      <View style={styles.urgentBadge}><Text style={styles.urgentBadgeText}>URGENT</Text></View>
+                    </View>
+                    <Text style={styles.urgentCardBody}>{a.body}</Text>
+                    <Text style={styles.urgentCardMeta}>
+                      {a.users?.name} · {new Date(a.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </Text>
+                  </View>
+                ))}
+                <View style={{ height: 20 }} />
+              </ScrollView>
+            )}
+          </TouchableOpacity>
         </TouchableOpacity>
-      </TouchableOpacity>
-    </Modal>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bg },
-  header: { backgroundColor: Colors.primary, padding: 24, paddingTop: 56, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  greeting: { color: 'rgba(255,255,255,0.7)', fontSize: 14 },
-  name: { color: Colors.white, fontSize: 22, fontWeight: '800', marginTop: 2 },
-  badge: { backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, marginTop: 6, alignSelf: 'flex-start' },
-  badgeText: { color: Colors.white, fontSize: 11, fontWeight: '700' },
-  avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: Colors.accent, justifyContent: 'center', alignItems: 'center' },
+  container: { flex: 1, backgroundColor: '#F8FAFC' },
+
+  // ── Gradient header ──────────────────────────────────────────────────────
+  gradientHeader: {
+    paddingTop: 56, paddingBottom: 24, paddingHorizontal: 20,
+    borderBottomLeftRadius: 28, borderBottomRightRadius: 28,
+    backgroundColor: '#3B5FC0',
+  },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  avatarCircle: {
+    width: 48, height: 48, borderRadius: 24,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 2, borderColor: 'rgba(255,255,255,0.6)',
+  },
   avatarText: { color: Colors.white, fontSize: 20, fontWeight: '800' },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  inboxBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
-  inboxBadge: { position: 'absolute', top: -2, right: -2, backgroundColor: Colors.danger, borderRadius: 9, minWidth: 18, height: 18, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 3, borderWidth: 2, borderColor: Colors.primary },
-  inboxBadgeText: { color: Colors.white, fontSize: 9, fontWeight: '800' },
-  sectionTitle: { fontSize: 18, fontWeight: '700', color: Colors.text, marginHorizontal: 16, marginTop: 24, marginBottom: 12 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12 },
-  moduleCard: { width: '30%', margin: '1.5%', backgroundColor: Colors.white, borderRadius: 16, padding: 16, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
-  moduleIcon: { width: 52, height: 52, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
-  moduleTitle: { fontSize: 12, fontWeight: '600', color: Colors.text, textAlign: 'center' },
-  moduleCardLocked: { opacity: 0.6 },
-  lockBadge: { position: 'absolute', top: -4, right: -4, backgroundColor: Colors.textMuted, borderRadius: 8, width: 16, height: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: Colors.white },
-  notifBadge: { position: 'absolute', top: -4, right: -4, backgroundColor: Colors.danger, borderRadius: 10, minWidth: 20, height: 20, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4, borderWidth: 2, borderColor: Colors.white },
+  bellBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
+  bellBadge: { position: 'absolute', top: -2, right: -2, backgroundColor: Colors.danger, borderRadius: 9, minWidth: 18, height: 18, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 3, borderWidth: 2, borderColor: '#6366F1' },
+  bellBadgeText: { color: Colors.white, fontSize: 9, fontWeight: '800' },
+  greetingText: { color: Colors.white, fontSize: 22, fontWeight: '800', marginBottom: 16 },
+
+  // ── Search ───────────────────────────────────────────────────────────────
+  searchBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: Colors.white, borderRadius: 14,
+    paddingHorizontal: 14, paddingVertical: 11,
+    marginBottom: 16,
+    shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 8, elevation: 3,
+  },
+  searchInput: { flex: 1, fontSize: 14, color: Colors.text },
+
+  // ── Announcement banner ──────────────────────────────────────────────────
+  announceBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderRadius: 16, padding: 14,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)',
+  },
+  announceAvatar: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  announceName: { color: Colors.white, fontSize: 14, fontWeight: '700' },
+  announceSub: { color: 'rgba(255,255,255,0.75)', fontSize: 12, marginTop: 2 },
+  announceArrow: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center', alignItems: 'center',
+  },
+
+  // ── Module grid ──────────────────────────────────────────────────────────
+  gridSection: { paddingHorizontal: 16, paddingTop: 24 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 0 },
+  moduleCard: {
+    width: CARD_SIZE, alignItems: 'center',
+    paddingVertical: 18, paddingHorizontal: 4,
+  },
+  moduleIconCircle: {
+    width: 64, height: 64, borderRadius: 32,
+    justifyContent: 'center', alignItems: 'center',
+    marginBottom: 8,
+    shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
+  },
+  moduleTitle: { fontSize: 12, fontWeight: '600', color: '#374151', textAlign: 'center', lineHeight: 16 },
+  moduleCardLocked: { opacity: 0.5 },
+  lockBadge: { position: 'absolute', top: -2, right: -2, backgroundColor: Colors.textMuted, borderRadius: 8, width: 16, height: 16, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#F8FAFC' },
+  notifBadge: { position: 'absolute', top: -4, right: -4, backgroundColor: Colors.danger, borderRadius: 10, minWidth: 20, height: 20, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4, borderWidth: 2, borderColor: '#F8FAFC' },
   notifBadgeText: { color: Colors.white, fontSize: 10, fontWeight: '800' },
+
+  // ── Pending state ────────────────────────────────────────────────────────
   pendingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, marginTop: 40 },
   pendingTitle: { fontSize: 20, fontWeight: '800', color: Colors.text, textAlign: 'center', marginBottom: 10 },
   pendingSubtitle: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', lineHeight: 22, marginBottom: 32 },
@@ -303,7 +421,8 @@ const styles = StyleSheet.create({
   joinBtnText: { color: Colors.white, fontSize: 16, fontWeight: '700' },
   registerBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1.5, borderColor: Colors.primary, borderRadius: 14, paddingHorizontal: 28, paddingVertical: 14, marginTop: 12 },
   registerBtnText: { color: Colors.primary, fontSize: 16, fontWeight: '700' },
-  // Urgent inbox modal
+
+  // ── Urgent modal ─────────────────────────────────────────────────────────
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
   modalSheet: { backgroundColor: Colors.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 36, maxHeight: '75%' },
   modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.border, alignSelf: 'center', marginBottom: 16 },
@@ -319,3 +438,4 @@ const styles = StyleSheet.create({
   urgentCardBody: { fontSize: 14, color: Colors.text, lineHeight: 20, marginBottom: 6 },
   urgentCardMeta: { fontSize: 12, color: Colors.textMuted },
 });
+

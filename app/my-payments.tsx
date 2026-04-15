@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
@@ -18,6 +19,7 @@ const MONTHS = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep
 
 export default function MyPaymentsScreen() {
   const router = useRouter();
+  const { t } = useLanguage();
   const [payments, setPayments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -89,25 +91,25 @@ export default function MyPaymentsScreen() {
   
 
   return (
-    <View style={s.container}>
-      <View style={s.header}>
-        <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={Colors.white} />
         </TouchableOpacity>
-        <Text style={s.headerTitle}>Payment History</Text>
+        <Text style={styles.headerTitle}>{t('paymentHistory')}</Text>
         <View style={{ width: 36 }} />
       </View>
 
       {/* Summary */}
       {!loading && payments.length > 0 && (
-        <View style={s.summaryRow}>
-          <View style={[s.summaryCard, { borderLeftColor: Colors.success }]}>
-            <Text style={s.summaryLabel}>Total Paid</Text>
-            <Text style={[s.summaryAmount, { color: Colors.success }]}>₹{totalPaid.toLocaleString('en-IN')}</Text>
+        <View style={styles.summaryRow}>
+          <View style={[styles.summaryCard, { borderLeftColor: Colors.success }]}>
+            <Text style={styles.summaryLabel}>{t('totalPaid')}</Text>
+            <Text style={[styles.summaryAmount, { color: Colors.success }]}>₹{totalPaid.toLocaleString('en-IN')}</Text>
           </View>
-          <View style={[s.summaryCard, { borderLeftColor: '#F59E0B' }]}>
-            <Text style={s.summaryLabel}>Pending</Text>
-            <Text style={[s.summaryAmount, { color: '#F59E0B' }]}>₹{totalPending.toLocaleString('en-IN')}</Text>
+          <View style={[styles.summaryCard, { borderLeftColor: '#F59E0B' }]}>
+            <Text style={styles.summaryLabel}>{t('pending')}</Text>
+            <Text style={[styles.summaryAmount, { color: '#F59E0B' }]}>₹{totalPending.toLocaleString('en-IN')}</Text>
           </View>
         </View>
       )}
@@ -118,13 +120,13 @@ export default function MyPaymentsScreen() {
         <FlatList
           data={payments}
           keyExtractor={i => i.id}
-          contentContainerStyle={s.list}
+          contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetch(); }} />}
           ListEmptyComponent={
-            <View style={s.empty}>
-              <Text style={s.emptyIcon}>🧾</Text>
-              <Text style={s.emptyTitle}>No payment records</Text>
-              <Text style={s.emptyText}>Your maintenance bills will appear here</Text>
+            <View style={styles.empty}>
+              <Text style={styles.emptyIcon}>🧾</Text>
+              <Text style={styles.emptyTitle}>No payment records</Text>
+              <Text style={styles.emptyText}>Your maintenance bills will appear here</Text>
             </View>
           }
           renderItem={({ item }) => {
@@ -132,49 +134,49 @@ export default function MyPaymentsScreen() {
             const bill = item.maintenance_bills;
             const isCash = item.payment_method === 'cash';
             return (
-              <View style={[s.card, isPaid && s.cardPaid]}>
-                <View style={s.cardTop}>
-                  <View style={s.monthBox}>
-                    <Text style={s.monthText}>{MONTHS[bill?.month]}</Text>
-                    <Text style={s.yearText}>{bill?.year}</Text>
+              <View style={[styles.card, isPaid && styles.cardPaid]}>
+                <View style={styles.cardTop}>
+                  <View style={styles.monthBox}>
+                    <Text style={styles.monthText}>{MONTHS[bill?.month]}</Text>
+                    <Text style={styles.yearText}>{bill?.year}</Text>
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={s.cardAmount}>₹{Number(item.amount).toLocaleString('en-IN')}</Text>
-                    {bill?.description ? <Text style={s.cardDesc} numberOfLines={1}>{bill.description}</Text> : null}
-                    {bill?.due_date ? <Text style={s.cardDue}>Due: {new Date(bill.due_date).toLocaleDateString('en-IN')}</Text> : null}
+                    <Text style={styles.cardAmount}>₹{Number(item.amount).toLocaleString('en-IN')}</Text>
+                    {bill?.description ? <Text style={styles.cardDesc} numberOfLines={1}>{bill.description}</Text> : null}
+                    {bill?.due_date ? <Text style={styles.cardDue}>Due: {new Date(bill.due_date).toLocaleDateString('en-IN')}</Text> : null}
                   </View>
-                  <View style={[s.statusBadge, { backgroundColor: isPaid ? Colors.success + '20' : '#FEF3C7' }]}>
-                    <Text style={[s.statusText, { color: isPaid ? Colors.success : '#D97706' }]}>
+                  <View style={[styles.statusBadge, { backgroundColor: isPaid ? Colors.success + '20' : '#FEF3C7' }]}>
+                    <Text style={[styles.statusText, { color: isPaid ? Colors.success : '#D97706' }]}>
                       {isPaid ? (isCash ? 'CASH' : 'PAID') : 'PENDING'}
                     </Text>
                   </View>
                 </View>
 
                 {isPaid && item.paid_at ? (
-                  <View style={s.paidRow}>
+                  <View style={styles.paidRow}>
                     <Ionicons name="checkmark-circle" size={13} color={Colors.success} />
-                    <Text style={s.paidText}>
+                    <Text style={styles.paidText}>
                       Paid on {new Date(item.paid_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                       {item.razorpay_payment_id && !isCash ? ` · ${item.razorpay_payment_id}` : ''}
                     </Text>
                   </View>
                 ) : null}
 
-                <View style={s.cardActions}>
+                <View style={styles.cardActions}>
                   {!isPaid && (
                     <TouchableOpacity
-                      style={s.payBtn}
+                      style={styles.payBtn}
                       onPress={() => payNow(item.id)}
                       disabled={paying === item.id}
                     >
                       {paying === item.id
                         ? <ActivityIndicator size="small" color={Colors.white} />
-                        : <Text style={s.payBtnText}>Pay Now</Text>}
+                        : <Text style={styles.payBtnText}>Pay Now</Text>}
                     </TouchableOpacity>
                   )}
                   {isPaid && (
                     <TouchableOpacity
-                      style={s.receiptBtn}
+                      style={styles.receiptBtn}
                       onPress={() => downloadReceipt(item.id)}
                       disabled={downloading === item.id}
                     >
@@ -182,7 +184,7 @@ export default function MyPaymentsScreen() {
                         ? <ActivityIndicator size="small" color={Colors.primary} />
                         : <>
                             <Ionicons name="download-outline" size={15} color={Colors.primary} />
-                            <Text style={s.receiptBtnText}>Receipt</Text>
+                            <Text style={styles.receiptBtnText}>{t('receipt')}</Text>
                           </>
                       }
                     </TouchableOpacity>
@@ -199,7 +201,7 @@ export default function MyPaymentsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
-  header: { backgroundColor: Colors.primary, paddingTop: 56, paddingBottom: 16, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  header: { backgroundColor: '#3B5FC0', paddingTop: 56, paddingBottom: 16, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
   headerTitle: { fontSize: 18, fontWeight: '800', color: Colors.white },
   summaryRow: { flexDirection: 'row', gap: 12, padding: 16, paddingBottom: 0 },

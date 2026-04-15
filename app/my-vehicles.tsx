@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
@@ -16,6 +17,7 @@ const TYPE_LABEL: Record<string, string> = { two_wheeler: 'Two Wheeler', four_wh
 
 export default function MyVehiclesScreen() {
   const router = useRouter();
+  const { t } = useLanguage();
   const [vehicles, setVehicles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -65,13 +67,13 @@ export default function MyVehiclesScreen() {
   
 
   return (
-    <View style={s.container}>
-      <View style={s.header}>
-        <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={Colors.white} />
         </TouchableOpacity>
-        <Text style={s.headerTitle}>My Vehicles</Text>
-        <TouchableOpacity onPress={() => setShowAdd(true)} style={s.addBtn}>
+        <Text style={styles.headerTitle}>{t('myVehicles')}</Text>
+        <TouchableOpacity onPress={() => setShowAdd(true)} style={styles.addBtn}>
           <Ionicons name="add" size={24} color={Colors.white} />
         </TouchableOpacity>
       </View>
@@ -82,23 +84,23 @@ export default function MyVehiclesScreen() {
         <FlatList
           data={vehicles}
           keyExtractor={i => i.id}
-          contentContainerStyle={s.list}
+          contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetch(); }} />}
           ListEmptyComponent={
-            <View style={s.empty}>
-              <Text style={s.emptyIcon}>🚗</Text>
-              <Text style={s.emptyTitle}>No vehicles added</Text>
-              <Text style={s.emptyText}>Tap + to register your vehicle</Text>
+            <View style={styles.empty}>
+              <Text style={styles.emptyIcon}>🚗</Text>
+              <Text style={styles.emptyTitle}>No vehicles added</Text>
+              <Text style={styles.emptyText}>Tap + to register your vehicle</Text>
             </View>
           }
           renderItem={({ item }) => (
-            <View style={s.card}>
-              <Text style={s.vehicleIcon}>{TYPE_ICON[item.vehicle_type] || '🚗'}</Text>
-              <View style={s.cardInfo}>
-                <Text style={s.vehicleNum}>{item.vehicle_number}</Text>
-                <Text style={s.vehicleType}>{TYPE_LABEL[item.vehicle_type] || item.vehicle_type}</Text>
+            <View style={styles.card}>
+              <Text style={styles.vehicleIcon}>{TYPE_ICON[item.vehicle_type] || '🚗'}</Text>
+              <View style={styles.cardInfo}>
+                <Text style={styles.vehicleNum}>{item.vehicle_number}</Text>
+                <Text style={styles.vehicleType}>{TYPE_LABEL[item.vehicle_type] || item.vehicle_type}</Text>
               </View>
-              <TouchableOpacity onPress={() => deleteVehicle(item.id, item.vehicle_number)} style={s.deleteBtn}>
+              <TouchableOpacity onPress={() => deleteVehicle(item.id, item.vehicle_number)} style={styles.deleteBtn}>
                 <Ionicons name="trash-outline" size={18} color={Colors.danger} />
               </TouchableOpacity>
             </View>
@@ -108,40 +110,40 @@ export default function MyVehiclesScreen() {
 
       {/* Add Vehicle Modal */}
       <Modal visible={showAdd} animationType="slide" presentationStyle="pageSheet">
-        <View style={s.modal}>
-          <View style={s.modalHeader}>
-            <Text style={s.modalTitle}>Add Vehicle</Text>
+        <View style={styles.modal}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>{t('addVehicle')}</Text>
             <TouchableOpacity onPress={() => setShowAdd(false)}>
               <Ionicons name="close" size={24} color={Colors.text} />
             </TouchableOpacity>
           </View>
           <ScrollView keyboardShouldPersistTaps="handled">
-            <Text style={s.label}>Vehicle Number *</Text>
+            <Text style={styles.label}>Vehicle Number *</Text>
             <TextInput
-              style={s.input}
+              style={styles.input}
               value={form.vehicle_number}
               onChangeText={v => setForm({ ...form, vehicle_number: v.toUpperCase() })}
               placeholder="e.g. GJ01AB1234"
               autoCapitalize="characters"
               placeholderTextColor={Colors.textMuted}
             />
-            <Text style={s.label}>Type *</Text>
-            <View style={s.typeRow}>
+            <Text style={styles.label}>Type *</Text>
+            <View style={styles.typeRow}>
               {['two_wheeler', 'four_wheeler'].map(t => (
                 <TouchableOpacity
                   key={t}
-                  style={[s.typeBtn, form.vehicle_type === t && s.typeBtnActive]}
+                  style={[styles.typeBtn, form.vehicle_type === t && styles.typeBtnActive]}
                   onPress={() => setForm({ ...form, vehicle_type: t })}
                 >
-                  <Text style={s.typeIcon}>{TYPE_ICON[t]}</Text>
-                  <Text style={[s.typeLabel, form.vehicle_type === t && { color: Colors.white }]}>
+                  <Text style={styles.typeIcon}>{TYPE_ICON[t]}</Text>
+                  <Text style={[styles.typeLabel, form.vehicle_type === t && { color: Colors.white }]}>
                     {TYPE_LABEL[t]}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
-            <TouchableOpacity style={s.submitBtn} onPress={addVehicle} disabled={submitting}>
-              {submitting ? <ActivityIndicator color="#fff" /> : <Text style={s.submitBtnText}>Add Vehicle</Text>}
+            <TouchableOpacity style={styles.submitBtn} onPress={addVehicle} disabled={submitting}>
+              {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>{t('addVehicle')}</Text>}
             </TouchableOpacity>
           </ScrollView>
         </View>
@@ -152,7 +154,7 @@ export default function MyVehiclesScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
-  header: { backgroundColor: Colors.primary, paddingTop: 56, paddingBottom: 16, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  header: { backgroundColor: '#3B5FC0', paddingTop: 56, paddingBottom: 16, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
   addBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
   headerTitle: { fontSize: 18, fontWeight: '800', color: Colors.white },

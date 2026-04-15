@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useLanguage } from '../../context/LanguageContext';
 import { Colors } from '../../constants/colors';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
@@ -32,6 +33,7 @@ function ActionCard({ icon, label, color, onPress }: { icon: string; label: stri
 
 export default function AdminScreen() {
   const router = useRouter();
+  const { t } = useLanguage();
   const [buildings, setBuildings] = useState<Building[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -226,7 +228,7 @@ export default function AdminScreen() {
                 </View>
                 <TouchableOpacity style={styles.membersBtn} onPress={() => openMembers(b)}>
                   <Ionicons name="people" size={14} color={Colors.primary} />
-                  <Text style={styles.membersBtnText}>Members</Text>
+                  <Text style={styles.membersBtnText}>{t('members')}</Text>
                 </TouchableOpacity>
               </View>
               <View style={styles.buildingActions}>
@@ -549,7 +551,7 @@ export default function AdminScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
-  header: { backgroundColor: Colors.primary, paddingTop: 56, paddingBottom: 20, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  header: { backgroundColor: '#3B5FC0', paddingTop: 56, paddingBottom: 20, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: 12 },
   backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
   headerTitle: { color: Colors.white, fontSize: 22, fontWeight: '800' },
   headerSub: { color: 'rgba(255,255,255,0.7)', fontSize: 13, marginTop: 2 },

@@ -145,7 +145,7 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
-  header: { backgroundColor: Colors.primary, paddingTop: 56, paddingBottom: 32, alignItems: 'center' },
+  header: { backgroundColor: '#3B5FC0', paddingTop: 56, paddingBottom: 32, alignItems: 'center' },
   avatarLarge: { width: 80, height: 80, borderRadius: 40, backgroundColor: Colors.accent, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
   avatarText: { fontSize: 36, fontWeight: '800', color: Colors.white },
   name: { fontSize: 22, fontWeight: '800', color: Colors.white },

@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
+import { useLanguage } from '../../context/LanguageContext';
 import { Colors } from '../../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TextInput,
@@ -27,6 +28,7 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 export default function MembersScreen() {
+  const { t } = useLanguage();
   const ROLE_COLOR: Record<string, string> = {
     pramukh: Colors.primary,
     user: Colors.success,
@@ -148,7 +150,7 @@ export default function MembersScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Members</Text>
+        <Text style={styles.headerTitle}>{t('members')}</Text>
         <Text style={styles.headerSub}>
           {filtered.length} of {members.length} members
           {selectedWing !== 'All' ? ` · Wing ${selectedWing}` : ''}
@@ -220,7 +222,7 @@ export default function MembersScreen() {
             <View style={styles.empty}>
               <Ionicons name="people-outline" size={52} color={Colors.border} />
               <Text style={styles.emptyTitle}>
-                {search || selectedWing !== 'All' ? 'No members found' : 'No members yet'}
+                {search || selectedWing !== 'All' ? t('noMembers') : t('noMembersYet')}
               </Text>
               {(search || selectedWing !== 'All') && (
                 <TouchableOpacity onPress={() => { setSearch(''); setSelectedWing('All'); }}>
@@ -239,8 +241,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
 
   header: {
-    backgroundColor: Colors.primary,
-    paddingTop: 56, paddingBottom: 20, paddingHorizontal: 20,
+    backgroundColor: '#3B5FC0', paddingTop: 56, paddingBottom: 20, paddingHorizontal: 20,
   },
   headerTitle: { color: Colors.white, fontSize: 22, fontWeight: '800' },
   headerSub: { color: 'rgba(255,255,255,0.75)', fontSize: 13, marginTop: 3 },
@@ -255,14 +256,15 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 14, color: Colors.text },
 
-  wingScroll: { maxHeight: 52 },
+  wingScroll: { flexGrow: 0 },
   wingRow: {
-    paddingHorizontal: 16, paddingVertical: 8, gap: 8, flexDirection: 'row',
+    paddingHorizontal: 16, paddingVertical: 10, gap: 8,
+    flexDirection: 'row', alignItems: 'center',
   },
   wingChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     borderWidth: 1.5, borderColor: Colors.border,
-    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8,
     backgroundColor: Colors.white,
   },
   wingChipActive: {
@@ -271,11 +273,11 @@ const styles = StyleSheet.create({
   wingChipText: { fontSize: 13, fontWeight: '600', color: Colors.text },
   wingChipTextActive: { color: Colors.white },
   wingCount: {
-    backgroundColor: Colors.bg, borderRadius: 10,
-    paddingHorizontal: 6, paddingVertical: 1, minWidth: 20, alignItems: 'center',
+    backgroundColor: '#E8EEF9', borderRadius: 10,
+    paddingHorizontal: 7, paddingVertical: 2, minWidth: 22, alignItems: 'center',
   },
-  wingCountActive: { backgroundColor: 'rgba(255,255,255,0.25)' },
-  wingCountText: { fontSize: 11, fontWeight: '700', color: Colors.textMuted },
+  wingCountActive: { backgroundColor: 'rgba(255,255,255,0.3)' },
+  wingCountText: { fontSize: 11, fontWeight: '800', color: Colors.primary },
   wingCountTextActive: { color: Colors.white },
 
   list: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 32 },

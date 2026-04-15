@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
@@ -53,6 +54,7 @@ function getProfessionColor(profession: string): string {
 export default function HelplineScreen() {
   const { user } = useAuth();
   const router = useRouter();
+  const { t } = useLanguage();
   const isAdmin = user?.role === 'admin';
   const isPramukh = user?.role === 'pramukh';
   const canManage = isAdmin || isPramukh;
@@ -194,7 +196,7 @@ export default function HelplineScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={Colors.white} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Helpline Numbers</Text>
+        <Text style={styles.headerTitle}>{t('helplineNumbers')}</Text>
         {canManage ? (
           <TouchableOpacity onPress={() => setShowAdd(true)} style={styles.addBtn}>
             <Ionicons name="add" size={24} color={Colors.white} />
@@ -245,7 +247,7 @@ export default function HelplineScreen() {
       <Modal visible={showAdd} animationType="slide" presentationStyle="pageSheet">
         <View style={styles.modal}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Add Helpline Number</Text>
+            <Text style={styles.modalTitle}>{t('addHelpline')}</Text>
             <TouchableOpacity onPress={() => { setShowAdd(false); setForm({ profession: '', name: '', phone: '' }); }}>
               <Ionicons name="close" size={24} color={Colors.text} />
             </TouchableOpacity>
@@ -309,7 +311,7 @@ export default function HelplineScreen() {
       <Modal visible={!!editItem} animationType="slide" presentationStyle="pageSheet">
         <View style={styles.modal}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Edit Helpline Number</Text>
+            <Text style={styles.modalTitle}>{t('editHelpline')}</Text>
             <TouchableOpacity onPress={() => setEditItem(null)}>
               <Ionicons name="close" size={24} color={Colors.text} />
             </TouchableOpacity>
@@ -337,7 +339,7 @@ export default function HelplineScreen() {
           <TextInput style={styles.input} value={editForm.phone} onChangeText={v => setEditForm(f => ({ ...f, phone: v }))} placeholder="e.g. 9876543210" keyboardType="phone-pad" maxLength={15} placeholderTextColor={Colors.textMuted} />
 
           <TouchableOpacity style={[styles.submitBtn, { backgroundColor: Colors.primary }]} onPress={updateHelpline} disabled={submitting}>
-            {submitting ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.submitBtnText}>Save Changes</Text>}
+            {submitting ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.submitBtnText}>{t('saveChanges')}</Text>}
           </TouchableOpacity>
         </View>
 
@@ -371,7 +373,7 @@ export default function HelplineScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
-  header: { backgroundColor: Colors.primary, paddingTop: 52, paddingBottom: 16, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  header: { backgroundColor: '#3B5FC0', paddingTop: 52, paddingBottom: 16, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
   headerTitle: { fontSize: 18, fontWeight: '800', color: Colors.white },
   addBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 10 },

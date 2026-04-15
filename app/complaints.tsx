@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, SectionList, TouchableOpacity, TextInput,
@@ -37,6 +38,7 @@ export default function ComplaintsScreen() {
   const isPramukh = user?.role === 'pramukh';
   const isAdmin = user?.role === 'admin';
   const router = useRouter();
+  const { t } = useLanguage();
   const { logEvent } = useActivityLog();
   const { mine, view } = useLocalSearchParams<{ mine?: string; view?: string }>();
 
@@ -236,7 +238,10 @@ export default function ComplaintsScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <View>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Ionicons name="arrow-back" size={22} color={Colors.white} />
+        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>{screenTitle}</Text>
           <Text style={styles.headerSub}>{complaints.length} total complaint{complaints.length !== 1 ? 's' : ''}</Text>
         </View>
@@ -508,7 +513,7 @@ export default function ComplaintsScreen() {
               >
                 {updating
                   ? <ActivityIndicator color={Colors.white} />
-                  : <Text style={styles.submitBtnText}>Save Changes</Text>
+                  : <Text style={styles.submitBtnText}>{t('saveChanges')}</Text>
                 }
               </TouchableOpacity>
             </ScrollView>
@@ -535,10 +540,11 @@ const styles = StyleSheet.create({
 
   // Header
   header: {
-    backgroundColor: Colors.primary,
-    paddingTop: 54, paddingBottom: 20, paddingHorizontal: 20,
+    backgroundColor: '#3B5FC0', paddingTop: 54, paddingBottom: 20, paddingHorizontal: 20,
+    flexDirection: 'row', alignItems: 'flex-start', gap: 12,
   },
-  headerTitle: { fontSize: 24, fontWeight: '800', color: Colors.white },
+  backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center', marginTop: 2 },
+  headerTitle: { fontSize: 22, fontWeight: '800', color: Colors.white },
   headerSub: { fontSize: 13, color: 'rgba(255,255,255,0.65)', marginTop: 2 },
 
   // Summary row

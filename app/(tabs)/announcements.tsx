@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useLanguage } from '../../context/LanguageContext';
 import { Colors } from '../../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput,
@@ -15,6 +16,7 @@ import { useMarkNotificationsRead } from '../../hooks/useMarkNotificationsRead';
 export default function AnnouncementsScreen() {
   const { user } = useAuth();
   const router = useRouter();
+  const { t } = useLanguage();
   const isAdmin = user?.role === 'admin';
 
   useMarkNotificationsRead(['announcement', 'announcement_urgent']);
@@ -97,7 +99,7 @@ export default function AnnouncementsScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={Colors.white} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Announcements</Text>
+        <Text style={styles.headerTitle}>{t('announcements')}</Text>
         {canPost ? (
           <TouchableOpacity style={styles.addBtn} onPress={() => setShowAdd(true)}>
             <Ionicons name="add" size={22} color={Colors.white} />
@@ -129,7 +131,7 @@ export default function AnnouncementsScreen() {
       <Modal visible={showAdd} animationType="slide" presentationStyle="pageSheet">
         <View style={styles.modal}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>New Announcement</Text>
+            <Text style={styles.modalTitle}>{t('newAnnouncement')}</Text>
             <TouchableOpacity onPress={() => setShowAdd(false)}>
               <Ionicons name="close" size={24} color={Colors.text} />
             </TouchableOpacity>
@@ -153,7 +155,7 @@ export default function AnnouncementsScreen() {
               ))}
             </View>
             <TouchableOpacity style={styles.submitBtn} onPress={postAnnouncement} disabled={submitting}>
-              {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>Post Announcement</Text>}
+              {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>{t('postAnnouncement')}</Text>}
             </TouchableOpacity>
           </ScrollView>
         </View>
@@ -164,7 +166,7 @@ export default function AnnouncementsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
-  header: { backgroundColor: Colors.primary, paddingTop: 56, paddingBottom: 16, paddingHorizontal: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  header: { backgroundColor: '#3B5FC0', paddingTop: 56, paddingBottom: 16, paddingHorizontal: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   headerTitle: { flex: 1, color: Colors.white, fontSize: 22, fontWeight: '800', textAlign: 'center' },
   addBtn: { backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 10, padding: 8 },
   backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },

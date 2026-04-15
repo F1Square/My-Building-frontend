@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
+import { useLanguage } from '../../context/LanguageContext';
 import { Colors } from '../../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput,
@@ -26,6 +27,7 @@ const CATEGORIES = ['Maintenance', 'Salary', 'Repair', 'Cleaning', 'Security', '
 export default function ExpensesScreen() {
   const { user } = useAuth();
   const router = useRouter();
+  const { t } = useLanguage();
   const isAdmin   = user?.role === 'admin';
   const isPramukh = user?.role === 'pramukh';
   const canManage = isPramukh || isAdmin;
@@ -224,7 +226,7 @@ export default function ExpensesScreen() {
           <Ionicons name="arrow-back" size={22} color={Colors.white} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Expenses</Text>
+          <Text style={styles.headerTitle}>{t('expenses')}</Text>
           <Text style={styles.headerSub}>Society Fund Tracker</Text>
         </View>
         <View style={styles.headerActions}>
@@ -424,7 +426,7 @@ export default function ExpensesScreen() {
                   {isAdmin && (
                     <TouchableOpacity style={styles.detailDeleteBtn} onPress={() => { setShowDetail(null); deleteEntry(showDetail.id); }}>
                       <Ionicons name="trash-outline" size={16} color={Colors.danger} />
-                      <Text style={styles.detailDeleteBtnText}>Delete</Text>
+                      <Text style={styles.detailDeleteBtnText}>{t('delete')}</Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -558,7 +560,7 @@ export default function ExpensesScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
-  header: { backgroundColor: Colors.primary, paddingTop: 56, paddingBottom: 16, paddingHorizontal: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  header: { backgroundColor: '#3B5FC0', paddingTop: 56, paddingBottom: 16, paddingHorizontal: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   headerTitle: { color: Colors.white, fontSize: 22, fontWeight: '800' },
   headerSub: { color: 'rgba(255,255,255,0.7)', fontSize: 13, marginTop: 2 },
   headerActions: { flexDirection: 'row', gap: 8 },

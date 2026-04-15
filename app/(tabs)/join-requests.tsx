@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useLanguage } from '../../context/LanguageContext';
 import { Colors } from '../../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
@@ -9,6 +10,7 @@ import api from '../../utils/api';
 import { useMarkNotificationsRead } from '../../hooks/useMarkNotificationsRead';
 
 export default function JoinRequestsScreen() {
+  const { t } = useLanguage();
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -59,7 +61,7 @@ export default function JoinRequestsScreen() {
         >
           {handlingId === item.id + 'approve'
             ? <ActivityIndicator size="small" color={Colors.white} />
-            : <><Ionicons name="checkmark" size={18} color={Colors.white} /><Text style={styles.btnText}>Approve</Text></>
+            : <><Ionicons name="checkmark" size={18} color={Colors.white} /><Text style={styles.btnText}>{t('approve')}</Text></>
           }
         </TouchableOpacity>
         <TouchableOpacity
@@ -69,7 +71,7 @@ export default function JoinRequestsScreen() {
         >
           {handlingId === item.id + 'reject'
             ? <ActivityIndicator size="small" color={Colors.white} />
-            : <><Ionicons name="close" size={18} color={Colors.white} /><Text style={styles.btnText}>Reject</Text></>
+            : <><Ionicons name="close" size={18} color={Colors.white} /><Text style={styles.btnText}>{t('reject')}</Text></>
           }
         </TouchableOpacity>
       </View>
@@ -81,7 +83,7 @@ export default function JoinRequestsScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Join Requests</Text>
+        <Text style={styles.headerTitle}>{t('joinRequestsTitle')}</Text>
       </View>
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} size="large" color={Colors.primary} />
@@ -106,7 +108,7 @@ export default function JoinRequestsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
-  header: { backgroundColor: Colors.primary, paddingTop: 56, paddingBottom: 16, paddingHorizontal: 20 },
+  header: { backgroundColor: '#3B5FC0', paddingTop: 56, paddingBottom: 16, paddingHorizontal: 20 },
   headerTitle: { color: Colors.white, fontSize: 22, fontWeight: '800' },
   card: { backgroundColor: Colors.white, borderRadius: 14, padding: 16, marginBottom: 12, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
   cardInfo: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },

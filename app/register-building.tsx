@@ -102,9 +102,9 @@ const tog = StyleSheet.create({
 function SelectField({ label, value, placeholder, onPress }: { label: string; value: string; placeholder: string; onPress: () => void }) {
   return (
     <View style={{ marginBottom: 14 }}>
-      <Text style={s.label}>{label}</Text>
-      <TouchableOpacity style={s.select} onPress={onPress}>
-        <Text style={[s.selectText, !value && { color: Colors.textMuted }]}>{value || placeholder}</Text>
+      <Text style={styles.label}>{label}</Text>
+      <TouchableOpacity style={styles.select} onPress={onPress}>
+        <Text style={[styles.selectText, !value && { color: Colors.textMuted }]}>{value || placeholder}</Text>
         <Ionicons name="chevron-down" size={16} color={Colors.textMuted} />
       </TouchableOpacity>
     </View>
@@ -162,63 +162,63 @@ export default function RegisterBuildingScreen() {
   
 
   return (
-    <View style={s.container}>
+    <View style={styles.container}>
       {/* Header */}
-      <View style={s.header}>
-        <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={Colors.white} />
         </TouchableOpacity>
-        <Text style={s.headerTitle}>Register Your Building</Text>
+        <Text style={styles.headerTitle}>Register Your Building</Text>
         <View style={{ width: 36 }} />
       </View>
 
       {/* Step indicator */}
-      <View style={s.stepBar}>
+      <View style={styles.stepBar}>
         {STEPS.map((st, i) => (
-          <View key={st} style={s.stepItem}>
-            <View style={[s.stepDot, i <= step && s.stepDotActive]}>
+          <View key={st} style={styles.stepItem}>
+            <View style={[styles.stepDot, i <= step && styles.stepDotActive]}>
               {i < step
                 ? <Ionicons name="checkmark" size={12} color={Colors.white} />
-                : <Text style={[s.stepNum, i === step && s.stepNumActive]}>{i + 1}</Text>}
+                : <Text style={[styles.stepNum, i === step && styles.stepNumActive]}>{i + 1}</Text>}
             </View>
-            <Text style={[s.stepLabel, i === step && s.stepLabelActive]}>{st}</Text>
+            <Text style={[styles.stepLabel, i === step && styles.stepLabelActive]}>{st}</Text>
           </View>
         ))}
       </View>
 
-      <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
 
         {/* ── Step 0: Basic Info ── */}
         {step === 0 && (
-          <View style={s.card}>
-            <Text style={s.cardTitle}>Basic Information</Text>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Basic Information</Text>
             <SelectField label="Society Type *" value={form.society_type} placeholder="Select type" onPress={() => openPicker('society_type', 'Society Type', SOCIETY_TYPES)} />
-            <Text style={s.label}>Society Name *</Text>
-            <TextInput style={s.input} value={form.society_name} onChangeText={v => set('society_name', v)} placeholder="e.g. Yamuna Park Society" placeholderTextColor={Colors.textMuted} />
-            <Text style={s.label}>Total Wings *</Text>
-            <TextInput style={s.input} value={form.total_wings} onChangeText={v => set('total_wings', v)} placeholder="e.g. 4" keyboardType="numeric" placeholderTextColor={Colors.textMuted} />
+            <Text style={styles.label}>Society Name *</Text>
+            <TextInput style={styles.input} value={form.society_name} onChangeText={v => set('society_name', v)} placeholder="e.g. Yamuna Park Society" placeholderTextColor={Colors.textMuted} />
+            <Text style={styles.label}>Total Wings *</Text>
+            <TextInput style={styles.input} value={form.total_wings} onChangeText={v => set('total_wings', v)} placeholder="e.g. 4" keyboardType="numeric" placeholderTextColor={Colors.textMuted} />
           </View>
         )}
 
         {/* ── Step 1: Location ── */}
         {step === 1 && (
-          <View style={s.card}>
-            <Text style={s.cardTitle}>Location Details</Text>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Location Details</Text>
             <SelectField label="State *" value={form.state} placeholder="Select state" onPress={() => openPicker('state', 'Select State', ALL_STATES)} />
             <SelectField label="City *" value={form.city} placeholder={form.state ? 'Select city' : 'Select state first'} onPress={() => form.state && openPicker('city', 'Select City', STATES_CITIES[form.state] || [])} />
-            <Text style={s.label}>Pincode *</Text>
-            <TextInput style={s.input} value={form.pincode} onChangeText={v => set('pincode', v)} placeholder="e.g. 395004" keyboardType="numeric" maxLength={6} placeholderTextColor={Colors.textMuted} />
-            <Text style={s.label}>Full Address *</Text>
-            <TextInput style={[s.input, { height: 80, textAlignVertical: 'top' }]} value={form.address} onChangeText={v => set('address', v)} placeholder="Street, Area, Landmark..." multiline placeholderTextColor={Colors.textMuted} />
+            <Text style={styles.label}>Pincode *</Text>
+            <TextInput style={styles.input} value={form.pincode} onChangeText={v => set('pincode', v)} placeholder="e.g. 395004" keyboardType="numeric" maxLength={6} placeholderTextColor={Colors.textMuted} />
+            <Text style={styles.label}>Full Address *</Text>
+            <TextInput style={[styles.input, { height: 80, textAlignVertical: 'top' }]} value={form.address} onChangeText={v => set('address', v)} placeholder="Street, Area, Landmark..." multiline placeholderTextColor={Colors.textMuted} />
           </View>
         )}
 
         {/* ── Step 2: Financials ── */}
         {step === 2 && (
-          <View style={s.card}>
-            <Text style={s.cardTitle}>Financial Details</Text>
-            <Text style={s.label}>Late Fee for Overdue Maintenance (₹)</Text>
-            <TextInput style={s.input} value={form.late_fee} onChangeText={v => set('late_fee', v)} placeholder="e.g. 100 (leave blank if none)" keyboardType="numeric" placeholderTextColor={Colors.textMuted} />
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Financial Details</Text>
+            <Text style={styles.label}>Late Fee for Overdue Maintenance (₹)</Text>
+            <TextInput style={styles.input} value={form.late_fee} onChangeText={v => set('late_fee', v)} placeholder="e.g. 100 (leave blank if none)" keyboardType="numeric" placeholderTextColor={Colors.textMuted} />
             <View style={{ marginTop: 8 }}>
               <Toggle label="Is maintenance amount fixed?" value={form.maintenance_fixed} onChange={v => set('maintenance_fixed', v)} />
               <Toggle label="Is water bill separate?" value={form.water_bill_separate} onChange={v => set('water_bill_separate', v)} />
@@ -228,11 +228,11 @@ export default function RegisterBuildingScreen() {
 
         {/* ── Step 3: Payment ── */}
         {step === 3 && (
-          <View style={s.card}>
-            <Text style={s.cardTitle}>Payment Details</Text>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Payment Details</Text>
             <SelectField label="Maintenance Payment Method *" value={form.payment_method} placeholder="Select method" onPress={() => openPicker('payment_method', 'Payment Method', PAYMENT_METHODS)} />
-            <View style={s.summaryBox}>
-              <Text style={s.summaryTitle}>Summary</Text>
+            <View style={styles.summaryBox}>
+              <Text style={styles.summaryTitle}>Summary</Text>
               {[
                 ['Society', form.society_name],
                 ['Type', form.society_type],
@@ -240,9 +240,9 @@ export default function RegisterBuildingScreen() {
                 ['Location', `${form.city}, ${form.state}`],
                 ['Pincode', form.pincode],
               ].map(([k, v]) => (
-                <View key={k} style={s.summaryRow}>
-                  <Text style={s.summaryKey}>{k}</Text>
-                  <Text style={s.summaryVal}>{v}</Text>
+                <View key={k} style={styles.summaryRow}>
+                  <Text style={styles.summaryKey}>{k}</Text>
+                  <Text style={styles.summaryVal}>{v}</Text>
                 </View>
               ))}
             </View>
@@ -250,22 +250,22 @@ export default function RegisterBuildingScreen() {
         )}
 
         {/* Navigation */}
-        <View style={s.navRow}>
+        <View style={styles.navRow}>
           {step > 0 && (
-            <TouchableOpacity style={s.backNavBtn} onPress={() => setStep(s => s - 1)}>
+            <TouchableOpacity style={styles.backNavBtn} onPress={() => setStep(s => s - 1)}>
               <Ionicons name="arrow-back" size={18} color={Colors.primary} />
-              <Text style={s.backNavText}>Back</Text>
+              <Text style={styles.backNavText}>Back</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity
-            style={[s.nextBtn, !canNext() && s.nextBtnDisabled, step === 0 && { marginLeft: 'auto' }]}
+            style={[styles.nextBtn, !canNext() && styles.nextBtnDisabled, step === 0 && { marginLeft: 'auto' }]}
             onPress={() => step < STEPS.length - 1 ? setStep(s => s + 1) : submit()}
             disabled={!canNext() || submitting}
           >
             {submitting
               ? <ActivityIndicator color={Colors.white} />
               : <>
-                  <Text style={s.nextBtnText}>{step === STEPS.length - 1 ? 'Submit Request' : 'Next'}</Text>
+                  <Text style={styles.nextBtnText}>{step === STEPS.length - 1 ? 'Submit Request' : 'Next'}</Text>
                   {step < STEPS.length - 1 && <Ionicons name="arrow-forward" size={18} color={Colors.white} />}
                 </>}
           </TouchableOpacity>
@@ -293,7 +293,7 @@ export default function RegisterBuildingScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
-  header: { backgroundColor: Colors.primary, paddingTop: 52, paddingBottom: 16, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  header: { backgroundColor: '#3B5FC0', paddingTop: 52, paddingBottom: 16, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
   headerTitle: { fontSize: 17, fontWeight: '800', color: Colors.white },
   stepBar: { flexDirection: 'row', backgroundColor: Colors.white, paddingVertical: 14, paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: Colors.border },

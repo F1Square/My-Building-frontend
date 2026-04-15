@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { useLanguage } from '../../context/LanguageContext';
 import { Colors } from '../../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
@@ -27,6 +28,7 @@ function toLocalDateStr(date: Date) {
 export default function VisitorsScreen() {
   const { user } = useAuth();
   const router = useRouter();
+  const { t } = useLanguage();
   const isAdmin = user?.role === 'admin';
   const isPramukh = user?.role === 'pramukh';
 
@@ -218,7 +220,7 @@ export default function VisitorsScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={Colors.white} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Visitors</Text>
+        <Text style={styles.headerTitle}>{t('visitors')}</Text>
         <TouchableOpacity style={styles.qrBtn} onPress={shareQR}>
           <Ionicons name="qr-code" size={18} color={Colors.white} />
           <Text style={styles.qrBtnText}>Share QR</Text>
@@ -259,7 +261,7 @@ export default function VisitorsScreen() {
           <View style={styles.emptyBox}>
             <Ionicons name="people-outline" size={40} color={Colors.border} />
             <Text style={styles.empty}>
-              {isAdmin && !selectedBuilding ? 'Select a building to view visitors' : 'No visitors on this day'}
+              {isAdmin && !selectedBuilding ? t('selectBuildingToView') : t('noVisitors')}
             </Text>
           </View>
         ) : (
@@ -329,7 +331,7 @@ export default function VisitorsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
-  header: { backgroundColor: Colors.primary, paddingTop: 56, paddingBottom: 16, paddingHorizontal: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  header: { backgroundColor: '#3B5FC0', paddingTop: 56, paddingBottom: 16, paddingHorizontal: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   headerTitle: { color: Colors.white, fontSize: 22, fontWeight: '800' },
   backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center', marginRight: 4 },
   qrBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },

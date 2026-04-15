@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useLanguage } from '../../context/LanguageContext';
 import { Colors } from '../../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput,
@@ -114,6 +115,7 @@ const makeDdStyles = (Colors: any) => StyleSheet.create({
 export default function ParkingScreen() {
   const { user } = useAuth();
   const router = useRouter();
+  const { t } = useLanguage();
   const isAdmin = user?.role === 'admin';
   const params = useLocalSearchParams<{ building_id?: string; building_name?: string }>();
 
@@ -267,7 +269,7 @@ export default function ParkingScreen() {
         <View style={styles.cardFooterRow}>
           <TouchableOpacity style={styles.reminderBtn} onPress={() => sendReminder(item.vehicle_number)}>
             <Ionicons name="notifications-outline" size={14} color={Colors.warning} />
-            <Text style={styles.reminderBtnText}>Send Reminder</Text>
+            <Text style={styles.reminderBtnText}>{t('sendReminder')}</Text>
           </TouchableOpacity>
           {isAdmin && (
             <View style={styles.adminBtns}>
@@ -309,7 +311,7 @@ export default function ParkingScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={Colors.white} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Parking</Text>
+        <Text style={styles.headerTitle}>{t('parking')}</Text>
         <View style={styles.headerActions}>
           {user?.role === 'user' && (
             <TouchableOpacity style={styles.headerBtn} onPress={() => setShowAddVehicle(true)}>
@@ -318,7 +320,7 @@ export default function ParkingScreen() {
           )}
           <TouchableOpacity style={styles.headerReportBtn} onPress={() => setShowReport(true)}>
             <Ionicons name="warning" size={16} color={Colors.white} />
-            <Text style={styles.headerReportBtnText}>Report</Text>
+            <Text style={styles.headerReportBtnText}>{t('report')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -339,10 +341,10 @@ export default function ParkingScreen() {
       {/* Tabs */}
       <View style={styles.tabRow}>
         <TouchableOpacity style={[styles.tabBtn, tab === 'vehicles' && styles.tabBtnActive]} onPress={() => setTab('vehicles')}>
-          <Text style={[styles.tabBtnText, tab === 'vehicles' && styles.tabBtnTextActive]}>Vehicles</Text>
+          <Text style={[styles.tabBtnText, tab === 'vehicles' && styles.tabBtnTextActive]}>{t('vehicles')}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.tabBtn, tab === 'reports' && styles.tabBtnActive]} onPress={() => setTab('reports')}>
-          <Text style={[styles.tabBtnText, tab === 'reports' && styles.tabBtnTextActive]}>Reports</Text>
+          <Text style={[styles.tabBtnText, tab === 'reports' && styles.tabBtnTextActive]}>{t('reports')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -372,8 +374,8 @@ export default function ParkingScreen() {
           ListEmptyComponent={
             <Text style={styles.empty}>
               {isAdmin && !selectedBuilding
-                ? 'Select a building to view data'
-                : tab === 'vehicles' ? 'No vehicles registered' : 'No parking reports'}
+                ? t('selectBuildingToView')
+                : tab === 'vehicles' ? t('noVehicles') : t('noReports')}
             </Text>
           }
         />
@@ -383,7 +385,7 @@ export default function ParkingScreen() {
       <Modal visible={showAddVehicle} animationType="slide" presentationStyle="pageSheet">
         <View style={styles.modal}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Add Vehicle</Text>
+            <Text style={styles.modalTitle}>{t('addVehicle')}</Text>
             <TouchableOpacity onPress={() => setShowAddVehicle(false)}>
               <Ionicons name="close" size={24} color={Colors.text} />
             </TouchableOpacity>
@@ -403,7 +405,7 @@ export default function ParkingScreen() {
             ))}
           </View>
           <TouchableOpacity style={styles.submitBtn} onPress={addVehicle} disabled={submitting}>
-            {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>Add Vehicle</Text>}
+            {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>{t('addVehicle')}</Text>}
           </TouchableOpacity>
         </View>
       </Modal>
@@ -435,7 +437,7 @@ export default function ParkingScreen() {
               ))}
             </View>
             <TouchableOpacity style={styles.submitBtn} onPress={saveAdminEdit} disabled={submitting}>
-              {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>Save Changes</Text>}
+              {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>{t('saveChanges')}</Text>}
             </TouchableOpacity>
           </View>
         )}
@@ -445,7 +447,7 @@ export default function ParkingScreen() {
       <Modal visible={showReport} animationType="slide" presentationStyle="pageSheet">
         <View style={styles.modal}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Report Misparking</Text>
+            <Text style={styles.modalTitle}>{t('reportMisparking')}</Text>
             <TouchableOpacity onPress={() => { setShowReport(false); setReportForm({ description: '', vehicle_number: '', location: '' }); setReportBuilding(null); }}>
               <Ionicons name="close" size={24} color={Colors.text} />
             </TouchableOpacity>
@@ -518,7 +520,7 @@ export default function ParkingScreen() {
                 ? <ActivityIndicator color="#fff" />
                 : <>
                     <Ionicons name="warning-outline" size={18} color={Colors.white} />
-                    <Text style={styles.submitBtnText}>Submit Report</Text>
+                    <Text style={styles.submitBtnText}>{t('submitReport')}</Text>
                   </>
               }
             </TouchableOpacity>
@@ -531,7 +533,7 @@ export default function ParkingScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
-  header: { backgroundColor: Colors.primary, paddingTop: 56, paddingBottom: 16, paddingHorizontal: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  header: { backgroundColor: '#3B5FC0', paddingTop: 56, paddingBottom: 16, paddingHorizontal: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   headerTitle: { color: Colors.white, fontSize: 22, fontWeight: '800' },
   headerActions: { flexDirection: 'row', gap: 8 },
   headerBtn: { backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 10, padding: 8 },

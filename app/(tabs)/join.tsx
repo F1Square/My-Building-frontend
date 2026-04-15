@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLanguage } from '../../context/LanguageContext';
 import { Colors } from '../../constants/colors';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
@@ -12,6 +13,7 @@ import api from '../../utils/api';
 export default function JoinBuildingScreen() {
   const { user, refreshUser } = useAuth();
   const router = useRouter();
+  const { t } = useLanguage();
   const [buildingId, setBuildingId] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -142,7 +144,7 @@ export default function JoinBuildingScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
   header: {
-    backgroundColor: Colors.primary, paddingTop: 56, paddingBottom: 16,
+    backgroundColor: '#3B5FC0', paddingTop: 56, paddingBottom: 16,
     paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: 12,
   },
   backBtn: { padding: 4 },

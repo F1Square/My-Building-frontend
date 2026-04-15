@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert,
@@ -51,6 +52,7 @@ export default function SubscribeScreen() {
   ];
   const { user, subscription, hasActiveSubscription, refreshSubscription } = useAuth();
   const router = useRouter();
+  const { t } = useLanguage();
   const [tab, setTab] = useState<'my-plan' | 'explore'>(hasActiveSubscription ? 'my-plan' : 'explore');
   const [loading, setLoading] = useState<string | null>(null);
   const [promoCode, setPromoCode] = useState('');
@@ -121,95 +123,95 @@ export default function SubscribeScreen() {
   
 
   return (
-    <View style={s.container}>
+    <View style={styles.container}>
       {/* Header */}
-      <View style={s.header}>
-        <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={Colors.white} />
         </TouchableOpacity>
-        <Text style={s.headerTitle}>Subscription</Text>
+        <Text style={styles.headerTitle}>Subscription</Text>
         <View style={{ width: 36 }} />
       </View>
 
       {/* Tabs */}
-      <View style={s.tabBar}>
-        <TouchableOpacity style={[s.tab, tab === 'my-plan' && s.tabActive]} onPress={() => setTab('my-plan')}>
-          <Text style={[s.tabText, tab === 'my-plan' && s.tabTextActive]}>My Plan</Text>
+      <View style={styles.tabBar}>
+        <TouchableOpacity style={[styles.tab, tab === 'my-plan' && styles.tabActive]} onPress={() => setTab('my-plan')}>
+          <Text style={[styles.tabText, tab === 'my-plan' && styles.tabTextActive]}>My Plan</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[s.tab, tab === 'explore' && s.tabActive]} onPress={() => setTab('explore')}>
-          <Text style={[s.tabText, tab === 'explore' && s.tabTextActive]}>Explore Plans</Text>
+        <TouchableOpacity style={[styles.tab, tab === 'explore' && styles.tabActive]} onPress={() => setTab('explore')}>
+          <Text style={[styles.tabText, tab === 'explore' && styles.tabTextActive]}>Explore Plans</Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
         {/* ── My Plan Tab ── */}
         {tab === 'my-plan' && (
           <>
             {hasActiveSubscription && subscription ? (
-              <View style={s.activePlanCard}>
-                <View style={s.activePlanTop}>
-                  <View style={[s.planIconBox, { backgroundColor: planColor + '20' }]}>
+              <View style={styles.activePlanCard}>
+                <View style={styles.activePlanTop}>
+                  <View style={[styles.planIconBox, { backgroundColor: planColor + '20' }]}>
                     <Ionicons name={planIcon as any} size={28} color={planColor} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={s.activePlanTitle}>{planLabel}</Text>
-                    <View style={s.activeBadge}>
-                      <View style={s.activeDot} />
-                      <Text style={s.activeBadgeText}>Active</Text>
+                    <Text style={styles.activePlanTitle}>{planLabel}</Text>
+                    <View style={styles.activeBadge}>
+                      <View style={styles.activeDot} />
+                      <Text style={styles.activeBadgeText}>{t('active')}</Text>
                     </View>
                   </View>
-                  <Text style={s.activePlanPrice}>{planPrice}</Text>
+                  <Text style={styles.activePlanPrice}>{planPrice}</Text>
                 </View>
 
-                <View style={s.divider} />
+                <View style={styles.divider} />
 
                 {isLifetime ? (
-                  <View style={s.infoRow}>
+                  <View style={styles.infoRow}>
                     <Ionicons name="infinite" size={16} color={Colors.success} />
-                    <Text style={s.infoText}>Never expires — you're set for life</Text>
+                    <Text style={styles.infoText}>Never expires — you're set for life</Text>
                   </View>
                 ) : (
-                  <View style={s.infoRow}>
+                  <View style={styles.infoRow}>
                     <Ionicons name="time-outline" size={16} color={daysLeft && daysLeft <= 5 ? Colors.danger : Colors.primary} />
-                    <Text style={[s.infoText, daysLeft !== null && daysLeft <= 5 ? { color: Colors.danger } : undefined]}>
+                    <Text style={[styles.infoText, daysLeft !== null && daysLeft <= 5 ? { color: Colors.danger } : undefined]}>
                       {daysLeft !== null && daysLeft > 0 ? `${daysLeft} day${daysLeft !== 1 ? 's' : ''} remaining` : 'Expires today'}
                     </Text>
                   </View>
                 )}
 
                 {expiresAt && (
-                  <View style={s.infoRow}>
+                  <View style={styles.infoRow}>
                     <Ionicons name="calendar-outline" size={16} color={Colors.textMuted} />
-                    <Text style={s.infoText}>Renews on {expiresAt.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</Text>
+                    <Text style={styles.infoText}>Renews on {expiresAt.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</Text>
                   </View>
                 )}
 
-                <View style={s.infoRow}>
+                <View style={styles.infoRow}>
                   <Ionicons name="checkmark-circle" size={16} color={Colors.success} />
-                  <Text style={s.infoText}>All modules unlocked</Text>
+                  <Text style={styles.infoText}>All modules unlocked</Text>
                 </View>
 
                 {!isLifetime && (
-                  <TouchableOpacity style={s.upgradeBtn} onPress={() => setTab('explore')}>
+                  <TouchableOpacity style={styles.upgradeBtn} onPress={() => setTab('explore')}>
                     <Ionicons name="arrow-up-circle-outline" size={18} color={Colors.success} />
-                    <Text style={s.upgradeBtnText}>
+                    <Text style={styles.upgradeBtnText}>
                       {isYearly ? 'Upgrade to Lifetime' : 'Upgrade Plan'}
                     </Text>
                   </TouchableOpacity>
                 )}
               </View>
             ) : (
-              <View style={s.noSubCard}>
+              <View style={styles.noSubCard}>
                 <Ionicons name="lock-closed-outline" size={48} color={Colors.border} style={{ marginBottom: 12 }} />
-                <Text style={s.noSubTitle}>{isExpired ? 'Subscription Expired' : 'No Active Subscription'}</Text>
-                <Text style={s.noSubDesc}>
+                <Text style={styles.noSubTitle}>{isExpired ? 'Subscription Expired' : 'No Active Subscription'}</Text>
+                <Text style={styles.noSubDesc}>
                   {isExpired
                     ? 'Your plan has expired. Renew to regain access to all modules.'
                     : 'Subscribe to unlock all features and modules.'}
                 </Text>
-                <TouchableOpacity style={s.exploreBtn} onPress={() => setTab('explore')}>
-                  <Text style={s.exploreBtnText}>View Plans</Text>
+                <TouchableOpacity style={styles.exploreBtn} onPress={() => setTab('explore')}>
+                  <Text style={styles.exploreBtnText}>View Plans</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -219,14 +221,14 @@ export default function SubscribeScreen() {
         {/* ── Explore Plans Tab ── */}
         {tab === 'explore' && (
           <>
-            <Text style={s.exploreHeading}>Choose a Plan</Text>
-            <Text style={s.exploreSubheading}>Unlock all features with a simple subscription</Text>
+            <Text style={styles.exploreHeading}>Choose a Plan</Text>
+            <Text style={styles.exploreSubheading}>Unlock all features with a simple subscription</Text>
 
             {/* Promo code input */}
-            <View style={s.promoBox}>
+            <View style={styles.promoBox}>
               <Ionicons name="pricetag-outline" size={18} color={Colors.primary} />
               <TextInput
-                style={s.promoInput}
+                style={styles.promoInput}
                 value={promoCode}
                 onChangeText={v => { setPromoCode(v.toUpperCase()); setPromoResult(null); }}
                 placeholder="Have a promo code?"
@@ -234,19 +236,19 @@ export default function SubscribeScreen() {
                 autoCapitalize="characters"
               />
               <TouchableOpacity
-                style={[s.promoApplyBtn, !promoCode.trim() && { opacity: 0.4 }]}
+                style={[styles.promoApplyBtn, !promoCode.trim() && { opacity: 0.4 }]}
                 onPress={() => applyPromo('monthly')}
                 disabled={!promoCode.trim() || promoLoading}
               >
                 {promoLoading
                   ? <ActivityIndicator size="small" color={Colors.white} />
-                  : <Text style={s.promoApplyText}>Apply</Text>}
+                  : <Text style={styles.promoApplyText}>Apply</Text>}
               </TouchableOpacity>
             </View>
             {promoResult && (
-              <View style={s.promoSuccess}>
+              <View style={styles.promoSuccess}>
                 <Ionicons name="checkmark-circle" size={16} color={Colors.success} />
-                <Text style={s.promoSuccessText}>
+                <Text style={styles.promoSuccessText}>
                   {promoResult.type === 'percent'
                     ? `${promoResult.value}% discount applied!`
                     : `₹${promoResult.value} discount applied!`}
@@ -267,52 +269,52 @@ export default function SubscribeScreen() {
               const isDisabled = !!loading || isLowerOrEqual;
 
               return (
-                <View key={plan.key} style={[s.planCard, plan.highlight && s.planCardHighlight]}>
+                <View key={plan.key} style={[styles.planCard, plan.highlight && styles.planCardHighlight]}>
                   {plan.highlight && (
-                    <View style={s.bestBadge}><Text style={s.bestBadgeText}>BEST VALUE</Text></View>
+                    <View style={styles.bestBadge}><Text style={styles.bestBadgeText}>BEST VALUE</Text></View>
                   )}
-                  <View style={s.planTop}>
-                    <View style={[s.planIconBox, { backgroundColor: plan.color + '20' }]}>
+                  <View style={styles.planTop}>
+                    <View style={[styles.planIconBox, { backgroundColor: plan.color + '20' }]}>
                       <Ionicons name={plan.icon} size={26} color={plan.color} />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={s.planTitle}>{plan.title}</Text>
-                      <Text style={s.planDesc}>{plan.desc}</Text>
+                      <Text style={styles.planTitle}>{plan.title}</Text>
+                      <Text style={styles.planDesc}>{plan.desc}</Text>
                     </View>
-                    <View style={s.planPriceBox}>
-                      <Text style={[s.planPrice, { color: plan.color }]}>{plan.price}</Text>
-                      <Text style={s.planPeriod}>{plan.period}</Text>
+                    <View style={styles.planPriceBox}>
+                      <Text style={[styles.planPrice, { color: plan.color }]}>{plan.price}</Text>
+                      <Text style={styles.planPeriod}>{plan.period}</Text>
                     </View>
                   </View>
 
-                  <View style={s.featureList}>
+                  <View style={styles.featureList}>
                     {plan.features.map(f => (
-                      <View key={f} style={s.featureRow}>
+                      <View key={f} style={styles.featureRow}>
                         <Ionicons name="checkmark-circle" size={15} color={plan.color} />
-                        <Text style={s.featureText}>{f}</Text>
+                        <Text style={styles.featureText}>{f}</Text>
                       </View>
                     ))}
                   </View>
 
                   {isCurrent ? (
-                    <View style={[s.currentBtn, { borderColor: plan.color }]}>
+                    <View style={[styles.currentBtn, { borderColor: plan.color }]}>
                       <Ionicons name="checkmark-circle" size={16} color={plan.color} />
-                      <Text style={[s.currentBtnText, { color: plan.color }]}>Current Plan</Text>
+                      <Text style={[styles.currentBtnText, { color: plan.color }]}>Current Plan</Text>
                     </View>
                   ) : isLowerOrEqual ? (
-                    <View style={s.disabledBtn}>
+                    <View style={styles.disabledBtn}>
                       <Ionicons name="lock-closed-outline" size={15} color={Colors.textMuted} />
-                      <Text style={s.disabledBtnText}>Not Available</Text>
+                      <Text style={styles.disabledBtnText}>Not Available</Text>
                     </View>
                   ) : (
                     <TouchableOpacity
-                      style={[s.subscribeBtn, { backgroundColor: plan.color }, isDisabled && s.subscribeBtnDisabled]}
+                      style={[styles.subscribeBtn, { backgroundColor: plan.color }, isDisabled && styles.subscribeBtnDisabled]}
                       onPress={() => subscribe(plan.key)}
                       disabled={isDisabled}
                     >
                       {loading === plan.key
                         ? <ActivityIndicator color={Colors.white} />
-                        : <Text style={s.subscribeBtnText}>
+                        : <Text style={styles.subscribeBtnText}>
                             {hasActiveSubscription ? `Upgrade — ${plan.price}` : `Subscribe — ${plan.price}`}
                             {promoResult && promoResult.final_amount !== undefined
                               ? ` → ₹${promoResult.final_amount}` : ''}
@@ -333,7 +335,7 @@ export default function SubscribeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
-  header: { backgroundColor: Colors.primary, paddingTop: 52, paddingBottom: 16, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  header: { backgroundColor: '#3B5FC0', paddingTop: 52, paddingBottom: 16, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
   headerTitle: { fontSize: 18, fontWeight: '800', color: Colors.white },
   tabBar: { flexDirection: 'row', backgroundColor: Colors.white, borderBottomWidth: 1, borderBottomColor: Colors.border },
@@ -393,3 +395,4 @@ const styles = StyleSheet.create({
   promoSuccess: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.success + '12', borderRadius: 10, padding: 10, marginBottom: 12 },
   promoSuccessText: { flex: 1, fontSize: 13, color: Colors.success, fontWeight: '600' },
 });
+

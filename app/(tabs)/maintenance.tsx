@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { useLanguage } from '../../context/LanguageContext';
 import { Colors } from '../../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput,
@@ -35,6 +36,7 @@ type Tab = 'my-bills' | 'members' | 'bills';
 export default function MaintenanceScreen() {
   const { user, token } = useAuth();
   const router = useRouter();
+  const { t } = useLanguage();
   const { logEvent } = useActivityLog();
   const isAdmin = user?.role === 'admin';
   const isPramukh = user?.role === 'pramukh' || isAdmin;
@@ -284,7 +286,7 @@ export default function MaintenanceScreen() {
             {isPaid && (
               <TouchableOpacity style={styles.receiptBtn} onPress={() => downloadReceipt(item)}>
                 <Ionicons name="download-outline" size={15} color={Colors.primary} />
-                <Text style={styles.receiptBtnText}>Receipt</Text>
+                <Text style={styles.receiptBtnText}>{t('receipt')}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -340,7 +342,7 @@ export default function MaintenanceScreen() {
           <Ionicons name="arrow-back" size={22} color={Colors.white} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Maintenance</Text>
+          <Text style={styles.headerTitle}>{t('maintenance')}</Text>
           {isPramukh && <Text style={styles.headerSub}>{billStats.pending} pending · {billStats.paid} paid</Text>}
         </View>
         <View style={styles.headerActions}>
@@ -403,17 +405,17 @@ export default function MaintenanceScreen() {
                 <View style={styles.summaryBanner}>
                   <View style={styles.summaryItem}>
                     <Text style={styles.summaryValue}>₹{totalDue.toLocaleString('en-IN')}</Text>
-                    <Text style={styles.summaryLabel}>Amount Due</Text>
+                    <Text style={styles.summaryLabel}>{t('amountDue')}</Text>
                   </View>
                   <View style={styles.summaryDivider} />
                   <View style={styles.summaryItem}>
                     <Text style={[styles.summaryValue, { color: '#86efac' }]}>₹{totalPaid.toLocaleString('en-IN')}</Text>
-                    <Text style={styles.summaryLabel}>Total Paid</Text>
+                    <Text style={styles.summaryLabel}>{t('totalPaid')}</Text>
                   </View>
                   <View style={styles.summaryDivider} />
                   <View style={styles.summaryItem}>
                     <Text style={styles.summaryValue}>{myBills.length}</Text>
-                    <Text style={styles.summaryLabel}>Total Bills</Text>
+                    <Text style={styles.summaryLabel}>{t('totalBills')}</Text>
                   </View>
                 </View>
 
@@ -472,7 +474,7 @@ export default function MaintenanceScreen() {
                         color={Colors.border}
                       />
                       <Text style={styles.emptyText}>
-                        {activeBillTab === 'current' ? 'No pending bills' : 'No paid bills yet'}
+                        {activeBillTab === 'current' ? t('noPendingBills') : t('noPaidBills')}
                       </Text>
                     </View>
                   }
@@ -605,7 +607,7 @@ export default function MaintenanceScreen() {
           <View style={styles.modal}>
             <View style={styles.modalHeader}>
               <View>
-                <Text style={styles.modalTitle}>Edit Bill</Text>
+                <Text style={styles.modalTitle}>{t('editBill')}</Text>
                 <Text style={styles.modalSub}>{MONTHS[showEditBill.month]} {showEditBill.year} · ₹{Number(showEditBill.amount).toLocaleString('en-IN')}</Text>
               </View>
               <TouchableOpacity onPress={() => setShowEditBill(null)}>
@@ -630,7 +632,7 @@ export default function MaintenanceScreen() {
                 placeholder="e.g. April maintenance" placeholderTextColor={Colors.textMuted} />
 
               <TouchableOpacity style={styles.submitBtn} onPress={saveEditBill} disabled={submitting}>
-                {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>Save Changes</Text>}
+                {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>{t('saveChanges')}</Text>}
               </TouchableOpacity>
               <View style={{ height: 32 }} />
             </ScrollView>
@@ -745,7 +747,7 @@ export default function MaintenanceScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
-  header: { backgroundColor: Colors.primary, paddingTop: 56, paddingBottom: 16, paddingHorizontal: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  header: { backgroundColor: '#3B5FC0', paddingTop: 56, paddingBottom: 16, paddingHorizontal: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   headerTitle: { color: Colors.white, fontSize: 22, fontWeight: '800' },
   headerSub: { color: 'rgba(255,255,255,0.7)', fontSize: 13, marginTop: 2 },
   headerActions: { flexDirection: 'row', gap: 8 },

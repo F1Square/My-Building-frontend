@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
@@ -12,6 +13,7 @@ import api from '../utils/api';
 export default function MyDetailsScreen() {
   const { user, refreshUser } = useAuth();
   const router = useRouter();
+  const { t } = useLanguage();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [details, setDetails] = useState({
@@ -98,7 +100,7 @@ export default function MyDetailsScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={Colors.white} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>My Details</Text>
+        <Text style={styles.headerTitle}>{t('myDetails')}</Text>
         {!editing ? (
           <TouchableOpacity onPress={() => setEditing(true)} style={styles.editBtn}>
             <Ionicons name="pencil" size={18} color={Colors.white} />
@@ -146,12 +148,12 @@ export default function MyDetailsScreen() {
       {editing && (
         <View style={styles.actions}>
           <TouchableOpacity style={styles.cancelBtn} onPress={cancelEdit}>
-            <Text style={styles.cancelText}>Cancel</Text>
+            <Text style={styles.cancelText}>{t('cancel')}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.saveBtn} onPress={saveDetails} disabled={saving}>
             {saving
               ? <ActivityIndicator size="small" color={Colors.white} />
-              : <Text style={styles.saveText}>Save Changes</Text>}
+              : <Text style={styles.saveText}>{t('saveChanges')}</Text>}
           </TouchableOpacity>
         </View>
       )}
@@ -163,7 +165,7 @@ export default function MyDetailsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
-  header: { backgroundColor: Colors.primary, paddingTop: 52, paddingBottom: 20, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  header: { backgroundColor: '#3B5FC0', paddingTop: 52, paddingBottom: 20, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
   headerTitle: { fontSize: 18, fontWeight: '800', color: Colors.white },
   editBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },

@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, SectionList, TouchableOpacity, TextInput,
@@ -32,6 +33,7 @@ const SECTION_ORDER = ['open', 'in_progress', 'resolved'];
 export default function AdminComplaintsScreen() {
   const { buildings } = useBuildings(true);
   const router = useRouter();
+  const { t } = useLanguage();
   const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null);
   const [complaints, setComplaints] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -254,7 +256,7 @@ export default function AdminComplaintsScreen() {
           <Ionicons name="arrow-back" size={22} color={Colors.white} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Complaints</Text>
+          <Text style={styles.headerTitle}>{t('complaints')}</Text>
           <Text style={styles.headerSub}>{complaints.length} total complaint{complaints.length !== 1 ? 's' : ''}</Text>
         </View>
         <TouchableOpacity style={styles.addBtn} onPress={() => setShowAdd(true)}>
@@ -430,7 +432,7 @@ export default function AdminComplaintsScreen() {
               <TouchableOpacity style={[styles.submitBtn, saving && { opacity: 0.6 }]} onPress={submitEdit} disabled={saving}>
                 {saving
                   ? <ActivityIndicator color={Colors.white} />
-                  : <Text style={styles.submitBtnText}>Save Changes</Text>}
+                  : <Text style={styles.submitBtnText}>{t('saveChanges')}</Text>}
               </TouchableOpacity>
             </ScrollView>
           </View>
@@ -510,14 +512,14 @@ export default function AdminComplaintsScreen() {
                       onPress={() => { setShowDetail(false); openEdit(detailItem); }}
                     >
                       <Ionicons name="create-outline" size={18} color={Colors.white} />
-                      <Text style={styles.detailActionText}>Edit</Text>
+                      <Text style={styles.detailActionText}>{t('edit')}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.detailActionBtn, { backgroundColor: Colors.danger }]}
                       onPress={() => { setShowDetail(false); deleteComplaint(detailItem.id); }}
                     >
                       <Ionicons name="trash-outline" size={18} color={Colors.white} />
-                      <Text style={styles.detailActionText}>Delete</Text>
+                      <Text style={styles.detailActionText}>{t('delete')}</Text>
                     </TouchableOpacity>
                   </View>
                   <View style={{ height: 20 }} />
@@ -546,8 +548,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
 
   header: {
-    backgroundColor: Colors.primary,
-    paddingTop: 54, paddingBottom: 20, paddingHorizontal: 20,
+    backgroundColor: '#3B5FC0', paddingTop: 54, paddingBottom: 20, paddingHorizontal: 20,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
   backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center', marginRight: 4 },

@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { useLanguage } from '../../context/LanguageContext';
 import { Colors } from '../../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput,
@@ -6,36 +7,28 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
-import { RealtimeChannel } from '@supabase/supabase-js';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../utils/api';
-import { supabase } from '../../utils/supabase';
 import { useActivityLog } from '../../hooks/useActivityLog';
-
-type ConnStatus = 'connecting' | 'live' | 'reconnecting' | 'offline';
 
 export default function ChatScreen() {
   const { user } = useAuth();
+  const { t } = useLanguage();
   const { logEvent } = useActivityLog();
   const [messages, setMessages] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [noBuildingError, setNoBuildingError] = useState(false);
-  const [connStatus, setConnStatus] = useState<ConnStatus>('connecting');
 
   const flatListRef = useRef<FlatList>(null);
-  const channelRef = useRef<RealtimeChannel | null>(null);
-  // Track the id of the last message we received for gap-fill
   const lastMsgIdRef = useRef<string | null>(null);
-  // Reconnect timer
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isFocusedRef = useRef(false);
 
   const scrollToBottom = (animated = true) =>
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated }), 80);
 
-  // ── Merge new messages deduplicating by id ────────────────────────────────
   const mergeMessages = (prev: any[], incoming: any[]) => {
     const ids = new Set(prev.map((m) => m.id));
     const fresh = incoming.filter((m) => !ids.has(m.id));
@@ -45,7 +38,6 @@ export default function ChatScreen() {
     );
   };
 
-  // ── Initial load ──────────────────────────────────────────────────────────
   const fetchMessages = useCallback(async () => {
     try {
       const res = await api.get('/chat');
@@ -60,8 +52,8 @@ export default function ChatScreen() {
     }
   }, []);
 
-  // ── Gap-fill: fetch any messages we missed while disconnected ─────────────
-  const fillGap = useCallback(async () => {
+  // Poll for new messages every 4 seconds
+  const pollNewMessages = useCallback(async () => {
     if (!lastMsgIdRef.current) return;
     try {
       const res = await api.get(`/chat/new?after_id=${lastMsgIdRef.current}`);
@@ -79,93 +71,36 @@ export default function ChatScreen() {
     } catch {}
   }, []);
 
-  // ── Realtime subscription ─────────────────────────────────────────────────
-  const subscribe = useCallback(() => {
-    if (!user?.building_id) return;
+  const startPolling = useCallback(() => {
+    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    pollTimerRef.current = setInterval(() => {
+      if (isFocusedRef.current) pollNewMessages();
+    }, 4000);
+  }, [pollNewMessages]);
 
-    // Tear down any existing channel
-    if (channelRef.current) {
-      supabase.removeChannel(channelRef.current);
-      channelRef.current = null;
+  const stopPolling = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
     }
-
-    setConnStatus('connecting');
-
-    channelRef.current = supabase
-      .channel(`chats:${user.building_id}`, {
-        config: { broadcast: { ack: false }, presence: { key: '' } },
-      })
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'chats',
-          filter: `building_id=eq.${user.building_id}`,
-        },
-        (payload) => {
-          const msg = payload.new as any;
-          setMessages((prev) => {
-            if (prev.some((m) => m.id === msg.id)) return prev;
-            const updated = [...prev, msg];
-            lastMsgIdRef.current = msg.id;
-            return updated;
-          });
-          scrollToBottom();
-        }
-      )
-      .subscribe((status, err) => {
-        if (status === 'SUBSCRIBED') {
-          setConnStatus('live');
-          // Fill any gap that occurred while we were reconnecting
-          fillGap();
-          // Clear any pending reconnect timer
-          if (reconnectTimerRef.current) {
-            clearTimeout(reconnectTimerRef.current);
-            reconnectTimerRef.current = null;
-          }
-        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          setConnStatus('reconnecting');
-          // Auto-reconnect after 3 seconds
-          if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-          reconnectTimerRef.current = setTimeout(() => {
-            if (isFocusedRef.current) subscribe();
-          }, 3000);
-        } else if (status === 'CLOSED') {
-          setConnStatus('offline');
-        }
-      });
-  }, [user?.building_id, fillGap]);
-
-  const unsubscribe = useCallback(() => {
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-    if (channelRef.current) {
-      supabase.removeChannel(channelRef.current);
-      channelRef.current = null;
-    }
-    setConnStatus('offline');
   }, []);
 
   useFocusEffect(
     useCallback(() => {
       isFocusedRef.current = true;
       logEvent('open_chat', 'chat');
-      fetchMessages().then(() => subscribe());
+      fetchMessages().then(() => startPolling());
       return () => {
         isFocusedRef.current = false;
-        unsubscribe();
+        stopPolling();
       };
-    }, [fetchMessages, subscribe, unsubscribe])
+    }, [fetchMessages, startPolling, stopPolling])
   );
 
   useEffect(() => {
     if (messages.length > 0) scrollToBottom(false);
   }, [loading]);
 
-  // ── Send ──────────────────────────────────────────────────────────────────
   const sendMessage = async () => {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
@@ -174,7 +109,6 @@ export default function ChatScreen() {
     try {
       const res = await api.post('/chat', { message: trimmed });
       const sent = res.data;
-      // Optimistic add — Realtime will also fire but dedup handles it
       setMessages((prev) => {
         if (prev.some((m) => m.id === sent.id)) return prev;
         lastMsgIdRef.current = sent.id;
@@ -182,13 +116,12 @@ export default function ChatScreen() {
       });
       scrollToBottom();
     } catch {
-      setText(trimmed); // restore on failure
+      setText(trimmed);
     } finally {
       setSending(false);
     }
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────
   const renderMessage = ({ item, index }: { item: any; index: number }) => {
     const isMe = item.user_id === user?.id;
     const prevItem = messages[index - 1];
@@ -230,15 +163,6 @@ export default function ChatScreen() {
     );
   };
 
-  const statusDot = {
-    live:         { color: '#22C55E', label: 'Live' },
-    connecting:   { color: Colors.accent, label: 'Connecting...' },
-    reconnecting: { color: Colors.warning, label: 'Reconnecting...' },
-    offline:      { color: Colors.danger, label: 'Offline' },
-  }[connStatus];
-
-  
-
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -254,28 +178,12 @@ export default function ChatScreen() {
           <View>
             <Text style={styles.headerTitle}>Building Chat</Text>
             <View style={styles.statusRow}>
-              <View style={[styles.statusDot, { backgroundColor: statusDot.color }]} />
-              <Text style={styles.headerSub}>
-                {connStatus === 'live' ? 'Group · All members' : statusDot.label}
-              </Text>
+              <View style={[styles.statusDot, { backgroundColor: '#22C55E' }]} />
+              <Text style={styles.headerSub}>Group · All members</Text>
             </View>
           </View>
         </View>
-        {/* Manual refresh only shown when offline */}
-        {connStatus === 'offline' && (
-          <TouchableOpacity onPress={() => subscribe()} style={styles.refreshBtn}>
-            <Ionicons name="refresh" size={20} color={Colors.white} />
-          </TouchableOpacity>
-        )}
       </View>
-
-      {/* Reconnecting banner */}
-      {connStatus === 'reconnecting' && (
-        <View style={styles.reconnectBanner}>
-          <ActivityIndicator size="small" color={Colors.warning} />
-          <Text style={styles.reconnectText}>Connection lost — reconnecting...</Text>
-        </View>
-      )}
 
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} size="large" color={Colors.primary} />
@@ -295,7 +203,7 @@ export default function ChatScreen() {
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyIcon}>💬</Text>
-              <Text style={styles.empty}>No messages yet. Say hello!</Text>
+              <Text style={styles.empty}>{t('beFirstToSay')}</Text>
             </View>
           }
         />
@@ -307,7 +215,7 @@ export default function ChatScreen() {
           style={styles.input}
           value={text}
           onChangeText={setText}
-          placeholder={noBuildingError ? 'Not available for admin' : 'Type a message...'}
+          placeholder={noBuildingError ? 'Not available for admin' : t('typeMessage')}
           placeholderTextColor={Colors.textMuted}
           multiline
           maxLength={500}
@@ -332,16 +240,13 @@ export default function ChatScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#ECE5DD' },
-  header: { backgroundColor: Colors.primary, paddingTop: 56, paddingBottom: 16, paddingHorizontal: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  header: { backgroundColor: '#3B5FC0', paddingTop: 56, paddingBottom: 16, paddingHorizontal: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   groupIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
   headerTitle: { color: Colors.white, fontSize: 18, fontWeight: '800' },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
   statusDot: { width: 7, height: 7, borderRadius: 4 },
   headerSub: { color: 'rgba(255,255,255,0.8)', fontSize: 12, fontWeight: '600' },
-  refreshBtn: { padding: 8, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 10 },
-  reconnectBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.warning + '20', paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: Colors.warning + '40' },
-  reconnectText: { fontSize: 13, color: Colors.warning, fontWeight: '600' },
   msgRow: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 4, gap: 8 },
   msgRowMe: { flexDirection: 'row-reverse' },
   msgAvatar: { width: 30, height: 30, borderRadius: 15, backgroundColor: Colors.primary, justifyContent: 'center', alignItems: 'center', marginBottom: 2 },

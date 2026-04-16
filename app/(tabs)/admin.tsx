@@ -210,6 +210,10 @@ export default function AdminScreen() {
             <ActionCard icon="card"        label="Subscriptions"  color="#0EA5E9"        onPress={openSubscriptions} />
             <ActionCard icon="gift"        label="Grant Sub"      color="#10B981"        onPress={openGrantSub} />
           </View>
+          <View style={styles.actionsRow}>
+            <ActionCard icon="globe-outline" label="Web Inquiries" color="#F59E0B" onPress={() => router.push('/website-contacts' as any)} />
+            <ActionCard icon="document-text-outline" label="Building Inquiries" color="#7C3AED" onPress={() => router.push('/inquiries' as any)} />
+          </View>
 
           <Text style={styles.sectionTitle}>Buildings</Text>
           {buildings.length === 0 ? (

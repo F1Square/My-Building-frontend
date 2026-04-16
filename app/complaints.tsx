@@ -247,7 +247,22 @@ export default function ComplaintsScreen() {
         </View>
       </View>
 
-      {loading ? (
+      {/* Subscription gate */}
+      {isLocked ? (
+        <View style={styles.lockedContainer}>
+          <View style={styles.lockedIconBox}>
+            <Ionicons name="lock-closed" size={40} color={Colors.primary} />
+          </View>
+          <Text style={styles.lockedTitle}>Subscription Required</Text>
+          <Text style={styles.lockedDesc}>
+            Subscribe to raise and view complaints in your society.
+          </Text>
+          <TouchableOpacity style={styles.lockedBtn} onPress={() => router.push('/subscribe' as any)}>
+            <Ionicons name="star-outline" size={18} color={Colors.white} />
+            <Text style={styles.lockedBtnText}>View Plans</Text>
+          </TouchableOpacity>
+        </View>
+      ) : loading ? (
         <ActivityIndicator style={{ marginTop: 60 }} size="large" color={Colors.primary} />
       ) : (
         <SectionList
@@ -277,31 +292,17 @@ export default function ComplaintsScreen() {
         />
       )}
 
-      {/* FAB — Add Complaint (always visible, locked if no subscription) */}
-      <TouchableOpacity
-        style={[styles.fab, isLocked && styles.fabLocked]}
-        onPress={() => {
-          if (isLocked) {
-            Alert.alert(
-              '🔒 Subscription Required',
-              'You need an active subscription to raise a complaint.',
-              [
-                { text: 'Not Now', style: 'cancel' },
-                { text: 'View Plans', onPress: () => router.push('/subscribe' as any) },
-              ]
-            );
-            return;
-          }
-          setShowAdd(true);
-        }}
-        activeOpacity={0.85}
-      >
-        {isLocked
-          ? <Ionicons name="lock-closed" size={20} color={Colors.white} />
-          : <Ionicons name="add" size={26} color={Colors.white} />
-        }
-        <Text style={styles.fabText}>{isLocked ? 'Subscribe to Add' : 'New Complaint'}</Text>
-      </TouchableOpacity>
+      {/* FAB — only shown when not locked */}
+      {!isLocked && (
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={() => setShowAdd(true)}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="add" size={26} color={Colors.white} />
+          <Text style={styles.fabText}>New Complaint</Text>
+        </TouchableOpacity>
+      )}
 
       {/* ── Add Complaint Modal ── */}
       <Modal visible={showAdd} animationType="slide" transparent>
@@ -617,11 +618,27 @@ const styles = StyleSheet.create({
     shadowColor: Colors.primary, shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 4 },
     elevation: 8,
   },
-  fabLocked: {
-    backgroundColor: Colors.textMuted,
-    shadowColor: Colors.textMuted,
-  },
   fabText: { fontSize: 15, fontWeight: '800', color: Colors.white },
+
+  // Locked / paywall state
+  lockedContainer: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 40, gap: 16,
+  },
+  lockedIconBox: {
+    width: 88, height: 88, borderRadius: 44,
+    backgroundColor: Colors.primary + '15',
+    justifyContent: 'center', alignItems: 'center',
+    marginBottom: 4,
+  },
+  lockedTitle: { fontSize: 20, fontWeight: '800', color: Colors.text, textAlign: 'center' },
+  lockedDesc: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', lineHeight: 22 },
+  lockedBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: Colors.primary, borderRadius: 14,
+    paddingHorizontal: 28, paddingVertical: 14, marginTop: 8,
+  },
+  lockedBtnText: { fontSize: 15, fontWeight: '800', color: Colors.white },
 
   // Modal sheet
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },

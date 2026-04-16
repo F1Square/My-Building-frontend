@@ -83,6 +83,7 @@ function RootNavigator() {
       <Stack.Screen name="complaints" />
       <Stack.Screen name="complaints-admin" />
       <Stack.Screen name="activity-logs" />
+      <Stack.Screen name="website-contacts" />
       <Stack.Screen name="entry/[building_id]" options={{ headerShown: false }} />
     </Stack>
   );

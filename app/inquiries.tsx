@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  Modal, ScrollView, Alert, ActivityIndicator, RefreshControl,
+  Modal, ScrollView, Alert, ActivityIndicator, RefreshControl, Image, Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -57,6 +57,8 @@ export default function InquiriesScreen() {
     ['Submitted On', new Date(selected.created_at).toLocaleString('en-IN')],
   ].filter(([, v]) => v != null && v !== '') : [];
 
+  const hasGatewayLink = selected?.payment_method === 'Payment Gateway' && selected?.payment_gateway_link;
+
   
 
   return (
@@ -92,12 +94,32 @@ export default function InquiriesScreen() {
               </TouchableOpacity>
             </View>
             <ScrollView>
+              {/* Society logo */}
+              {selected.society_logo ? (
+                <View style={styles.logoBox}>
+                  <Image source={{ uri: selected.society_logo }} style={styles.logoImg} resizeMode="contain" />
+                </View>
+              ) : null}
+
               {fields.map(([k, v]) => (
                 <View key={k as string} style={styles.detailRow}>
                   <Text style={styles.detailKey}>{k as string}</Text>
                   <Text style={styles.detailVal}>{String(v)}</Text>
                 </View>
               ))}
+
+              {/* Payment gateway link */}
+              {hasGatewayLink ? (
+                <TouchableOpacity
+                  style={styles.gatewayBtn}
+                  onPress={() => Linking.openURL(selected.payment_gateway_link)}
+                >
+                  <Ionicons name="card-outline" size={16} color={Colors.white} />
+                  <Text style={styles.gatewayBtnText}>Open Payment Gateway</Text>
+                  <Ionicons name="open-outline" size={14} color={Colors.white} />
+                </TouchableOpacity>
+              ) : null}
+
               <View style={{ height: 40 }} />
             </ScrollView>
           </View>
@@ -125,4 +147,8 @@ const styles = StyleSheet.create({
   detailRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: Colors.border },
   detailKey: { fontSize: 13, color: Colors.textMuted, flex: 1 },
   detailVal: { fontSize: 13, fontWeight: '600', color: Colors.text, flex: 1.5, textAlign: 'right' },
+  logoBox: { alignItems: 'center', marginBottom: 20, padding: 16, backgroundColor: Colors.bg, borderRadius: 14 },
+  logoImg: { width: 100, height: 100, borderRadius: 12 },
+  gatewayBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.primary, borderRadius: 12, padding: 14, marginTop: 16 },
+  gatewayBtnText: { color: Colors.white, fontWeight: '700', fontSize: 14 },
 });

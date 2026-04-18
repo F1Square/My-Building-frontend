@@ -1,9 +1,9 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
-  View, Text, StyleSheet, SectionList, TouchableOpacity, TextInput,
-  Modal, Alert, ActivityIndicator, RefreshControl, ScrollView, Image,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput,
+  Modal, Alert, ActivityIndicator, RefreshControl, ScrollView, Image, Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -70,6 +70,9 @@ export default function ComplaintsScreen() {
   const [selectedComplaint, setSelectedComplaint] = useState<any>(null);
   const [showDetail, setShowDetail] = useState(false);
 
+  const [activeStatus, setActiveStatus] = useState<'open' | 'in_progress' | 'resolved'>('open');
+  const [imageViewerUri, setImageViewerUri] = useState<string | null>(null);
+
   const [showUpdate, setShowUpdate] = useState(false);
   const [updateForm, setUpdateForm] = useState({ status: 'open', remark: '' });
   const [updating, setUpdating] = useState(false);
@@ -92,16 +95,15 @@ export default function ComplaintsScreen() {
   };
 
   // Build sections grouped by status
-  const sections = SECTION_ORDER
-    .map(status => ({
-      status,
-      data: complaints.filter(c => c.status === status),
-    }))
-    .filter(s => s.data.length > 0);
-
   const totalOpen = complaints.filter(c => c.status === 'open').length;
   const totalInProgress = complaints.filter(c => c.status === 'in_progress').length;
   const totalResolved = complaints.filter(c => c.status === 'resolved').length;
+
+  // Filtered list for active tab — memoized so tab switch is instant
+  const filteredComplaints = useMemo(
+    () => complaints.filter(c => c.status === activeStatus),
+    [complaints, activeStatus]
+  );
 
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -169,7 +171,7 @@ export default function ComplaintsScreen() {
     );
   };
 
-  const renderItem = ({ item }: { item: any }) => {
+  const renderItem = useCallback(({ item }: { item: any }) => {
     const meta = STATUS_META[item.status] || STATUS_META.open;
     const catIcon = CAT_ICONS[item.category] || CAT_ICONS.General;
     return (
@@ -222,7 +224,7 @@ export default function ComplaintsScreen() {
         ) : null}
       </TouchableOpacity>
     );
-  };
+  }, [isSocietyView, showUpdateButton, openUpdate]);
 
   const ListHeader = () => (
     <View style={styles.summaryRow}>
@@ -265,31 +267,55 @@ export default function ComplaintsScreen() {
       ) : loading ? (
         <ActivityIndicator style={{ marginTop: 60 }} size="large" color={Colors.primary} />
       ) : (
-        <SectionList
-          sections={sections}
-          keyExtractor={i => i.id}
-          renderItem={renderItem}
-          renderSectionHeader={renderSectionHeader}
-          ListHeaderComponent={complaints.length > 0 ? <ListHeader /> : null}
-          contentContainerStyle={{ paddingBottom: 100 }}
-          stickySectionHeadersEnabled={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchComplaints(); }} tintColor={Colors.primary} />}
-          ListEmptyComponent={
-            <View style={styles.empty}>
-              <View style={styles.emptyIconBox}>
-                <Ionicons name="chatbox-ellipses-outline" size={48} color={Colors.primary + '60'} />
+        <>
+          {/* Status tabs */}
+          <View style={styles.tabBar}>
+            {([
+              { key: 'open', label: 'Open', count: totalOpen, color: '#EF4444' },
+              { key: 'in_progress', label: 'In Progress', count: totalInProgress, color: '#D97706' },
+              { key: 'resolved', label: 'Resolved', count: totalResolved, color: '#16A34A' },
+            ] as const).map(tab => {
+              const active = activeStatus === tab.key;
+              return (
+                <TouchableOpacity
+                  key={tab.key}
+                  style={[styles.tab, active && { borderBottomColor: tab.color, borderBottomWidth: 2.5 }]}
+                  onPress={() => setActiveStatus(tab.key)}
+                >
+                  <Text style={[styles.tabText, active && { color: tab.color, fontWeight: '800' }]}>
+                    {tab.label}
+                  </Text>
+                  {tab.count > 0 && (
+                    <View style={[styles.tabBadge, { backgroundColor: active ? tab.color : Colors.border }]}>
+                      <Text style={[styles.tabBadgeText, { color: active ? Colors.white : Colors.textMuted }]}>{tab.count}</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <FlatList
+            data={filteredComplaints}
+            keyExtractor={i => i.id}
+            renderItem={renderItem}
+            contentContainerStyle={{ paddingBottom: 100, paddingTop: 8 }}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchComplaints(); }} tintColor={Colors.primary} />}
+            ListEmptyComponent={
+              <View style={styles.empty}>
+                <View style={styles.emptyIconBox}>
+                  <Ionicons name="chatbox-ellipses-outline" size={48} color={Colors.primary + '60'} />
+                </View>
+                <Text style={styles.emptyTitle}>No {STATUS_META[activeStatus].label} Complaints</Text>
+                <Text style={styles.emptySubText}>
+                  {!user?.building_id
+                    ? 'Join a building first to view complaints'
+                    : `No complaints with status "${STATUS_META[activeStatus].label}" yet`}
+                </Text>
               </View>
-              <Text style={styles.emptyTitle}>No Complaints Yet</Text>
-              <Text style={styles.emptySubText}>
-                {!user?.building_id
-                  ? 'Join a building first to view complaints'
-                  : isMyView
-                  ? 'Tap the button below to raise your first complaint'
-                  : 'No complaints raised in your society yet'}
-              </Text>
-            </View>
-          }
-        />
+            }
+          />
+        </>
       )}
 
       {/* FAB — only shown when not locked */}
@@ -440,7 +466,10 @@ export default function ComplaintsScreen() {
                   ) : null}
 
                   {selectedComplaint.photo_url ? (
-                    <Image source={{ uri: selectedComplaint.photo_url }} style={styles.detailPhoto} resizeMode="cover" />
+                    <Pressable onPress={() => setImageViewerUri(selectedComplaint.photo_url)}>
+                      <Image source={{ uri: selectedComplaint.photo_url }} style={styles.detailPhoto} resizeMode="cover" />
+                      <Text style={styles.tapToExpand}>Tap to expand</Text>
+                    </Pressable>
                   ) : null}
 
                   {selectedComplaint.remark ? (
@@ -464,6 +493,18 @@ export default function ComplaintsScreen() {
               );
             })() : null}
           </View>
+        </View>
+      </Modal>
+
+      {/* ── Full-screen Image Viewer ── */}
+      <Modal visible={!!imageViewerUri} transparent animationType="fade" onRequestClose={() => setImageViewerUri(null)}>
+        <View style={styles.imageViewerOverlay}>
+          <TouchableOpacity style={styles.imageViewerClose} onPress={() => setImageViewerUri(null)}>
+            <Ionicons name="close-circle" size={36} color={Colors.white} />
+          </TouchableOpacity>
+          {imageViewerUri && (
+            <Image source={{ uri: imageViewerUri }} style={styles.imageViewerImg} resizeMode="contain" />
+          )}
         </View>
       </Modal>
 
@@ -666,6 +707,19 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: Colors.border,
   },
   textArea: { height: 100, textAlignVertical: 'top' },
+
+  // Status tabs
+  tabBar: { flexDirection: 'row', backgroundColor: Colors.white, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 13, borderBottomWidth: 2.5, borderBottomColor: 'transparent' },
+  tabText: { fontSize: 13, fontWeight: '600', color: Colors.textMuted },
+  tabBadge: { borderRadius: 10, minWidth: 20, height: 20, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 },
+  tabBadgeText: { fontSize: 11, fontWeight: '800' },
+
+  // Image viewer
+  imageViewerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center', alignItems: 'center' },
+  imageViewerClose: { position: 'absolute', top: 56, right: 20, zIndex: 10 },
+  imageViewerImg: { width: '100%', height: '80%' },
+  tapToExpand: { fontSize: 11, color: Colors.textMuted, textAlign: 'center', marginTop: 4, marginBottom: 8 },
 
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,

@@ -3,7 +3,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert,
-  ActivityIndicator, ScrollView, Linking, TextInput,
+  ActivityIndicator, ScrollView, Linking, TextInput, Switch,
 } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
@@ -58,6 +58,8 @@ export default function SubscribeScreen() {
   const [promoCode, setPromoCode] = useState('');
   const [promoResult, setPromoResult] = useState<any>(null);
   const [promoLoading, setPromoLoading] = useState(false);
+  const [includeNewspaper, setIncludeNewspaper] = useState(false);
+  const [newspaperAddonLoading, setNewspaperAddonLoading] = useState(false);
 
   // Handle deep link return from Razorpay
   useEffect(() => {
@@ -79,10 +81,11 @@ export default function SubscribeScreen() {
       const orderRes = await api.post('/subscriptions/order', {
         plan,
         promo_id: promoResult?.promo_id || undefined,
+        include_newspaper: includeNewspaper,
       });
       const { order_id, amount, key } = orderRes.data;
       const backendUrl = API_BASE.replace('/api', '');
-      const checkoutUrl = `${backendUrl}/api/subscriptions/checkout/${order_id}?amount=${amount}&key=${key}&plan=${plan}&user_id=${user?.id}`;
+      const checkoutUrl = `${backendUrl}/api/subscriptions/checkout/${order_id}?amount=${amount}&key=${key}&plan=${plan}&user_id=${user?.id}&newspaper=${includeNewspaper ? '1' : '0'}`;
       await WebBrowser.openBrowserAsync(checkoutUrl, {
         dismissButtonStyle: 'cancel',
         presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
@@ -95,6 +98,44 @@ export default function SubscribeScreen() {
     } finally {
       setLoading(null);
     }
+  };
+
+  // Enable newspaper add-on for existing subscriber (₹3 Razorpay payment)
+  const enableNewspaperAddon = async () => {
+    setNewspaperAddonLoading(true);
+    try {
+      const orderRes = await api.post('/subscriptions/newspaper-addon/order');
+      const { order_id, amount, key } = orderRes.data;
+      const backendUrl = API_BASE.replace('/api', '');
+      const checkoutUrl = `${backendUrl}/api/subscriptions/checkout/${order_id}?amount=${amount}&key=${key}&plan=newspaper_addon&user_id=${user?.id}`;
+      await WebBrowser.openBrowserAsync(checkoutUrl, {
+        dismissButtonStyle: 'cancel',
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
+      });
+      await refreshSubscription();
+    } catch (e: any) {
+      Alert.alert('Error', e.response?.data?.error || 'Failed to initiate payment');
+    } finally {
+      setNewspaperAddonLoading(false);
+    }
+  };
+
+  // Disable newspaper add-on
+  const disableNewspaperAddon = async () => {
+    Alert.alert('Disable Newspaper', 'Are you sure you want to disable the newspaper add-on?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Disable', style: 'destructive', onPress: async () => {
+        setNewspaperAddonLoading(true);
+        try {
+          await api.post('/subscriptions/newspaper-addon', { enable: false });
+          await refreshSubscription();
+        } catch (e: any) {
+          Alert.alert('Error', e.response?.data?.error || 'Failed');
+        } finally {
+          setNewspaperAddonLoading(false);
+        }
+      }},
+    ]);
   };
 
   const applyPromo = async (plan: string) => {
@@ -149,6 +190,7 @@ export default function SubscribeScreen() {
         {tab === 'my-plan' && (
           <>
             {hasActiveSubscription && subscription ? (
+              <>
               <View style={styles.activePlanCard}>
                 <View style={styles.activePlanTop}>
                   <View style={[styles.planIconBox, { backgroundColor: planColor + '20' }]}>
@@ -201,6 +243,36 @@ export default function SubscribeScreen() {
                   </TouchableOpacity>
                 )}
               </View>
+
+              {/* Newspaper Add-On Card */}
+              <View style={styles.addonCard}>
+                <View style={styles.addonLeft}>
+                  <View style={styles.addonIconBox}>
+                    <Ionicons name="newspaper-outline" size={22} color="#EA580C" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.addonTitle}>📰 Newspaper Add-On</Text>
+                    <Text style={styles.addonDesc}>
+                      {subscription?.newspaper_addon
+                        ? 'Daily newspapers in English, Hindi & Gujarati — Active ✓'
+                        : 'Read daily newspapers in English, Hindi & Gujarati'}
+                    </Text>
+                    <Text style={styles.addonPrice}>+₹3 / month</Text>
+                  </View>
+                </View>
+                {newspaperAddonLoading ? (
+                  <ActivityIndicator color={Colors.primary} />
+                ) : subscription?.newspaper_addon ? (
+                  <TouchableOpacity onPress={disableNewspaperAddon} style={styles.addonDisableBtn}>
+                    <Text style={styles.addonDisableBtnText}>Disable</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity onPress={enableNewspaperAddon} style={styles.addonEnableBtn}>
+                    <Text style={styles.addonEnableBtnText}>Add ₹3</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </>
             ) : (
               <View style={styles.noSubCard}>
                 <Ionicons name="lock-closed-outline" size={48} color={Colors.border} style={{ marginBottom: 12 }} />
@@ -223,6 +295,30 @@ export default function SubscribeScreen() {
           <>
             <Text style={styles.exploreHeading}>Choose a Plan</Text>
             <Text style={styles.exploreSubheading}>Unlock all features with a simple subscription</Text>
+
+            {/* Newspaper add-on toggle for new subscribers */}
+            <TouchableOpacity
+              style={[styles.addonCard, includeNewspaper && styles.addonCardActive]}
+              onPress={() => setIncludeNewspaper(v => !v)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.addonLeft}>
+                <View style={styles.addonIconBox}>
+                  <Ionicons name="newspaper-outline" size={22} color="#EA580C" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.addonTitle}>📰 Newspaper Add-On</Text>
+                  <Text style={styles.addonDesc}>Daily English, Hindi & Gujarati newspapers</Text>
+                  <Text style={styles.addonPrice}>+₹3 / month</Text>
+                </View>
+              </View>
+              <Switch
+                value={includeNewspaper}
+                onValueChange={setIncludeNewspaper}
+                trackColor={{ false: Colors.border, true: '#EA580C' }}
+                thumbColor={Colors.white}
+              />
+            </TouchableOpacity>
 
             {/* Promo code input */}
             <View style={styles.promoBox}>
@@ -316,6 +412,7 @@ export default function SubscribeScreen() {
                         ? <ActivityIndicator color={Colors.white} />
                         : <Text style={styles.subscribeBtnText}>
                             {hasActiveSubscription ? `Upgrade — ${plan.price}` : `Subscribe — ${plan.price}`}
+                            {includeNewspaper ? ' + ₹3 newspaper' : ''}
                             {promoResult && promoResult.final_amount !== undefined
                               ? ` → ₹${promoResult.final_amount}` : ''}
                           </Text>}
@@ -394,5 +491,23 @@ const styles = StyleSheet.create({
   promoApplyText: { color: Colors.white, fontWeight: '700', fontSize: 13 },
   promoSuccess: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.success + '12', borderRadius: 10, padding: 10, marginBottom: 12 },
   promoSuccessText: { flex: 1, fontSize: 13, color: Colors.success, fontWeight: '600' },
+
+  // Newspaper add-on
+  addonCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: Colors.white, borderRadius: 14, padding: 14,
+    marginTop: 12, borderWidth: 1.5, borderColor: Colors.border,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
+  },
+  addonCardActive: { borderColor: '#EA580C', backgroundColor: '#FFF7ED' },
+  addonLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  addonIconBox: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#FFF7ED', justifyContent: 'center', alignItems: 'center' },
+  addonTitle: { fontSize: 14, fontWeight: '700', color: Colors.text },
+  addonDesc: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
+  addonPrice: { fontSize: 13, fontWeight: '800', color: '#EA580C', marginTop: 3 },
+  addonEnableBtn: { backgroundColor: '#EA580C', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 },
+  addonEnableBtnText: { color: Colors.white, fontWeight: '700', fontSize: 13 },
+  addonDisableBtn: { borderWidth: 1.5, borderColor: Colors.danger, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8 },
+  addonDisableBtnText: { color: Colors.danger, fontWeight: '700', fontSize: 13 },
 });
 

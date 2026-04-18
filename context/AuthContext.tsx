@@ -23,6 +23,7 @@ type Subscription = {
   plan: 'monthly' | 'yearly' | 'lifetime';
   status: 'active' | 'expired' | 'cancelled';
   expires_at: string | null;
+  newspaper_addon?: boolean;
 } | null;
 
 type AuthContextType = {

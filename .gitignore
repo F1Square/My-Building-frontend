@@ -9,6 +9,9 @@ node_modules/
 dist/
 web-build/
 expo-env.d.ts
+__mocks__
+__tests__
+.kiro/
 
 # Native
 .kotlin/

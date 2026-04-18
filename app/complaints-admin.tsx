@@ -1,9 +1,9 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
-  View, Text, StyleSheet, SectionList, TouchableOpacity, TextInput,
-  Modal, Alert, ActivityIndicator, RefreshControl, ScrollView, Image,
+  View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput,
+  Modal, Alert, ActivityIndicator, RefreshControl, ScrollView, Image, Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -56,6 +56,8 @@ export default function AdminComplaintsScreen() {
   // Detail modal
   const [showDetail, setShowDetail] = useState(false);
   const [detailItem, setDetailItem] = useState<any>(null);
+  const [activeStatus, setActiveStatus] = useState<'open' | 'in_progress' | 'resolved'>('open');
+  const [imageViewerUri, setImageViewerUri] = useState<string | null>(null);
 
   useFocusEffect(useCallback(() => { fetchComplaints(); }, [selectedBuilding]));
 
@@ -71,13 +73,13 @@ export default function AdminComplaintsScreen() {
   };
 
   // Sections grouped by status
-  const sections = SECTION_ORDER
-    .map(status => ({ status, data: complaints.filter(c => c.status === status) }))
-    .filter(s => s.data.length > 0);
-
   const totalOpen = complaints.filter(c => c.status === 'open').length;
   const totalInProgress = complaints.filter(c => c.status === 'in_progress').length;
   const totalResolved = complaints.filter(c => c.status === 'resolved').length;
+  const filteredComplaints = useMemo(
+    () => complaints.filter(c => c.status === activeStatus),
+    [complaints, activeStatus]
+  );
 
   const pickImage = async (
     setter: (uri: string | null) => void,
@@ -153,7 +155,7 @@ export default function AdminComplaintsScreen() {
     );
   };
 
-  const renderItem = ({ item }: { item: any }) => {
+  const renderItem = useCallback(({ item }: { item: any }) => {
     const meta = STATUS_META[item.status] || STATUS_META.open;
     const catIcon = CAT_ICONS[item.category] || CAT_ICONS.General;
     return (
@@ -223,7 +225,7 @@ export default function AdminComplaintsScreen() {
         ) : null}
       </TouchableOpacity>
     );
-  };
+  }, [openEdit, deleteComplaint]);
 
   const ListHeader = () => (
     <>
@@ -267,32 +269,78 @@ export default function AdminComplaintsScreen() {
       {loading ? (
         <ActivityIndicator style={{ marginTop: 60 }} size="large" color={Colors.primary} />
       ) : (
-        <SectionList
-          sections={sections}
-          keyExtractor={i => i.id}
-          renderItem={renderItem}
-          renderSectionHeader={renderSectionHeader}
-          ListHeaderComponent={<ListHeader />}
-          stickySectionHeadersEnabled={false}
-          contentContainerStyle={{ paddingBottom: 40 }}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => { setRefreshing(true); fetchComplaints(); }}
-              tintColor={Colors.primary}
+        <>
+          {/* Building filter */}
+          <View style={styles.dropdownWrap}>
+            <BuildingDropdown
+              buildings={buildings}
+              selected={selectedBuilding}
+              onSelect={setSelectedBuilding}
+              placeholder="All Buildings"
+              allowClear
             />
-          }
-          ListEmptyComponent={
-            <View style={styles.empty}>
-              <View style={styles.emptyIconBox}>
-                <Ionicons name="chatbox-ellipses-outline" size={48} color={Colors.primary + '60'} />
+          </View>
+
+          {/* Summary + status tabs */}
+          <View style={styles.summaryRow}>
+            {([
+              { key: 'open', label: 'Open', count: totalOpen, color: '#EF4444', icon: 'alert-circle' },
+              { key: 'in_progress', label: 'In Progress', count: totalInProgress, color: '#D97706', icon: 'time' },
+              { key: 'resolved', label: 'Resolved', count: totalResolved, color: '#16A34A', icon: 'checkmark-circle' },
+            ] as const).map(tab => {
+              const active = activeStatus === tab.key;
+              return (
+                <TouchableOpacity
+                  key={tab.key}
+                  style={[styles.summaryCard, { borderTopColor: tab.color }, active && { backgroundColor: tab.color + '15' }]}
+                  onPress={() => setActiveStatus(tab.key)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name={tab.icon as any} size={20} color={tab.color} />
+                  <Text style={[styles.summaryCount, { color: tab.color }]}>{tab.count}</Text>
+                  <Text style={styles.summaryLabel}>{tab.label}</Text>
+                  {active && <View style={[styles.activeTabDot, { backgroundColor: tab.color }]} />}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <FlatList
+            data={filteredComplaints}
+            keyExtractor={i => i.id}
+            renderItem={renderItem}
+            contentContainerStyle={{ paddingBottom: 40, paddingTop: 4 }}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() => { setRefreshing(true); fetchComplaints(); }}
+                tintColor={Colors.primary}
+              />
+            }
+            ListEmptyComponent={
+              <View style={styles.empty}>
+                <View style={styles.emptyIconBox}>
+                  <Ionicons name="chatbox-ellipses-outline" size={48} color={Colors.primary + '60'} />
+                </View>
+                <Text style={styles.emptyTitle}>No {STATUS_META[activeStatus].label} Complaints</Text>
+                <Text style={styles.emptySub}>No complaints found for the selected filter</Text>
               </View>
-              <Text style={styles.emptyTitle}>No Complaints</Text>
-              <Text style={styles.emptySub}>No complaints found for the selected filter</Text>
-            </View>
-          }
-        />
+            }
+          />
+        </>
       )}
+
+      {/* ── Full-screen Image Viewer ── */}
+      <Modal visible={!!imageViewerUri} transparent animationType="fade" onRequestClose={() => setImageViewerUri(null)}>
+        <View style={styles.imageViewerOverlay}>
+          <TouchableOpacity style={styles.imageViewerClose} onPress={() => setImageViewerUri(null)}>
+            <Ionicons name="close-circle" size={36} color={Colors.white} />
+          </TouchableOpacity>
+          {imageViewerUri && (
+            <Image source={{ uri: imageViewerUri }} style={styles.imageViewerImg} resizeMode="contain" />
+          )}
+        </View>
+      </Modal>
 
       {/* ── Add Modal ── */}
       <Modal visible={showAdd} animationType="slide" transparent>
@@ -498,7 +546,10 @@ export default function AdminComplaintsScreen() {
                     </View>
                   ) : null}
                   {detailItem.photo_url
-                    ? <Image source={{ uri: detailItem.photo_url }} style={styles.detailPhoto} resizeMode="cover" />
+                    ? <Pressable onPress={() => setImageViewerUri(detailItem.photo_url)}>
+                        <Image source={{ uri: detailItem.photo_url }} style={styles.detailPhoto} resizeMode="cover" />
+                        <Text style={styles.tapToExpand}>Tap to expand</Text>
+                      </Pressable>
                     : null}
                   {detailItem.remark ? (
                     <View style={[styles.detailBlock, { backgroundColor: meta.bg, borderLeftWidth: 3, borderLeftColor: meta.color }]}>
@@ -656,6 +707,11 @@ const styles = StyleSheet.create({
     paddingVertical: 14, backgroundColor: Colors.white,
   },
   statusTileText: { fontSize: 11, fontWeight: '700', color: Colors.textMuted, textAlign: 'center' },
+  activeTabDot: { width: 6, height: 6, borderRadius: 3, marginTop: 2 },
+  imageViewerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center', alignItems: 'center' },
+  imageViewerClose: { position: 'absolute', top: 56, right: 20, zIndex: 10 },
+  imageViewerImg: { width: '100%', height: '80%' },
+  tapToExpand: { fontSize: 11, color: Colors.textMuted, textAlign: 'center', marginTop: 4, marginBottom: 8 },
 
   photoPicker: {
     borderRadius: 14, borderWidth: 1.5, borderColor: Colors.border,

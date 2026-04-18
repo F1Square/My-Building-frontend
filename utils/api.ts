@@ -26,15 +26,17 @@ api.interceptors.response.use(
     const status = error.response?.status;
 
     // Token missing, invalid or expired — force logout
-    if (status === 401 || status === 403) {
+    // Don't treat feature-gated 403s (e.g. newspaper_addon_required) as auth failures
+    if (status === 401 || (status === 403 && !error.response?.data?.error)) {
       await AsyncStorage.multiRemove(['token', 'user', 'subscription']);
       _onAuthFailure?.();
-      // Return a rejected promise but swallow the error so screens don't show an alert
       return Promise.reject({ _authError: true });
     }
 
     if (error.code === 'ECONNREFUSED' || error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
       console.error('[API] Network error — is the backend running at', API_BASE, '?');
+    } else if (status === 404 && error.response?.data?.error === 'not_available') {
+      // Expected — no newspaper uploaded for this date, no need to log
     } else {
       console.error('[API] Error:', status, error.response?.data);
     }

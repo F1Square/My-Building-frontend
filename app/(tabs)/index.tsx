@@ -51,6 +51,8 @@ const MODULE_PALETTE: Record<string, { bg: string; icon: string }> = {
   promoCodes:    { bg: '#FDE8E8', icon: '#EF4444' },
   activityLogs:  { bg: '#F1F5F9', icon: '#475569' },
   referAndEarn:  { bg: '#FFF0F5', icon: '#EC4899' },
+  newspaper:     { bg: '#FFF7ED', icon: '#EA580C' },
+  societyRules:  { bg: '#F0FDF4', icon: '#16A34A' },
 };
 
 const MODULE_ICONS: Record<string, string> = {
@@ -65,6 +67,8 @@ const MODULE_ICONS: Record<string, string> = {
   subscriptions: 'card-outline', promoCodes: 'pricetag-outline',
   activityLogs: 'list-circle-outline',
   referAndEarn: 'gift-outline',
+  newspaper: 'newspaper-outline',
+  societyRules: 'book-outline',
 };
 
 function getGreeting() {
@@ -76,12 +80,13 @@ function getGreeting() {
 
 export default function HomeScreen() {
   const { t } = useLanguage();
-  const { user, hasActiveSubscription } = useAuth();
+  const { user, hasActiveSubscription, subscription: authSubscription } = useAuth();
   const router = useRouter();
   const { logEvent } = useActivityLog();
   const [refreshing, setRefreshing] = useState(false);
   const [badgeCounts, setBadgeCounts] = useState<Record<string, number>>({});
-  const [urgentAnnouncements, setUrgentAnnouncements] = useState<any[]>([]);
+  const [totalUnread, setTotalUnread] = useState(0);
+  const [notifications, setNotifications] = useState<any[]>([]);
   const [showUrgentModal, setShowUrgentModal] = useState(false);
   const [latestAnnouncement, setLatestAnnouncement] = useState<any>(null);
   const [search, setSearch] = useState('');
@@ -90,7 +95,27 @@ export default function HomeScreen() {
   const isPendingUser = user?.role === 'user' && !user?.building_id;
   const needsSubscription = user?.role !== 'admin' && !hasActiveSubscription;
 
+  // Use subscription from AuthContext (already fetched at login) — no separate fetch needed
+  // This prevents the lock flicker on first render
+  const subscription = authSubscription as any;
+
+  const hasNewspaperAddon =
+    subscription?.status === 'active' &&
+    subscription?.newspaper_addon === true &&
+    (!subscription?.expires_at || new Date(subscription.expires_at) > new Date());
+
   const handleModuleTap = (route: string, titleKey: string) => {
+    if (route === '/newspaper' && user?.role !== 'admin' && !hasNewspaperAddon) {
+      Alert.alert(
+        t('subscriptionRequired'),
+        'The Newspaper module requires an active subscription with the Newspaper add-on.',
+        [
+          { text: t('notNow'), style: 'cancel' },
+          { text: t('viewPlans'), onPress: () => router.push('/subscribe' as any) },
+        ]
+      );
+      return;
+    }
     if (needsSubscription && GATED_ROUTES.includes(route)) {
       Alert.alert(t('subscriptionRequired'), t('subscriptionRequiredMsg'), [
         { text: t('notNow'), style: 'cancel' },
@@ -125,6 +150,8 @@ export default function HomeScreen() {
     { titleKey: 'promoCodes',   route: '/promos',               adminOnly: true },
     { titleKey: 'activityLogs', route: '/activity-logs',        adminOnly: true },
     { titleKey: 'referAndEarn', route: '/refer-and-earn' },
+    { titleKey: 'newspaper',    route: '/newspaper' },
+    { titleKey: 'societyRules', route: '/society-rules' },
   ];
 
   const modules = allModules.filter((m: any) => {
@@ -154,16 +181,17 @@ export default function HomeScreen() {
   };
 
   const openUrgentInbox = async () => {
+    api.patch('/notifications/read-all').catch(() => {});
     api.delete('/notifications/dismiss-types', { data: { types: ['announcement_urgent'] } }).catch(() => {});
-    setBadgeCounts(prev => ({ ...prev, '/announcements_urgent': 0 }));
+    setTotalUnread(0);
     try {
-      const res = await api.get('/announcements');
-      setUrgentAnnouncements((res.data as any[]).filter((a: any) => a.priority === 'urgent'));
-    } catch { setUrgentAnnouncements([]); }
+      const res = await api.get('/notifications');
+      setNotifications(res.data as any[]);
+    } catch { setNotifications([]); }
     setShowUrgentModal(true);
   };
 
-  const dismissUrgentInbox = () => { setShowUrgentModal(false); setUrgentAnnouncements([]); };
+  const dismissUrgentInbox = () => { setShowUrgentModal(false); setNotifications([]); };
 
   const fetchBadges = useCallback(async () => {
     if (!user?.building_id && user?.role !== 'admin') return;
@@ -174,10 +202,9 @@ export default function HomeScreen() {
         const route = TYPE_TO_ROUTE[type];
         if (route) routeCounts[route] = (routeCounts[route] || 0) + count;
       }
-      setBadgeCounts(prev => ({
-        ...routeCounts,
-        '/announcements_urgent': prev['/announcements_urgent'] === 0 ? 0 : (routeCounts['/announcements_urgent'] || 0),
-      }));
+      const total = Object.values(routeCounts).reduce((sum, n) => sum + n, 0);
+      setTotalUnread(total);
+      setBadgeCounts(routeCounts);
     } catch {}
   }, [user]);
 
@@ -236,10 +263,10 @@ export default function HomeScreen() {
             </TouchableOpacity>
             <TouchableOpacity onPress={openUrgentInbox} style={styles.bellBtn}>
               <Ionicons name="notifications-outline" size={22} color={Colors.white} />
-              {(badgeCounts['/announcements_urgent'] || 0) > 0 && (
+              {totalUnread > 0 && (
                 <View style={styles.bellBadge}>
                   <Text style={styles.bellBadgeText}>
-                    {(badgeCounts['/announcements_urgent'] || 0) > 9 ? '9+' : badgeCounts['/announcements_urgent']}
+                    {totalUnread > 9 ? '9+' : totalUnread}
                   </Text>
                 </View>
               )}
@@ -272,12 +299,14 @@ export default function HomeScreen() {
           <View style={styles.grid}>
             {filteredModules.map((m) => {
               const count = badgeCounts[m.route] || 0;
-              const isLocked = needsSubscription && GATED_ROUTES.includes(m.route);
+              const isNewspaperLocked = m.route === '/newspaper' && user?.role !== 'admin' && !hasNewspaperAddon;
+              const isLocked = isNewspaperLocked || (needsSubscription && GATED_ROUTES.includes(m.route));
               const palette = MODULE_PALETTE[m.titleKey] || { bg: '#F1F5F9', icon: Colors.primary };
               const iconName = MODULE_ICONS[m.titleKey] || 'grid-outline';
               return (
                 <TouchableOpacity
                   key={`${m.titleKey}-${m.route}`}
+                  testID={`module-tile-${m.route}`}
                   style={[styles.moduleCard, isLocked && styles.moduleCardLocked]}
                   onPress={() => handleModuleTap(m.route, m.titleKey)}
                   activeOpacity={0.75}
@@ -296,7 +325,7 @@ export default function HomeScreen() {
                       </View>
                     )}
                     {isLocked && (
-                      <View style={styles.lockBadge}>
+                      <View testID={`lock-badge-${m.route}`} style={styles.lockBadge}>
                         <Ionicons name="lock-closed" size={9} color={Colors.white} />
                       </View>
                     )}
@@ -313,33 +342,35 @@ export default function HomeScreen() {
         <View style={{ height: 32 }} />
       </ScrollView>
 
-      {/* Urgent Modal */}
+      {/* Notifications Inbox Modal */}
       <Modal visible={showUrgentModal} transparent animationType="slide" onRequestClose={dismissUrgentInbox}>
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={dismissUrgentInbox}>
           <TouchableOpacity activeOpacity={1} style={styles.modalSheet}>
             <View style={styles.modalHandle} />
             <View style={styles.modalTitleRow}>
-              <Text style={styles.modalTitle}>🚨 {t('urgentAnnouncements')}</Text>
+              <Text style={styles.modalTitle}>� {t('notifications')}</Text>
               <TouchableOpacity onPress={dismissUrgentInbox}>
                 <Ionicons name="close-circle" size={26} color={Colors.border} />
               </TouchableOpacity>
             </View>
-            {urgentAnnouncements.length === 0 ? (
+            {notifications.length === 0 ? (
               <View style={styles.modalEmpty}>
                 <Ionicons name="checkmark-circle-outline" size={44} color={Colors.success} />
-                <Text style={styles.modalEmptyText}>{t('noUrgentAnnouncements')}</Text>
+                <Text style={styles.modalEmptyText}>{t('noNotifications')}</Text>
               </View>
             ) : (
               <ScrollView showsVerticalScrollIndicator={false}>
-                {urgentAnnouncements.map((a) => (
-                  <View key={a.id} style={styles.urgentCard}>
+                {notifications.map((n) => (
+                  <View key={n.id} style={styles.urgentCard}>
                     <View style={styles.urgentCardTop}>
-                      <Text style={styles.urgentCardTitle}>{a.title}</Text>
-                      <View style={styles.urgentBadge}><Text style={styles.urgentBadgeText}>URGENT</Text></View>
+                      <Text style={styles.urgentCardTitle}>{n.title}</Text>
+                      <View style={[styles.urgentBadge, { backgroundColor: Colors.primary }]}>
+                        <Text style={styles.urgentBadgeText}>{(n.type || '').replace(/_/g, ' ').toUpperCase()}</Text>
+                      </View>
                     </View>
-                    <Text style={styles.urgentCardBody}>{a.body}</Text>
+                    {!!n.body && <Text style={styles.urgentCardBody}>{n.body}</Text>}
                     <Text style={styles.urgentCardMeta}>
-                      {a.users?.name} · {new Date(a.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      {new Date(n.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                     </Text>
                   </View>
                 ))}

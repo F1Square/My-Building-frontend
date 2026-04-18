@@ -61,6 +61,8 @@ const en: Record<string, string> = {
   users: 'Users', inquiries: 'Inquiries', subscriptions: 'Subscriptions',
   promoCodes: 'Promo Codes', activityLogs: 'Activity Logs',
   referAndEarn: 'Refer & Earn',
+  newspaper: 'Newspaper',
+  societyRules: 'Society Rules',
 
   // ── Maintenance ───────────────────────────────────────────────────────────
   maintenanceBills: 'Maintenance Bills', myBills: 'My Bills',
@@ -92,6 +94,7 @@ const en: Record<string, string> = {
   noAnnouncements: 'No announcements yet',
   priority: 'Priority', urgentAnnouncements: '🚨 Urgent Announcements',
   noUrgentAnnouncements: 'No urgent announcements',
+  notifications: 'Notifications', noNotifications: 'No new notifications',
 
   // ── Visitors ──────────────────────────────────────────────────────────────
   visitorDetails: 'Visitor Details', noVisitors: 'No visitors on this day',
@@ -246,6 +249,7 @@ const hi: Record<string, string> = {
   bankDetails: 'बैंक विवरण', adminPanel: 'एडमिन पैनल', users: 'उपयोगकर्ता',
   inquiries: 'पूछताछ', subscriptions: 'सदस्यताएं', promoCodes: 'प्रोमो कोड',
   activityLogs: 'गतिविधि लॉग', referAndEarn: 'रेफर करें और कमाएं',
+  newspaper: 'समाचार पत्र',
   maintenanceBills: 'रखरखाव बिल', myBills: 'मेरे बिल',
   addBill: 'बिल जोड़ें', billAdded: 'बिल जोड़ा गया और सदस्यों को सूचित किया गया',
   amountDue: 'बकाया राशि', totalPaid: 'कुल भुगतान', totalBills: 'कुल बिल',
@@ -271,6 +275,7 @@ const hi: Record<string, string> = {
   noAnnouncements: 'अभी तक कोई घोषणा नहीं',
   priority: 'प्राथमिकता', urgentAnnouncements: '🚨 अत्यावश्यक घोषणाएं',
   noUrgentAnnouncements: 'कोई अत्यावश्यक घोषणा नहीं',
+  notifications: 'सूचनाएं', noNotifications: 'कोई नई सूचना नहीं',
   visitorDetails: 'आगंतुक विवरण', noVisitors: 'इस दिन कोई आगंतुक नहीं',
   selectBuildingToView: 'आगंतुक देखने के लिए बिल्डिंग चुनें',
   entryType: 'प्रवेश प्रकार', visitingFlat: 'फ्लैट का दौरा',
@@ -390,6 +395,7 @@ const gu: Record<string, string> = {
   bankDetails: 'બૅન્ક વિગતો', adminPanel: 'એડમિન પૅનલ', users: 'વપરાશકર્તાઓ',
   inquiries: 'પૂછપરછ', subscriptions: 'સભ્યપદો', promoCodes: 'પ્રોમો કોડ',
   activityLogs: 'પ્રવૃત્તિ લૉગ', referAndEarn: 'રેફર કરો અને કમાઓ',
+  newspaper: 'સમાચારપત્ર',
   maintenanceBills: 'જાળવણી બિલ', myBills: 'મારા બિલ',
   addBill: 'બિલ ઉમેરો', billAdded: 'બિલ ઉમેર્યું અને સભ્યોને જાણ કરી',
   amountDue: 'બાકી રકમ', totalPaid: 'કુલ ચૂકવ્યું', totalBills: 'કુલ બિલ',
@@ -415,6 +421,7 @@ const gu: Record<string, string> = {
   noAnnouncements: 'હજી કોઈ જાહેરાત નથી',
   priority: 'પ્રાધાન્ય', urgentAnnouncements: '🚨 તાત્કાલિક જાહેરાતો',
   noUrgentAnnouncements: 'કોઈ તાત્કાલિક જાહેરાત નથી',
+  notifications: 'સૂચનાઓ', noNotifications: 'કોઈ નવી સૂચના નથી',
   visitorDetails: 'મુલાકાતી વિગત', noVisitors: 'આ દિવસે કોઈ મુલાકાતી નથી',
   selectBuildingToView: 'મુલાકાતીઓ જોવા બિલ્ડિંગ પસંદ કરો',
   entryType: 'પ્રવેશ પ્રકાર', visitingFlat: 'ફ્લૅટ મુલાકાત',

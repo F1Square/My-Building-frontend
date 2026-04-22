@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
@@ -81,6 +81,33 @@ export default function ComplaintsScreen() {
     fetchComplaints();
     logEvent(isMyView ? 'open_my_complaints' : 'open_society_complaints', 'complaints');
   }, []));
+
+  // Cleanup function to reset modal states
+  useEffect(() => {
+    return () => {
+      setImageViewerUri(null);
+      setShowDetail(false);
+      setShowAdd(false);
+      setShowUpdate(false);
+    };
+  }, []);
+
+  // Reset image viewer when detail modal is closed
+  useEffect(() => {
+    if (!showDetail) {
+      setImageViewerUri(null);
+    }
+  }, [showDetail]);
+
+  // Handle image viewer state changes
+  useEffect(() => {
+    console.log('imageViewerUri changed:', imageViewerUri);
+    
+    // If image viewer is closed, ensure we can interact with other elements
+    if (!imageViewerUri) {
+      console.log('Image viewer closed, resetting interaction state');
+    }
+  }, [imageViewerUri]);
 
   const fetchComplaints = async () => {
     if (!user?.building_id) {
@@ -177,7 +204,12 @@ export default function ComplaintsScreen() {
     return (
       <TouchableOpacity
         style={[styles.card, { borderLeftColor: meta.color }]}
-        onPress={() => { setSelectedComplaint(item); setShowDetail(true); }}
+        onPress={() => { 
+          console.log('Complaint card pressed, clearing states and opening detail');
+          setImageViewerUri(null); // Clear any existing image viewer
+          setSelectedComplaint(item); 
+          setShowDetail(true); 
+        }}
         activeOpacity={0.82}
       >
         <View style={styles.cardTop}>
@@ -415,7 +447,14 @@ export default function ComplaintsScreen() {
             <View style={styles.sheetHandle} />
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>Complaint Detail</Text>
-              <TouchableOpacity onPress={() => setShowDetail(false)} style={styles.closeBtn}>
+              <TouchableOpacity 
+                onPress={() => {
+                  console.log('Detail modal close button pressed');
+                  setImageViewerUri(null); // Clear image viewer first
+                  setShowDetail(false);    // Then close detail modal
+                }} 
+                style={styles.closeBtn}
+              >
                 <Ionicons name="close" size={20} color={Colors.text} />
               </TouchableOpacity>
             </View>
@@ -466,10 +505,47 @@ export default function ComplaintsScreen() {
                   ) : null}
 
                   {selectedComplaint.photo_url ? (
-                    <Pressable onPress={() => setImageViewerUri(selectedComplaint.photo_url)}>
-                      <Image source={{ uri: selectedComplaint.photo_url }} style={styles.detailPhoto} resizeMode="cover" />
-                      <Text style={styles.tapToExpand}>Tap to expand</Text>
-                    </Pressable>
+                    <View style={styles.detailBlock}>
+                      <Text style={styles.detailBlockLabel}>Attachment</Text>
+                      
+                      {/* Temporary test button for debugging */}
+                      <TouchableOpacity 
+                        onPress={() => {
+                          console.log('Test button pressed - using reliable image URL');
+                          setImageViewerUri('https://picsum.photos/400/300');
+                        }}
+                        style={{ 
+                          backgroundColor: Colors.primary, 
+                          padding: 12, 
+                          marginBottom: 10, 
+                          borderRadius: 8,
+                          alignItems: 'center'
+                        }}
+                      >
+                        <Text style={{ color: 'white', fontWeight: '600' }}>🧪 Test Image Viewer</Text>
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity 
+                        onPress={() => {
+                          console.log('Image tapped, URL:', selectedComplaint.photo_url);
+                          setImageViewerUri(selectedComplaint.photo_url);
+                        }}
+                        style={styles.imageContainer}
+                        activeOpacity={0.7}
+                      >
+                        <Image 
+                          source={{ uri: selectedComplaint.photo_url }} 
+                          style={styles.detailPhoto} 
+                          resizeMode="cover"
+                          onError={(error) => console.log('Image load error:', error)}
+                          onLoad={() => console.log('Image loaded successfully')}
+                        />
+                        <View style={styles.imageOverlay}>
+                          <Ionicons name="expand-outline" size={24} color={Colors.white} />
+                          <Text style={styles.expandText}>Tap to expand</Text>
+                        </View>
+                      </TouchableOpacity>
+                    </View>
                   ) : null}
 
                   {selectedComplaint.remark ? (
@@ -482,7 +558,12 @@ export default function ComplaintsScreen() {
                   {showUpdateButton ? (
                     <TouchableOpacity
                       style={styles.submitBtn}
-                      onPress={() => { setShowDetail(false); openUpdate(selectedComplaint); }}
+                      onPress={() => { 
+                        console.log('Update button pressed, closing modals');
+                        setImageViewerUri(null); // Clear image viewer first
+                        setShowDetail(false);    // Close detail modal
+                        openUpdate(selectedComplaint); 
+                      }}
                     >
                       <Ionicons name="create-outline" size={18} color={Colors.white} />
                       <Text style={styles.submitBtnText}>Update Status</Text>
@@ -497,14 +578,46 @@ export default function ComplaintsScreen() {
       </Modal>
 
       {/* ── Full-screen Image Viewer ── */}
-      <Modal visible={!!imageViewerUri} transparent animationType="fade" onRequestClose={() => setImageViewerUri(null)}>
+      <Modal 
+        visible={!!imageViewerUri} 
+        transparent 
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setImageViewerUri(null)}
+      >
         <View style={styles.imageViewerOverlay}>
-          <TouchableOpacity style={styles.imageViewerClose} onPress={() => setImageViewerUri(null)}>
-            <Ionicons name="close-circle" size={36} color={Colors.white} />
+          {/* Close button */}
+          <TouchableOpacity 
+            style={styles.imageViewerClose} 
+            onPress={() => setImageViewerUri(null)}
+            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+          >
+            <Ionicons name="close-circle" size={40} color={Colors.white} />
           </TouchableOpacity>
-          {imageViewerUri && (
-            <Image source={{ uri: imageViewerUri }} style={styles.imageViewerImg} resizeMode="contain" />
-          )}
+          
+          {/* Image container */}
+          <View style={styles.imageViewerContainer}>
+            {imageViewerUri && (
+              <Image 
+                source={{ uri: imageViewerUri }} 
+                style={styles.imageViewerImg} 
+                resizeMode="contain"
+                onError={(error) => {
+                  console.log('Viewer image error:', error);
+                  Alert.alert('Error', 'Failed to load image');
+                  setImageViewerUri(null);
+                }}
+                onLoad={() => console.log('Viewer image loaded successfully')}
+              />
+            )}
+          </View>
+          
+          {/* Background tap to close */}
+          <TouchableOpacity 
+            style={styles.imageViewerBackground}
+            onPress={() => setImageViewerUri(null)}
+            activeOpacity={1}
+          />
         </View>
       </Modal>
 
@@ -716,10 +829,41 @@ const styles = StyleSheet.create({
   tabBadgeText: { fontSize: 11, fontWeight: '800' },
 
   // Image viewer
-  imageViewerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center', alignItems: 'center' },
-  imageViewerClose: { position: 'absolute', top: 56, right: 20, zIndex: 10 },
-  imageViewerImg: { width: '100%', height: '80%' },
-  tapToExpand: { fontSize: 11, color: Colors.textMuted, textAlign: 'center', marginTop: 4, marginBottom: 8 },
+  imageViewerOverlay: { 
+    flex: 1, 
+    backgroundColor: 'rgba(0,0,0,0.95)', 
+    position: 'relative' 
+  },
+  imageViewerClose: { 
+    position: 'absolute', 
+    top: 60, 
+    right: 20, 
+    zIndex: 1000,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderRadius: 20,
+    padding: 4
+  },
+  imageViewerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 100
+  },
+  imageViewerImg: { 
+    width: '100%', 
+    height: '100%',
+    maxWidth: 400,
+    maxHeight: 600
+  },
+  imageViewerBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: -1
+  },
 
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
@@ -775,7 +919,26 @@ const styles = StyleSheet.create({
   },
   detailBlockLabel: { fontSize: 11, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
   detailBlockText: { fontSize: 15, color: Colors.text, lineHeight: 22 },
-  detailPhoto: { width: '100%', height: 200, borderRadius: 14, marginBottom: 14 },
+  detailPhoto: { width: '100%', height: 200, borderRadius: 14 },
+  imageContainer: { position: 'relative', borderRadius: 14, overflow: 'hidden' },
+  imageOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  expandText: { 
+    fontSize: 12, 
+    color: Colors.white, 
+    fontWeight: '600' 
+  },
 
   // Status update grid
   statusGrid: { flexDirection: 'row', gap: 10, marginBottom: 18 },

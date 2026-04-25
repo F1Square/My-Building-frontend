@@ -39,19 +39,41 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   // Called from _layout when user becomes available (login or restore from storage)
   // Keeps loading=true until done so the router never sees a stale hasChosen=false
   const initForUser = async (userId: string) => {
-    setCurrentUserId(userId);
-    const key = `app_language_user_${userId}`;
-    const v = await AsyncStorage.getItem(key);
-    if (v === 'hi' || v === 'gu' || v === 'en') {
-      setLang(v);
-      setHasChosen(true);
-    } else {
-      // New user — use device language as default but require them to confirm
+    // Special case: no user logged in (logout state)
+    if (userId === '__no_user__') {
+      // Check if device-level language exists
       const deviceLang = await AsyncStorage.getItem('app_language');
       if (deviceLang === 'hi' || deviceLang === 'gu' || deviceLang === 'en') {
         setLang(deviceLang);
+        // Device language exists, so user has chosen before
+        setHasChosen(true);
+      } else {
+        setHasChosen(false);
       }
-      setHasChosen(false);
+      setLoading(false);
+      return;
+    }
+
+    setCurrentUserId(userId);
+    const key = `app_language_user_${userId}`;
+    const v = await AsyncStorage.getItem(key);
+    
+    if (v === 'hi' || v === 'gu' || v === 'en') {
+      // User-specific language found
+      setLang(v);
+      setHasChosen(true);
+    } else {
+      // No user-specific language — check device-level language as fallback
+      const deviceLang = await AsyncStorage.getItem('app_language');
+      if (deviceLang === 'hi' || deviceLang === 'gu' || deviceLang === 'en') {
+        setLang(deviceLang);
+        // If device language exists, mark as chosen and save to user-specific key
+        setHasChosen(true);
+        await AsyncStorage.setItem(key, deviceLang);
+      } else {
+        // Truly new user — no language preference found anywhere
+        setHasChosen(false);
+      }
     }
     setLoading(false);
   };

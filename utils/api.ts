@@ -56,9 +56,13 @@ api.interceptors.response.use(
   },
   async (error) => {
     const status = error.response?.status;
+    const url = error.config?.url ?? '';
 
-    // Token missing, invalid or expired — force logout
-    if (status === 401 || (status === 403 && !error.response?.data?.error)) {
+    // Don't auto-logout on login/signup endpoints — let the component handle it
+    const isAuthEndpoint = /\/(login|signup|register|forgot-password|verify-otp|reset-password)/.test(url);
+
+    // Token missing, invalid or expired — force logout (but not on auth endpoints)
+    if (!isAuthEndpoint && (status === 401 || (status === 403 && !error.response?.data?.error))) {
       await AsyncStorage.multiRemove(['token', 'user', 'subscription']);
       _onAuthFailure?.();
       return Promise.reject({ _authError: true });

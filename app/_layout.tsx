@@ -87,6 +87,9 @@ function RootNavigator() {
       <Stack.Screen name="activity-logs" />
       <Stack.Screen name="website-contacts" />
       <Stack.Screen name="cache-debug" />
+      <Stack.Screen name="admin" options={{ gestureEnabled: true }} />
+      <Stack.Screen name="bank-details" options={{ gestureEnabled: true }} />
+      <Stack.Screen name="users" options={{ gestureEnabled: true }} />
       <Stack.Screen name="entry/[building_id]" options={{ headerShown: false }} />
     </Stack>
   );

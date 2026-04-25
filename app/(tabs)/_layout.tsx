@@ -32,10 +32,7 @@ export default function TabsLayout() {
       />
 
       {/* Hidden from tab bar — navigated to from Home screen cards */}
-      <Tabs.Screen name="admin"        options={{ href: null }} />
       <Tabs.Screen name="join"         options={{ href: null }} />
-      <Tabs.Screen name="bank-details"  options={{ href: null }} />
-      <Tabs.Screen name="users"         options={{ href: null }} />
 
       <Tabs.Screen
         name="profile"

@@ -1,15 +1,15 @@
 import React, { useState } from 'react';
-import { useLanguage } from '../../context/LanguageContext';
-import { Colors } from '../../constants/colors';
+import { useLanguage } from '../context/LanguageContext';
+import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  Modal, Alert, ActivityIndicator, RefreshControl, FlatList
+  Modal, Alert, ActivityIndicator, RefreshControl, FlatList, Clipboard
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import api from '../../utils/api';
-import BuildingDropdown from '../../components/BuildingDropdown';
-import type { Building } from '../../hooks/useBuildings';
+import api from '../utils/api';
+import BuildingDropdown from '../components/BuildingDropdown';
+import type { Building } from '../hooks/useBuildings';
 
 type ModalType = 'none' | 'createBuilding' | 'createPramukh' | 'members' | 'subscriptions' | 'grantSub';
 type Member = { id: string; name: string; email: string; role: string; flat_no?: string; status: string };
@@ -59,6 +59,17 @@ export default function AdminScreen() {
   const [allUsers, setAllUsers] = useState<{ id: string; name: string; email: string }[]>([]);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [userSearch, setUserSearch] = useState('');
+
+  // building selector for module navigation
+  const [selectedModuleRoute, setSelectedModuleRoute] = useState<string>('');
+  const [buildingSearchQuery, setBuildingSearchQuery] = useState('');
+  const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null);
+
+  const filteredBuildings = buildings.filter(b =>
+    b.name.toLowerCase().includes(buildingSearchQuery.toLowerCase()) ||
+    b.address?.toLowerCase().includes(buildingSearchQuery.toLowerCase()) ||
+    b.id.toLowerCase().includes(buildingSearchQuery.toLowerCase())
+  );
 
   React.useEffect(() => { fetchBuildings(); }, []);
 
@@ -168,16 +179,36 @@ export default function AdminScreen() {
 
   const navigateTo = (route: string, b: Building) => {
     router.push({ pathname: route as any, params: { building_id: b.id, building_name: b.name } });
+    setSelectedBuilding(null);
+  };
+
+  const openBuildingSelector = (route: string) => {
+    setSelectedModuleRoute(route);
+    setModal('buildingSelector');
+    setBuildingSearchQuery('');
+  };
+
+  const handleBuildingClick = (b: Building) => {
+    if (selectedBuilding?.id === b.id) {
+      setSelectedBuilding(null);
+    } else {
+      setSelectedBuilding(b);
+    }
+  };
+
+  const copyBuildingId = async (buildingId: string, buildingName: string) => {
+    Clipboard.setString(buildingId);
+    Alert.alert('Copied!', `Building ID for "${buildingName}" copied to clipboard`);
   };
 
   const roleColor = (r: string) =>
     r === 'pramukh' ? Colors.primary : r === 'user' ? Colors.success : Colors.textMuted;
 
   const BUILD_ACTIONS = [
-    { route: '/(tabs)/maintenance',   icon: 'wallet',       color: '#10B981', label: 'Maintenance' },
-    { route: '/(tabs)/announcements', icon: 'megaphone',    color: '#F59E0B', label: 'Notices' },
-    { route: '/(tabs)/visitors',      icon: 'people',       color: '#6366F1', label: 'Visitors' },
-    { route: '/(tabs)/parking',       icon: 'car',          color: '#0EA5E9', label: 'Parking' },
+    { route: '/maintenance',   icon: 'wallet',       color: '#10B981', label: 'Maintenance' },
+    { route: '/announcements', icon: 'megaphone',    color: '#F59E0B', label: 'Notices' },
+    { route: '/visitors',      icon: 'people',       color: '#6366F1', label: 'Visitors' },
+    { route: '/parking',       icon: 'car',          color: '#0EA5E9', label: 'Parking' },
   ];
 
   
@@ -207,46 +238,99 @@ export default function AdminScreen() {
             <ActionCard icon="person-add"  label="New Pramukh"    color="#7C3AED"        onPress={() => setModal('createPramukh')} />
           </View>
           <View style={styles.actionsRow}>
-            <ActionCard icon="card"        label="Subscriptions"  color="#0EA5E9"        onPress={openSubscriptions} />
-            <ActionCard icon="gift"        label="Grant Sub"      color="#10B981"        onPress={openGrantSub} />
-          </View>
-          <View style={styles.actionsRow}>
             <ActionCard icon="globe-outline" label="Web Inquiries" color="#F59E0B" onPress={() => router.push('/website-contacts' as any)} />
             <ActionCard icon="document-text-outline" label="Building Inquiries" color="#7C3AED" onPress={() => router.push('/inquiries' as any)} />
           </View>
 
           <Text style={styles.sectionTitle}>Buildings</Text>
-          {buildings.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyIcon}>🏢</Text>
-              <Text style={styles.emptyTitle}>No buildings yet</Text>
-              <Text style={styles.emptyText}>Create your first building above</Text>
+          
+          {/* Search bar */}
+          {buildings.length > 0 && (
+            <View style={styles.searchBar}>
+              <Ionicons name="search" size={18} color={Colors.textMuted} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search buildings..."
+                value={buildingSearchQuery}
+                onChangeText={setBuildingSearchQuery}
+                placeholderTextColor={Colors.textMuted}
+              />
+              {buildingSearchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setBuildingSearchQuery('')}>
+                  <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
+                </TouchableOpacity>
+              )}
             </View>
-          ) : buildings.map((b) => (
+          )}
+
+          {filteredBuildings.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyIcon}>{buildingSearchQuery ? '🔍' : '🏢'}</Text>
+              <Text style={styles.emptyTitle}>{buildingSearchQuery ? 'No buildings found' : 'No buildings yet'}</Text>
+              <Text style={styles.emptyText}>{buildingSearchQuery ? 'Try a different search term' : 'Create your first building above'}</Text>
+            </View>
+          ) : filteredBuildings.map((b) => (
             <View key={b.id} style={styles.buildingCard}>
-              <View style={styles.buildingTop}>
+              <TouchableOpacity 
+                style={styles.buildingNameRow}
+                onPress={() => handleBuildingClick(b)}
+                activeOpacity={0.7}
+              >
                 <View style={styles.buildingIconBox}><Text style={{ fontSize: 22 }}>🏢</Text></View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.buildingName}>{b.name}</Text>
-                  {b.address ? <Text style={styles.buildingAddr}>{b.address}</Text> : null}
+                  {selectedBuilding?.id === b.id && (
+                    <View style={styles.buildingIdRow}>
+                      <Text style={styles.buildingId}>ID: {b.id}</Text>
+                      <TouchableOpacity 
+                        style={styles.copyBtn}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          copyBuildingId(b.id, b.name);
+                        }}
+                      >
+                        <Ionicons name="copy-outline" size={14} color={Colors.primary} />
+                      </TouchableOpacity>
+                    </View>
+                  )}
                 </View>
-                <TouchableOpacity style={styles.membersBtn} onPress={() => openMembers(b)}>
-                  <Ionicons name="people" size={14} color={Colors.primary} />
-                  <Text style={styles.membersBtnText}>{t('members')}</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={styles.buildingActions}>
-                {BUILD_ACTIONS.map((item) => (
-                  <TouchableOpacity
-                    key={item.route}
-                    style={[styles.miniBtn, { backgroundColor: item.color + '15' }]}
-                    onPress={() => navigateTo(item.route, b)}
-                  >
-                    <Ionicons name={item.icon as any} size={16} color={item.color} />
-                    <Text style={[styles.miniLabel, { color: item.color }]}>{item.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+                <Ionicons 
+                  name={selectedBuilding?.id === b.id ? "chevron-up" : "chevron-down"} 
+                  size={20} 
+                  color={Colors.textMuted} 
+                />
+              </TouchableOpacity>
+              
+              {selectedBuilding?.id === b.id && (
+                <View style={styles.buildingExpandedSection}>
+                  {b.address && (
+                    <View style={styles.buildingInfoRow}>
+                      <Ionicons name="location-outline" size={14} color={Colors.textMuted} />
+                      <Text style={styles.buildingInfoText}>{b.address}</Text>
+                    </View>
+                  )}
+                  
+                  <View style={styles.buildingActionsExpanded}>
+                    <TouchableOpacity style={styles.membersBtn} onPress={() => openMembers(b)}>
+                      <Ionicons name="people" size={14} color={Colors.primary} />
+                      <Text style={styles.membersBtnText}>{t('members')}</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.moduleButtons}>
+                    {BUILD_ACTIONS.map((item) => (
+                      <TouchableOpacity
+                        key={item.route}
+                        style={[styles.moduleBtn, { backgroundColor: item.color + '15', borderColor: item.color + '30' }]}
+                        onPress={() => navigateTo(item.route, b)}
+                      >
+                        <Ionicons name={item.icon as any} size={18} color={item.color} />
+                        <Text style={[styles.moduleBtnText, { color: item.color }]}>{item.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
             </View>
           ))}
         </ScrollView>
@@ -569,12 +653,25 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 18, fontWeight: '800', color: Colors.text, marginBottom: 6 },
   emptyText: { fontSize: 13, color: Colors.textMuted, textAlign: 'center' },
   buildingCard: { backgroundColor: Colors.white, borderRadius: 14, padding: 16, marginBottom: 12, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
-  buildingTop: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  buildingNameRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  buildingTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   buildingIconBox: { width: 44, height: 44, borderRadius: 12, backgroundColor: Colors.primary + '15', justifyContent: 'center', alignItems: 'center' },
   buildingName: { fontSize: 16, fontWeight: '700', color: Colors.text },
   buildingAddr: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
+  buildingIdRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
+  buildingId: { fontSize: 11, color: Colors.primary, fontFamily: 'monospace', fontWeight: '600' },
+  copyBtn: { backgroundColor: Colors.primary + '15', borderRadius: 6, padding: 4 },
+  buildingExpandedSection: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: Colors.border },
+  buildingInfoRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  buildingInfoText: { fontSize: 13, color: Colors.textMuted, flex: 1 },
+  buildingActionsExpanded: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   membersBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.primary + '12', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
   membersBtnText: { fontSize: 12, color: Colors.primary, fontWeight: '700' },
+  moduleButtons: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  moduleBtn: { flex: 1, minWidth: '47%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 10, borderWidth: 1 },
+  moduleBtnText: { fontSize: 13, fontWeight: '700' },
+  searchBar: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Colors.bg, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 16, borderWidth: 1.5, borderColor: Colors.border },
+  searchInput: { flex: 1, fontSize: 15, color: Colors.text },
   buildingActions: { flexDirection: 'row', gap: 6, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 12 },
   miniBtn: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 10, gap: 4 },
   miniLabel: { fontSize: 10, fontWeight: '600' },

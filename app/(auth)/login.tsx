@@ -30,7 +30,31 @@ export default function LoginScreen() {
       await login(res.data.token, res.data.user, res.data.subscription ?? null);
       router.replace('/');
     } catch (e: any) {
-      const msg = e.response?.data?.error || e.message || 'Cannot connect to server';
+      let msg = 'An unexpected error occurred';
+      
+      if (e.response) {
+        // Server responded with an error
+        const status = e.response.status;
+        const errorMsg = e.response.data?.error;
+        
+        if (status === 401 || status === 400 || status === 422) {
+          // Authentication or validation errors
+          msg = errorMsg || 'Invalid email or password';
+        } else {
+          // Other server errors
+          msg = errorMsg || 'Login failed. Please try again.';
+        }
+      } else if (e.code === 'ECONNREFUSED' || e.code === 'ERR_NETWORK' || e.message === 'Network Error') {
+        // Network errors
+        msg = 'Cannot connect to server. Please check your internet connection.';
+      } else if (e.request) {
+        // Request was made but no response received
+        msg = 'Cannot connect to server. Please check your internet connection.';
+      } else if (e.message) {
+        // Other errors with a message
+        msg = e.message;
+      }
+      
       Alert.alert('Login Failed', msg);
     } finally {
       setLoading(false);

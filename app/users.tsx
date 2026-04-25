@@ -1,16 +1,16 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useLanguage } from '../../context/LanguageContext';
-import { Colors } from '../../constants/colors';
+import { useLanguage } from '../context/LanguageContext';
+import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput,
   Modal, Alert, ActivityIndicator, RefreshControl, ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import api from '../../utils/api';
-import BuildingDropdown from '../../components/BuildingDropdown';
-import { useBuildings } from '../../hooks/useBuildings';
-import type { Building } from '../../hooks/useBuildings';
+import api from '../utils/api';
+import BuildingDropdown from '../components/BuildingDropdown';
+import { useBuildings } from '../hooks/useBuildings';
+import type { Building } from '../hooks/useBuildings';
 
 const ROLES = ['user', 'pramukh'];
 

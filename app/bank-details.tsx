@@ -1,16 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { useLanguage } from '../../context/LanguageContext';
-import { Colors } from '../../constants/colors';
+import { useLanguage } from '../context/LanguageContext';
+import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, Alert, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useAuth } from '../../context/AuthContext';
-import api from '../../utils/api';
-import BuildingDropdown from '../../components/BuildingDropdown';
-import { useBuildings, Building } from '../../hooks/useBuildings';
+import { useAuth } from '../context/AuthContext';
+import api from '../utils/api';
+import BuildingDropdown from '../components/BuildingDropdown';
+import { useBuildings, Building } from '../hooks/useBuildings';
 
 function Row({ icon, label, value, mono }: { icon: any; label: string; value: string; mono?: boolean }) {
   

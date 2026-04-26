@@ -42,6 +42,18 @@ function RootNavigator() {
 
     const inAuth = (segments[0] as string) === '(auth)';
     const inLangPicker = (segments[0] as string) === 'choose-language';
+    const currentRoute = segments.join('/') || 'root';
+
+    // Debug logging for development
+    if (__DEV__) {
+      console.log('Routing check:', {
+        user: !!user,
+        hasChosen,
+        currentRoute,
+        inAuth,
+        inLangPicker,
+      });
+    }
 
     if (!user) {
       if (!inAuth) router.replace('/(auth)/login' as any);
@@ -54,8 +66,11 @@ function RootNavigator() {
       return;
     }
 
-    // Logged in + language chosen → go home
-    if (inAuth || inLangPicker) router.replace('/' as any);
+    // Logged in + language chosen → only redirect if currently in auth or language picker
+    // Don't redirect on 404 or other valid routes
+    if (inAuth || inLangPicker) {
+      router.replace('/' as any);
+    }
   }, [user, authLoading, hasChosen, langLoading]);
 
   if (authLoading || langLoading) {
@@ -68,6 +83,7 @@ function RootNavigator() {
 
   return (
     <Stack screenOptions={{ headerShown: false, gestureEnabled: true, animation: 'slide_from_right' }}>
+      <Stack.Screen name="+not-found" options={{ title: 'Page Not Found' }} />
       <Stack.Screen name="choose-language" options={{ gestureEnabled: false, animation: 'fade' }} />
       <Stack.Screen name="(auth)" options={{ gestureEnabled: false }} />
       <Stack.Screen name="(tabs)" options={{ gestureEnabled: false }} />

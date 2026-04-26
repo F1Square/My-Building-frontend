@@ -38,7 +38,6 @@ function toDateStr(y: number, m: number, d: number) {
 
 // ── Inline Calendar ───────────────────────────────────────────────────────────
 function Calendar({ selected, onSelect }: { selected: string; onSelect: (d: string) => void }) {
-  const cal = makeCal(Colors);
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -56,23 +55,23 @@ function Calendar({ selected, onSelect }: { selected: string; onSelect: (d: stri
   const todayStr = toDateStr(now.getFullYear(), now.getMonth() + 1, now.getDate());
 
   return (
-    <View style={cal.wrap}>
-      <View style={cal.nav}>
-        <TouchableOpacity onPress={prevMonth} style={cal.navBtn}>
+    <View style={calStyles.wrap}>
+      <View style={calStyles.nav}>
+        <TouchableOpacity onPress={prevMonth} style={calStyles.navBtn}>
           <Ionicons name="chevron-back" size={20} color={Colors.primary} />
         </TouchableOpacity>
-        <Text style={cal.navLabel}>{MONTH_NAMES[month - 1]} {year}</Text>
-        <TouchableOpacity onPress={nextMonth} style={cal.navBtn}>
+        <Text style={calStyles.navLabel}>{MONTH_NAMES[month - 1]} {year}</Text>
+        <TouchableOpacity onPress={nextMonth} style={calStyles.navBtn}>
           <Ionicons name="chevron-forward" size={20} color={Colors.primary} />
         </TouchableOpacity>
       </View>
-      <View style={cal.row}>
-        {DAY_LABELS.map(d => <Text key={d} style={cal.dayHdr}>{d}</Text>)}
+      <View style={calStyles.row}>
+        {DAY_LABELS.map(d => <Text key={d} style={calStyles.dayHdr}>{d}</Text>)}
       </View>
       {Array.from({ length: cells.length / 7 }, (_, row) => (
-        <View key={row} style={cal.row}>
+        <View key={row} style={calStyles.row}>
           {cells.slice(row * 7, row * 7 + 7).map((day, col) => {
-            if (!day) return <View key={col} style={cal.cell} />;
+            if (!day) return <View key={col} style={calStyles.cell} />;
             const ds = toDateStr(year, month, day);
             const isSel = ds === selected;
             const isToday = ds === todayStr;
@@ -80,11 +79,11 @@ function Calendar({ selected, onSelect }: { selected: string; onSelect: (d: stri
             return (
               <TouchableOpacity
                 key={col}
-                style={[cal.cell, isSel && cal.cellSel, isToday && !isSel && cal.cellToday]}
+                style={[calStyles.cell, isSel && calStyles.cellSel, isToday && !isSel && calStyles.cellToday]}
                 onPress={() => !isFuture && onSelect(ds)}
                 disabled={isFuture}
               >
-                <Text style={[cal.dayTxt, isSel && cal.dayTxtSel, isToday && !isSel && cal.dayTxtToday, isFuture && cal.dayTxtFuture]}>
+                <Text style={[calStyles.dayTxt, isSel && calStyles.dayTxtSel, isToday && !isSel && calStyles.dayTxtToday, isFuture && calStyles.dayTxtFuture]}>
                   {day}
                 </Text>
               </TouchableOpacity>

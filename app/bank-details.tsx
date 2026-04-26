@@ -5,6 +5,7 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, Alert, ActivityIndicator,
 } from 'react-native';
+import { Picker } from '@react-native-picker/picker';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
@@ -43,7 +44,24 @@ export default function BankDetailsScreen() {
   const { buildings, loading: buildingsLoading } = useBuildings(isAdmin);
   const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null);
 
-  const [details, setDetails] = useState({ bank_name: '', bank_branch: '', bank_ifsc: '', bank_account: '', beneficiary_name: '', contact_name: '', contact_email: '', contact_mobile: '' });
+  const [details, setDetails] = useState({ 
+    bank_name: '', 
+    bank_branch: '', 
+    bank_ifsc: '', 
+    bank_account: '', 
+    beneficiary_name: '', 
+    contact_name: '', 
+    contact_email: '', 
+    contact_mobile: '',
+    business_type: 'society',
+    profile_category: 'others',
+    profile_subcategory: 'others',
+    address: '',
+    address2: '',
+    city: '',
+    state: '',
+    pincode: ''
+  });
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -53,7 +71,24 @@ export default function BankDetailsScreen() {
 
   useEffect(() => {
     if (activeBuildingId) fetchDetails();
-    else setDetails({ bank_name: '', bank_branch: '', bank_ifsc: '', bank_account: '', beneficiary_name: '', contact_name: '', contact_email: '', contact_mobile: '' });
+    else setDetails({ 
+      bank_name: '', 
+      bank_branch: '', 
+      bank_ifsc: '', 
+      bank_account: '', 
+      beneficiary_name: '', 
+      contact_name: '', 
+      contact_email: '', 
+      contact_mobile: '',
+      business_type: 'society',
+      profile_category: 'others',
+      profile_subcategory: 'others',
+      address: '',
+      address2: '',
+      city: '',
+      state: '',
+      pincode: ''
+    });
   }, [activeBuildingId]);
 
   const fetchDetails = async () => {
@@ -70,6 +105,14 @@ export default function BankDetailsScreen() {
         contact_name: res.data.contact_name || '',
         contact_email: res.data.contact_email || '',
         contact_mobile: res.data.contact_mobile || '',
+        business_type: res.data.business_type || 'society',
+        profile_category: res.data.profile_category || 'others',
+        profile_subcategory: res.data.profile_subcategory || 'others',
+        address: res.data.address || '',
+        address2: res.data.address2 || '',
+        city: res.data.city || '',
+        state: res.data.state || '',
+        pincode: res.data.pincode || ''
       });
       // Also fetch linked account status
       try {
@@ -83,6 +126,11 @@ export default function BankDetailsScreen() {
   const save = async () => {
     if (isAdmin && !selectedBuilding) return Alert.alert('Error', 'Please select a building first');
     if (!details.bank_account || !details.bank_ifsc) return Alert.alert('Error', 'Account number and IFSC are required');
+    if (!details.beneficiary_name) return Alert.alert('Error', 'Beneficiary name is required');
+    if (!details.contact_name || details.contact_name.length < 4) return Alert.alert('Error', 'Contact person name is required (min 4 characters)');
+    if (!details.contact_email) return Alert.alert('Error', 'Contact email is required');
+    if (!details.contact_mobile || details.contact_mobile.length < 10) return Alert.alert('Error', 'Valid 10-digit contact mobile is required');
+    if (!details.address || !details.address2 || !details.city || !details.state || !details.pincode) return Alert.alert('Error', 'Complete address (street 1, street 2, city, state, pincode) is required for Razorpay registration');
     setSaving(true);
     try {
       const payload: any = { ...details };
@@ -98,9 +146,17 @@ export default function BankDetailsScreen() {
           await api.post('/routes/linked-account', {
             building_id: buildingId,
             legal_business_name: societyName,
-            contact_name: details.contact_name || details.bank_name,
-            contact_email: details.contact_email || user?.email,
-            contact_mobile: details.contact_mobile || user?.phone || '9999999999',
+            business_type: details.business_type || 'society',
+            contact_name: details.contact_name,
+            contact_email: details.contact_email,
+            contact_mobile: details.contact_mobile,
+            profile_category: details.profile_category || 'others',
+            profile_subcategory: details.profile_subcategory || 'others',
+            address: details.address,
+            address2: details.address2,
+            city: details.city,
+            state: details.state,
+            pincode: details.pincode,
           });
           // 3. Link the bank account to the Razorpay linked account
           await api.post('/routes/bank-account', {
@@ -132,6 +188,7 @@ export default function BankDetailsScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Fixed Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={Colors.white} />
@@ -147,7 +204,7 @@ export default function BankDetailsScreen() {
         )}
       </View>
 
-      {/* Admin building selector */}
+      {/* Fixed Admin building selector */}
       {isAdmin && (
         <View style={styles.filterBar}>
           <BuildingDropdown
@@ -160,6 +217,7 @@ export default function BankDetailsScreen() {
         </View>
       )}
 
+      {/* Scrollable Content */}
       {isAdmin && !selectedBuilding ? (
         <View style={styles.emptyBox}>
           <Ionicons name="business-outline" size={48} color={Colors.border} />
@@ -168,7 +226,12 @@ export default function BankDetailsScreen() {
       ) : loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} size="large" color={Colors.primary} />
       ) : (
-        <ScrollView contentContainerStyle={{ padding: 16 }} keyboardShouldPersistTaps="handled">
+        <ScrollView 
+          style={styles.scrollContent}
+          contentContainerStyle={{ padding: 16 }} 
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           {isAdmin && selectedBuilding && (
             <View style={styles.buildingBadge}>
               <Ionicons name="business" size={15} color={Colors.primary} />
@@ -212,14 +275,83 @@ export default function BankDetailsScreen() {
                 <Text style={styles.inputLabel}>Beneficiary Name *</Text>
                 <TextInput style={styles.input} value={details.beneficiary_name} onChangeText={(v) => setDetails({ ...details, beneficiary_name: v })} placeholder="e.g. Shree Residency Society" placeholderTextColor={Colors.textMuted} />
 
-                <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Razorpay Routes Contact</Text>
-                <Text style={styles.sectionSub}>Required to enable direct transfers to society account</Text>
-                <Text style={styles.inputLabel}>Contact Person Name</Text>
+                <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Razorpay Routes Registration Details</Text>
+                <Text style={styles.sectionSub}>All fields required to enable direct transfers to society account</Text>
+                
+                <Text style={styles.inputLabel}>Business Category *</Text>
+                <View style={styles.pickerContainer}>
+                  <Picker
+                    selectedValue={details.profile_category}
+                    onValueChange={(v) => {
+                      const subcategory = v === 'healthcare' ? 'clinic' : v === 'education' ? 'school' : v === 'financial_services' ? 'accounting' : 'others';
+                      setDetails({ ...details, profile_category: v, profile_subcategory: subcategory });
+                    }}
+                    style={styles.picker}
+                    itemStyle={styles.pickerItem}
+                  >
+                    <Picker.Item label="Others" value="others" />
+                    <Picker.Item label="Healthcare" value="healthcare" />
+                    <Picker.Item label="Education" value="education" />
+                    <Picker.Item label="Financial Services" value="financial_services" />
+                    <Picker.Item label="Food & Beverage" value="food" />
+                    <Picker.Item label="Utilities" value="utilities" />
+                    <Picker.Item label="Government" value="government" />
+                    <Picker.Item label="Logistics" value="logistics" />
+                    <Picker.Item label="Tours & Travel" value="tours_and_travel" />
+                    <Picker.Item label="Transport" value="transport" />
+                    <Picker.Item label="Ecommerce" value="ecommerce" />
+                    <Picker.Item label="Services" value="services" />
+                    <Picker.Item label="Housing" value="housing" />
+                    <Picker.Item label="Not For Profit" value="not_for_profit" />
+                  </Picker>
+                </View>
+                
+                <Text style={styles.inputLabel}>Business Type *</Text>
+                <View style={styles.pickerContainer}>
+                  <Picker
+                    selectedValue={details.business_type}
+                    onValueChange={(v) => setDetails({ ...details, business_type: v })}
+                    style={styles.picker}
+                    itemStyle={styles.pickerItem}
+                  >
+                    <Picker.Item label="Society" value="society" />
+                    <Picker.Item label="Trust" value="trust" />
+                    <Picker.Item label="NGO" value="ngo" />
+                    <Picker.Item label="Partnership" value="partnership" />
+                    <Picker.Item label="Proprietorship" value="proprietorship" />
+                    <Picker.Item label="Private Limited" value="private_limited" />
+                    <Picker.Item label="Public Limited" value="public_limited" />
+                    <Picker.Item label="LLP" value="llp" />
+                    <Picker.Item label="Individual" value="individual" />
+                  </Picker>
+                </View>
+                
+                <Text style={styles.inputLabel}>Contact Person Name * (min 4 chars)</Text>
                 <TextInput style={styles.input} value={details.contact_name} onChangeText={(v) => setDetails({ ...details, contact_name: v })} placeholder="e.g. Ramesh Patel (Pramukh)" placeholderTextColor={Colors.textMuted} />
-                <Text style={styles.inputLabel}>Contact Email</Text>
+                
+                <Text style={styles.inputLabel}>Contact Email *</Text>
                 <TextInput style={styles.input} value={details.contact_email} onChangeText={(v) => setDetails({ ...details, contact_email: v })} placeholder="e.g. pramukh@society.com" placeholderTextColor={Colors.textMuted} keyboardType="email-address" autoCapitalize="none" />
-                <Text style={styles.inputLabel}>Contact Mobile</Text>
+                
+                <Text style={styles.inputLabel}>Contact Mobile * (10 digits)</Text>
                 <TextInput style={styles.input} value={details.contact_mobile} onChangeText={(v) => setDetails({ ...details, contact_mobile: v })} placeholder="e.g. 9876543210" placeholderTextColor={Colors.textMuted} keyboardType="phone-pad" maxLength={10} />
+                
+                <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Society Address</Text>
+                <Text style={styles.sectionSub}>Complete registered address required by Razorpay</Text>
+                
+                <Text style={styles.inputLabel}>Street Address Line 1 *</Text>
+                <TextInput style={styles.input} value={details.address} onChangeText={(v) => setDetails({ ...details, address: v })} placeholder="e.g. Building Name, Flat/Wing No" placeholderTextColor={Colors.textMuted} />
+                
+                <Text style={styles.inputLabel}>Street Address Line 2 *</Text>
+                <TextInput style={styles.input} value={details.address2} onChangeText={(v) => setDetails({ ...details, address2: v })} placeholder="e.g. Area, Landmark, Road Name" placeholderTextColor={Colors.textMuted} />
+                
+                <Text style={styles.inputLabel}>City *</Text>
+                <TextInput style={styles.input} value={details.city} onChangeText={(v) => setDetails({ ...details, city: v })} placeholder="e.g. Mumbai" placeholderTextColor={Colors.textMuted} />
+                
+                <Text style={styles.inputLabel}>State *</Text>
+                <TextInput style={styles.input} value={details.state} onChangeText={(v) => setDetails({ ...details, state: v })} placeholder="e.g. Maharashtra" placeholderTextColor={Colors.textMuted} />
+                
+                <Text style={styles.inputLabel}>Pincode *</Text>
+                <TextInput style={styles.input} value={details.pincode} onChangeText={(v) => setDetails({ ...details, pincode: v })} placeholder="e.g. 400001" placeholderTextColor={Colors.textMuted} keyboardType="numeric" maxLength={6} />
 
                 <TouchableOpacity style={styles.saveBtn} onPress={save} disabled={saving}>
                   {saving
@@ -242,7 +374,7 @@ export default function BankDetailsScreen() {
           <View style={styles.hint}>
             <Ionicons name="information-circle-outline" size={16} color={Colors.textMuted} />
             <Text style={styles.hintText}>
-              Saving bank details will automatically create a Razorpay linked account so maintenance payments are transferred directly to the society's bank account.
+              All fields marked with * are mandatory for Razorpay Route registration. Once saved, the system will automatically create a linked account to enable direct transfers of maintenance payments to your society's bank account.
             </Text>
           </View>
         </ScrollView>
@@ -259,6 +391,7 @@ const styles = StyleSheet.create({
   editBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
   editBtnText: { color: Colors.white, fontWeight: '700', fontSize: 14 },
   filterBar: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8, backgroundColor: Colors.white, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  scrollContent: { flex: 1 },
   emptyBox: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 32 },
   emptyText: { fontSize: 15, color: Colors.textMuted, textAlign: 'center' },
   buildingBadge: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.primary + '12', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, marginBottom: 12, alignSelf: 'flex-start' },
@@ -270,6 +403,28 @@ const styles = StyleSheet.create({
   rowValue: { fontSize: 15, fontWeight: '600', color: Colors.text, marginTop: 2 },
   inputLabel: { fontSize: 13, fontWeight: '600', color: Colors.text, marginBottom: 6, marginTop: 14 },
   input: { borderWidth: 1.5, borderColor: Colors.border, borderRadius: 10, padding: 12, fontSize: 15, color: Colors.text, backgroundColor: Colors.bg },
+  pickerContainer: { 
+    borderWidth: 1.5, 
+    borderColor: Colors.border, 
+    borderRadius: 10, 
+    backgroundColor: Colors.white, 
+    overflow: 'hidden',
+    minHeight: 50,
+    justifyContent: 'center',
+  },
+  picker: { 
+    fontSize: 15, 
+    color: '#000000',
+    backgroundColor: Colors.white,
+    height: 50,
+    paddingHorizontal: 12,
+  },
+  pickerItem: {
+    fontSize: 15,
+    color: '#000000',
+    backgroundColor: Colors.white,
+    height: 50,
+  },
   saveBtn: { backgroundColor: Colors.primary, borderRadius: 12, padding: 15, alignItems: 'center', marginTop: 20 },
   saveBtnText: { color: Colors.white, fontSize: 16, fontWeight: '700' },
   hint: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 16, padding: 12, backgroundColor: Colors.white, borderRadius: 12 },

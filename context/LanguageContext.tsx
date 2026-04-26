@@ -85,11 +85,18 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   };
 
   const setLanguage = async (lang: Language) => {
-    setLang(lang);
-    setHasChosen(true);
-    await AsyncStorage.setItem('app_language', lang);
-    if (currentUserId) {
-      await AsyncStorage.setItem(`app_language_user_${currentUserId}`, lang);
+    try {
+      setLang(lang);
+      setHasChosen(true);
+      await AsyncStorage.setItem('app_language', lang);
+      if (currentUserId) {
+        await AsyncStorage.setItem(`app_language_user_${currentUserId}`, lang);
+      }
+    } catch (error) {
+      console.error('Error saving language preference:', error);
+      // Still update state even if storage fails
+      setLang(lang);
+      setHasChosen(true);
     }
   };
 

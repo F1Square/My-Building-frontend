@@ -11,7 +11,7 @@ import api from '../utils/api';
 import BuildingDropdown from '../components/BuildingDropdown';
 import type { Building } from '../hooks/useBuildings';
 
-type ModalType = 'none' | 'createBuilding' | 'createPramukh' | 'members' | 'subscriptions' | 'grantSub';
+type ModalType = 'none' | 'createBuilding' | 'createPramukh' | 'members' | 'subscriptions' | 'grantSub' | 'buildingSelector';
 type Member = { id: string; name: string; email: string; role: string; flat_no?: string; status: string };
 type SubRecord = {
   id: string; user_id: string; plan: string; status: string;

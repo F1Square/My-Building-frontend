@@ -253,53 +253,55 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Fixed Gradient Header */}
+      <View style={styles.gradientHeader}>
+        {/* Top row: avatar + bell */}
+        <View style={styles.headerTop}>
+          <TouchableOpacity onPress={() => router.push('/profile' as any)} style={styles.avatarCircle}>
+            {buildingLogo
+              ? <Image source={{ uri: buildingLogo }} style={styles.avatarImg} />
+              : <Text style={styles.avatarText}>{user?.name?.[0]?.toUpperCase()}</Text>
+            }
+          </TouchableOpacity>
+          <TouchableOpacity onPress={openUrgentInbox} style={styles.bellBtn}>
+            <Ionicons name="notifications-outline" size={22} color={Colors.white} />
+            {totalUnread > 0 && (
+              <View style={styles.bellBadge}>
+                <Text style={styles.bellBadgeText}>
+                  {totalUnread > 9 ? '9+' : totalUnread}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {/* Greeting */}
+        <Text style={styles.greetingText}>{getGreeting()}, {user?.name?.split(' ')[0]} 👋</Text>
+
+        {/* Search bar */}
+        <View style={styles.searchBar}>
+          <Ionicons name="search-outline" size={18} color={Colors.textMuted} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search modules..."
+            placeholderTextColor={Colors.textMuted}
+            value={search}
+            onChangeText={setSearch}
+          />
+          {search.length > 0 && (
+            <TouchableOpacity onPress={() => setSearch('')}>
+              <Ionicons name="close-circle" size={16} color={Colors.textMuted} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      {/* Scrollable Module Grid */}
       <ScrollView
+        style={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
-        {/* ── Gradient Header ── */}
-        <View style={styles.gradientHeader}>
-          {/* Top row: avatar + bell */}
-          <View style={styles.headerTop}>
-            <TouchableOpacity onPress={() => router.push('/profile' as any)} style={styles.avatarCircle}>
-              {buildingLogo
-                ? <Image source={{ uri: buildingLogo }} style={styles.avatarImg} />
-                : <Text style={styles.avatarText}>{user?.name?.[0]?.toUpperCase()}</Text>
-              }
-            </TouchableOpacity>
-            <TouchableOpacity onPress={openUrgentInbox} style={styles.bellBtn}>
-              <Ionicons name="notifications-outline" size={22} color={Colors.white} />
-              {totalUnread > 0 && (
-                <View style={styles.bellBadge}>
-                  <Text style={styles.bellBadgeText}>
-                    {totalUnread > 9 ? '9+' : totalUnread}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          </View>
-
-          {/* Greeting */}
-          <Text style={styles.greetingText}>{getGreeting()}, {user?.name?.split(' ')[0]} 👋</Text>
-
-          {/* Search bar */}
-          <View style={styles.searchBar}>
-            <Ionicons name="search-outline" size={18} color={Colors.textMuted} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search modules..."
-              placeholderTextColor={Colors.textMuted}
-              value={search}
-              onChangeText={setSearch}
-            />
-            {search.length > 0 && (
-              <TouchableOpacity onPress={() => setSearch('')}>
-                <Ionicons name="close-circle" size={16} color={Colors.textMuted} />
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-
         {/* ── Module Grid ── */}
         <View style={styles.gridSection}>
           <View style={styles.grid}>
@@ -393,7 +395,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC' },
 
-  // ── Gradient header ──────────────────────────────────────────────────────
+  // ── Gradient header (FIXED) ──────────────────────────────────────────────
   gradientHeader: {
     paddingTop: 56, paddingBottom: 24, paddingHorizontal: 20,
     borderBottomLeftRadius: 28, borderBottomRightRadius: 28,
@@ -423,6 +425,9 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 8, elevation: 3,
   },
   searchInput: { flex: 1, fontSize: 14, color: Colors.text },
+
+  // ── Scrollable content ───────────────────────────────────────────────────
+  scrollContent: { flex: 1 },
 
   // ── Announcement banner ──────────────────────────────────────────────────
   announceBanner: {

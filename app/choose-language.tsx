@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  SafeAreaView, StatusBar,
+  SafeAreaView, StatusBar, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/colors';
@@ -18,10 +18,20 @@ const LANG_CONFIG: Record<Language, { bg: string; emoji: string; emojiSize: numb
 export default function ChooseLanguageScreen() {
   const { setLanguage, language, t } = useLanguage();
   const [selected, setSelected] = useState<Language>(language);
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleContinue = async () => {
-    await setLanguage(selected);
-    // Navigation handled by _layout.tsx watching hasChosen
+    if (isLoading) return;
+    
+    try {
+      setIsLoading(true);
+      await setLanguage(selected);
+      // Navigation handled by _layout.tsx watching hasChosen
+    } catch (error) {
+      console.error('Error setting language:', error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -65,8 +75,17 @@ export default function ChooseLanguageScreen() {
       </View>
 
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.continueBtn} onPress={handleContinue} activeOpacity={0.9}>
-          <Text style={styles.continueBtnText}>{t('continueBtn')}</Text>
+        <TouchableOpacity 
+          style={[styles.continueBtn, isLoading && styles.continueBtnDisabled]} 
+          onPress={handleContinue} 
+          activeOpacity={0.9}
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <ActivityIndicator size="small" color={Colors.white} />
+          ) : (
+            <Text style={styles.continueBtnText}>{t('continueBtn')}</Text>
+          )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -97,11 +116,27 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     justifyContent: 'center', alignItems: 'center',
   },
-  footer: { paddingHorizontal: 24, paddingBottom: 32 },
+  footer: { 
+    paddingHorizontal: 24, 
+    paddingBottom: 32,
+    paddingTop: 16,
+  },
   continueBtn: {
     backgroundColor: '#7B1F4E',
-    borderRadius: 14, paddingVertical: 18,
+    borderRadius: 14, 
+    paddingVertical: 18,
     alignItems: 'center',
+    minHeight: 56,
+    justifyContent: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  continueBtnDisabled: {
+    backgroundColor: '#A0A0A0',
+    opacity: 0.7,
   },
   continueBtnText: { color: Colors.white, fontSize: 17, fontWeight: '800' },
 });

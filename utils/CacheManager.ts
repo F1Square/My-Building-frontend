@@ -314,7 +314,12 @@ export class CacheManager {
       if (namespace) {
         await this.invalidate(`${namespace}:*`);
       } else {
-        await AsyncStorage.clear();
+        const allKeys = await AsyncStorage.getAllKeys();
+        const preserveKeys = ['token', 'user', 'subscription', 'app_language', '__cache_version__'];
+        const keysToRemove = allKeys.filter(k => !preserveKeys.includes(k) && !k.startsWith('app_language_user_'));
+        if (keysToRemove.length > 0) {
+          await AsyncStorage.multiRemove(keysToRemove);
+        }
       }
       this.resetMetrics();
     } catch (err) {
@@ -359,7 +364,7 @@ export class CacheManager {
       const stored = await AsyncStorage.getItem('__cache_version__');
       if (stored && stored !== this.appVersion) {
         if (__DEV__) console.warn('[CacheManager] Version mismatch, clearing cache');
-        await AsyncStorage.clear();
+        await this.clear();
       }
       await AsyncStorage.setItem('__cache_version__', this.appVersion);
     } catch (err) {

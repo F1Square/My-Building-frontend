@@ -6,15 +6,16 @@ import { Building } from '../hooks/useBuildings';
 
 type Props = {
   buildings: Building[];
-  loading: boolean;
+  loading?: boolean;
   selected: Building | null;
-  onSelect: (b: Building) => void;
+  onSelect: (b: Building | null) => void;
   label?: string;
+  placeholder?: string;
+  allowClear?: boolean;
 };
 
-export default function BuildingDropdown({ buildings, loading, selected, onSelect, label = 'Select Building *' }: Props) {
+export default function BuildingDropdown({ buildings, loading = false, selected, onSelect, label = 'Select Building *', placeholder, allowClear = false }: Props) {
   const [open, setOpen] = useState(false);
-  
 
   return (
     <View>
@@ -25,7 +26,7 @@ export default function BuildingDropdown({ buildings, loading, selected, onSelec
         ) : (
           <>
             <Text style={[styles.triggerText, !selected && styles.placeholder]}>
-              {selected ? selected.name : 'Tap to select a building...'}
+              {selected ? selected.name : (placeholder || 'Tap to select a building...')}
             </Text>
             <Ionicons name="chevron-down" size={18} color={Colors.textMuted} />
           </>
@@ -43,6 +44,20 @@ export default function BuildingDropdown({ buildings, loading, selected, onSelec
           <FlatList
             data={buildings}
             keyExtractor={(i) => i.id}
+            ListHeaderComponent={allowClear ? (
+              <TouchableOpacity
+                style={[styles.option, !selected && styles.optionSelected]}
+                onPress={() => { onSelect(null); setOpen(false); }}
+              >
+                <View style={styles.optionLeft}>
+                  <Text style={styles.optionIcon}>🏢</Text>
+                  <Text style={[styles.optionName, !selected && styles.optionNameSelected]}>
+                    {placeholder || 'Clear Selection'}
+                  </Text>
+                </View>
+                {!selected && <Ionicons name="checkmark-circle" size={20} color={Colors.primary} />}
+              </TouchableOpacity>
+            ) : null}
             renderItem={({ item }) => (
               <TouchableOpacity
                 style={[styles.option, selected?.id === item.id && styles.optionSelected]}

@@ -121,7 +121,7 @@ export default function MaintenanceScreen() {
   }, [selectedBuilding]));
 
   // When admin selects a building, fetch counts
-  const handleBuildingSelect = (b: Building) => {
+  const handleBuildingSelect = (b: Building | null) => {
     setSelectedBuilding(b);
     setLoading(true);
     setPendingCounts({ maintenance: 0, water_meter: 0, special: 0 });

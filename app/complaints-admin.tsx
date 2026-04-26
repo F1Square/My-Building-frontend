@@ -161,7 +161,15 @@ export default function AdminComplaintsScreen() {
     return (
       <TouchableOpacity
         style={[styles.card, { borderLeftColor: meta.color }]}
-        onPress={() => { setDetailItem(item); setShowDetail(true); }}
+        onPress={() => {
+          router.push({
+            pathname: '/complaint-detail',
+            params: {
+              data: JSON.stringify(item),
+              isAdminStr: 'true'
+            }
+          });
+        }}
         activeOpacity={0.82}
       >
         <View style={styles.cardTop}>
@@ -330,17 +338,7 @@ export default function AdminComplaintsScreen() {
         </>
       )}
 
-      {/* ── Full-screen Image Viewer ── */}
-      <Modal visible={!!imageViewerUri} transparent animationType="fade" onRequestClose={() => setImageViewerUri(null)}>
-        <View style={styles.imageViewerOverlay}>
-          <TouchableOpacity style={styles.imageViewerClose} onPress={() => setImageViewerUri(null)}>
-            <Ionicons name="close-circle" size={36} color={Colors.white} />
-          </TouchableOpacity>
-          {imageViewerUri && (
-            <Image source={{ uri: imageViewerUri }} style={styles.imageViewerImg} resizeMode="contain" />
-          )}
-        </View>
-      </Modal>
+
 
       {/* ── Add Modal ── */}
       <Modal visible={showAdd} animationType="slide" transparent>
@@ -579,6 +577,16 @@ export default function AdminComplaintsScreen() {
             })() : null}
           </View>
         </View>
+
+        {/* ── Full-screen Image Viewer (Inside Detail Modal) ── */}
+        {!!imageViewerUri && (
+          <View style={[StyleSheet.absoluteFill, styles.imageViewerOverlay, { zIndex: 9999 }]}>
+            <TouchableOpacity style={styles.imageViewerClose} onPress={() => setImageViewerUri(null)}>
+              <Ionicons name="close-circle" size={36} color={Colors.white} />
+            </TouchableOpacity>
+            <Image source={{ uri: imageViewerUri }} style={styles.imageViewerImg} resizeMode="contain" />
+          </View>
+        )}
       </Modal>
     </View>
   );

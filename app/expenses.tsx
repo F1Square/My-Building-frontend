@@ -563,6 +563,7 @@ const styles = StyleSheet.create({
   header: { backgroundColor: '#3B5FC0', paddingTop: 56, paddingBottom: 16, paddingHorizontal: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   headerTitle: { color: Colors.white, fontSize: 22, fontWeight: '800' },
   headerSub: { color: 'rgba(255,255,255,0.7)', fontSize: 13, marginTop: 2 },
+  backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center', marginRight: 8 },
   headerActions: { flexDirection: 'row', gap: 8 },
   headerBtn: { backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 10, padding: 8 },
   buildingBar: { backgroundColor: Colors.white, paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: Colors.border },

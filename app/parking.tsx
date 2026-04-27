@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
@@ -244,47 +244,72 @@ export default function ParkingScreen() {
     } finally { setSubmitting(false); }
   };
 
-  const filteredVehicles = vehicles.filter((v) =>
-    !search || v.vehicle_number.includes(search.toUpperCase())
-  );
+  const groupedVehicles = useMemo(() => {
+    const map = new Map<string, { user: any, vehicles: any[] }>();
+    const filteredList = vehicles.filter((v) =>
+      !search || 
+      v.vehicle_number.toUpperCase().includes(search.toUpperCase()) ||
+      (v.users?.name && v.users.name.toLowerCase().includes(search.toLowerCase())) ||
+      (v.users?.flat_no && String(v.users.flat_no).toLowerCase().includes(search.toLowerCase()))
+    );
 
-  const renderVehicle = ({ item }: { item: any }) => (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <View style={[styles.vehicleIcon, { backgroundColor: item.vehicle_type === 'four_wheeler' ? Colors.primary + '20' : Colors.accent + '20' }]}>
-          <Text style={styles.vehicleEmoji}>{item.vehicle_type === 'four_wheeler' ? '🚗' : '🏍️'}</Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.vehicleNumber}>{item.vehicle_number}</Text>
-          <Text style={styles.vehicleType}>{item.vehicle_type === 'four_wheeler' ? 'Four Wheeler' : 'Two Wheeler'}</Text>
-        </View>
-        {item.users && (
-          <View style={styles.ownerInfo}>
-            <Text style={styles.ownerName}>{item.users.name}</Text>
-            <Text style={styles.ownerFlat}>Flat {item.users.flat_no}</Text>
+    filteredList.forEach(v => {
+      const userId = v.users?.id || 'unassigned_' + v.id;
+      if (!map.has(userId)) {
+        map.set(userId, { user: v.users, vehicles: [] });
+      }
+      map.get(userId)!.vehicles.push(v);
+    });
+    
+    return Array.from(map.values());
+  }, [vehicles, search]);
+
+  const renderUserCard = ({ item }: { item: { user: any, vehicles: any[] } }) => {
+    const hasUser = !!item.user;
+    return (
+      <View style={styles.card}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <View style={styles.userIconBadge}>
+            <Ionicons name="person" size={20} color={Colors.primary} />
           </View>
-        )}
-      </View>
-      {(user?.role === 'pramukh' || isAdmin) && (
-        <View style={styles.cardFooterRow}>
-          <TouchableOpacity style={styles.reminderBtn} onPress={() => sendReminder(item.vehicle_number)}>
-            <Ionicons name="notifications-outline" size={14} color={Colors.warning} />
-            <Text style={styles.reminderBtnText}>{t('sendReminder')}</Text>
-          </TouchableOpacity>
-          {isAdmin && (
-            <View style={styles.adminBtns}>
-              <TouchableOpacity style={styles.editBtn} onPress={() => openAdminEdit(item)}>
-                <Ionicons name="pencil-outline" size={15} color={Colors.primary} />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.deleteBtn} onPress={() => adminDeleteVehicle(item.id, item.vehicle_number)}>
-                <Ionicons name="trash-outline" size={15} color={Colors.danger} />
-              </TouchableOpacity>
-            </View>
-          )}
+          <View style={{ flex: 1 }}>
+            <Text style={styles.userName}>{hasUser ? item.user.name : 'Unassigned Vehicle'}</Text>
+            {hasUser && item.user.flat_no && (
+              <Text style={styles.userFlat}>Flat {item.user.flat_no}</Text>
+            )}
+          </View>
         </View>
-      )}
-    </View>
-  );
+
+        <View style={styles.vehiclesContainer}>
+          {item.vehicles.map(v => (
+            <View key={v.id} style={styles.vehicleBadgeContainer}>
+              <View style={[styles.vehicleBadge, { backgroundColor: v.vehicle_type === 'four_wheeler' ? Colors.primary + '15' : Colors.accent + '15' }]}>
+                <Text style={styles.vehicleBadgeEmoji}>{v.vehicle_type === 'four_wheeler' ? '🚗' : '🏍️'}</Text>
+                <Text style={styles.vehicleBadgeText}>{v.vehicle_number}</Text>
+              </View>
+              {(user?.role === 'pramukh' || isAdmin) && (
+                <View style={styles.vehicleActionsRow}>
+                  <TouchableOpacity style={styles.actionIconBtn} onPress={() => sendReminder(v.vehicle_number)}>
+                    <Ionicons name="notifications-outline" size={14} color={Colors.warning} />
+                  </TouchableOpacity>
+                  {isAdmin && (
+                    <>
+                      <TouchableOpacity style={styles.actionIconBtn} onPress={() => openAdminEdit(v)}>
+                        <Ionicons name="pencil-outline" size={14} color={Colors.primary} />
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.actionIconBtn} onPress={() => adminDeleteVehicle(v.id, v.vehicle_number)}>
+                        <Ionicons name="trash-outline" size={14} color={Colors.danger} />
+                      </TouchableOpacity>
+                    </>
+                  )}
+                </View>
+              )}
+            </View>
+          ))}
+        </View>
+      </View>
+    );
+  };
 
   const renderReport = ({ item }: { item: any }) => (
     <View style={styles.card}>
@@ -366,9 +391,9 @@ export default function ParkingScreen() {
         <ActivityIndicator style={{ marginTop: 40 }} size="large" color={Colors.primary} />
       ) : (
         <FlatList
-          data={tab === 'vehicles' ? filteredVehicles : reports}
-          keyExtractor={(i) => i.id}
-          renderItem={tab === 'vehicles' ? renderVehicle : renderReport}
+          data={tab === 'vehicles' ? groupedVehicles : reports}
+          keyExtractor={(i: any) => tab === 'vehicles' ? (i.user?.id || 'u_' + i.vehicles[0].id) : i.id}
+          renderItem={tab === 'vehicles' ? renderUserCard : renderReport}
           contentContainerStyle={{ padding: 16 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} />}
           ListEmptyComponent={
@@ -549,20 +574,16 @@ const styles = StyleSheet.create({
   searchBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.white, marginHorizontal: 16, marginTop: 12, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10 },
   searchInput: { flex: 1, fontSize: 15, color: Colors.text },
   card: { backgroundColor: Colors.white, borderRadius: 14, padding: 16, marginBottom: 12, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  vehicleIcon: { width: 48, height: 48, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  vehicleEmoji: { fontSize: 24 },
-  vehicleNumber: { fontSize: 18, fontWeight: '800', color: Colors.text, letterSpacing: 1 },
-  vehicleType: { fontSize: 13, color: Colors.textMuted, marginTop: 2 },
-  ownerInfo: { alignItems: 'flex-end' },
-  ownerName: { fontSize: 14, fontWeight: '700', color: Colors.text },
-  ownerFlat: { fontSize: 12, color: Colors.textMuted },
-  reminderBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: 10 },
-  reminderBtnText: { fontSize: 13, color: Colors.warning, fontWeight: '600' },
-  cardFooterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 10 },
-  adminBtns: { flexDirection: 'row', gap: 8 },
-  editBtn: { padding: 8, backgroundColor: Colors.primary + '15', borderRadius: 8 },
-  deleteBtn: { padding: 8, backgroundColor: Colors.danger + '15', borderRadius: 8 },
+  userIconBadge: { width: 46, height: 46, borderRadius: 23, backgroundColor: Colors.primary + '10', justifyContent: 'center', alignItems: 'center' },
+  userName: { fontSize: 16, fontWeight: '700', color: Colors.text },
+  userFlat: { fontSize: 13, color: Colors.textMuted, marginTop: 2 },
+  vehiclesContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 8, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 14 },
+  vehicleBadgeContainer: { borderWidth: 1, borderColor: Colors.border, borderRadius: 10, overflow: 'hidden' },
+  vehicleBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 10 },
+  vehicleBadgeEmoji: { fontSize: 16 },
+  vehicleBadgeText: { fontSize: 14, fontWeight: '800', color: Colors.text },
+  vehicleActionsRow: { flexDirection: 'row', justifyContent: 'center', backgroundColor: Colors.bg, borderTopWidth: 1, borderTopColor: Colors.border, paddingVertical: 8, gap: 16 },
+  actionIconBtn: { padding: 4 },
   reportHeader: { flexDirection: 'row', gap: 10 },
   reportIcon: { fontSize: 22 },
   reportDesc: { fontSize: 14, fontWeight: '600', color: Colors.text },

@@ -257,7 +257,9 @@ export default function SubscribeScreen() {
                         ? 'Daily newspapers in English, Hindi & Gujarati — Active ✓'
                         : 'Read daily newspapers in English, Hindi & Gujarati'}
                     </Text>
-                    <Text style={styles.addonPrice}>+₹3 / month</Text>
+                    <Text style={styles.addonPrice}>
+                      {isLifetime ? '+₹500 / lifetime' : isYearly ? '+₹36 / year' : '+₹3 / month'}
+                    </Text>
                   </View>
                 </View>
                 {newspaperAddonLoading ? (
@@ -268,7 +270,9 @@ export default function SubscribeScreen() {
                   </TouchableOpacity>
                 ) : (
                   <TouchableOpacity onPress={enableNewspaperAddon} style={styles.addonEnableBtn}>
-                    <Text style={styles.addonEnableBtnText}>Add ₹3</Text>
+                    <Text style={styles.addonEnableBtnText}>
+                      {isLifetime ? 'Add ₹500' : isYearly ? 'Add ₹36' : 'Add ₹3'}
+                    </Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -309,7 +313,7 @@ export default function SubscribeScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.addonTitle}>📰 Newspaper Add-On</Text>
                   <Text style={styles.addonDesc}>Daily English, Hindi & Gujarati newspapers</Text>
-                  <Text style={styles.addonPrice}>+₹3 / month</Text>
+                  <Text style={styles.addonPrice}>From +₹3 / month</Text>
                 </View>
               </View>
               <Switch
@@ -412,7 +416,7 @@ export default function SubscribeScreen() {
                         ? <ActivityIndicator color={Colors.white} />
                         : <Text style={styles.subscribeBtnText}>
                             {hasActiveSubscription ? `Upgrade — ${plan.price}` : `Subscribe — ${plan.price}`}
-                            {includeNewspaper ? ' + ₹3 newspaper' : ''}
+                            {includeNewspaper ? ` + ${plan.key === 'lifetime' ? '₹500' : plan.key === 'yearly' ? '₹36' : '₹3'} newspaper` : ''}
                             {promoResult && promoResult.final_amount !== undefined
                               ? ` → ₹${promoResult.final_amount}` : ''}
                           </Text>}

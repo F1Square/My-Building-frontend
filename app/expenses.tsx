@@ -11,6 +11,9 @@ import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import BuildingDropdown from '../components/BuildingDropdown';
 import { useBuildings, Building } from '../hooks/useBuildings';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system/legacy';
 
 type Entry = {
   id: string; type: 'inflow' | 'outflow'; amount: number;
@@ -55,6 +58,7 @@ export default function ExpensesScreen() {
   const [form, setForm] = useState({ type: 'outflow', amount: '', description: '', category: '', date: new Date().toISOString().slice(0, 10) });
   const [submitting, setSubmitting] = useState(false);
   const [typeFilter, setTypeFilter] = useState<'all' | 'inflow' | 'outflow'>('all');
+  const [timeFilter, setTimeFilter] = useState<'all' | 'monthly' | 'quarterly' | 'yearly'>('all');
 
   const [fetchError, setFetchError] = useState(false);
 
@@ -80,16 +84,34 @@ export default function ExpensesScreen() {
   };
   useFocusEffect(useCallback(() => { fetchData(); }, [buildingId]));
 
-  const filtered = useMemo(() =>
-    typeFilter === 'all' ? entries : entries.filter(e => e.type === typeFilter),
-    [entries, typeFilter]
-  );
+  const filtered = useMemo(() => {
+    let result = entries;
+    if (typeFilter !== 'all') result = result.filter(e => e.type === typeFilter);
+    const now = new Date();
+    if (timeFilter === 'monthly') {
+      result = result.filter(e => {
+        const d = new Date(e.date);
+        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+      });
+    } else if (timeFilter === 'quarterly') {
+      result = result.filter(e => {
+        const d = new Date(e.date);
+        return Math.floor(d.getMonth() / 3) === Math.floor(now.getMonth() / 3) && d.getFullYear() === now.getFullYear();
+      });
+    } else if (timeFilter === 'yearly') {
+      result = result.filter(e => {
+        const d = new Date(e.date);
+        return d.getFullYear() === now.getFullYear();
+      });
+    }
+    return result;
+  }, [entries, typeFilter, timeFilter]);
 
   const totals = useMemo(() => {
-    const inflow  = entries.filter(e => e.type === 'inflow').reduce((s, e) => s + Number(e.amount), 0);
-    const outflow = entries.filter(e => e.type === 'outflow').reduce((s, e) => s + Number(e.amount), 0);
+    const inflow  = filtered.filter(e => e.type === 'inflow').reduce((s, e) => s + Number(e.amount), 0);
+    const outflow = filtered.filter(e => e.type === 'outflow').reduce((s, e) => s + Number(e.amount), 0);
     return { inflow, outflow };
-  }, [entries]);
+  }, [filtered]);
 
   const fmt = (n: number) => `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 0 })}`;
 
@@ -164,6 +186,66 @@ export default function ExpensesScreen() {
     } catch (e: any) { Alert.alert('Error', e.response?.data?.error || 'Failed'); }
   };
 
+  const downloadPDF = async () => {
+    try {
+      const html = `
+        <html>
+          <head>
+            <style>
+              body { font-family: sans-serif; padding: 20px; }
+              table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+              th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+              th { background-color: #f2f2f2; }
+              h1 { color: #1E3A8A; }
+              .inflow { color: #16A34A; }
+              .outflow { color: #EF4444; }
+            </style>
+          </head>
+          <body>
+            <h1>Society Expenses Report</h1>
+            <p><strong>Building ID:</strong> ${buildingId}</p>
+            <p><strong>Report Period:</strong> ${timeFilter.toUpperCase()}</p>
+            <p><strong>Generated On:</strong> ${new Date().toLocaleDateString()}</p>
+            <table>
+              <tr><th>Date</th><th>Type</th><th>Category</th><th>Description</th><th>Amount (₹)</th><th>Added By</th></tr>
+              ${filtered.map(e => `
+                <tr>
+                  <td>${new Date(e.date).toLocaleDateString()}</td>
+                  <td class="${e.type}">${e.type === 'inflow' ? 'Inflow' : 'Outflow'}</td>
+                  <td>${e.category || '-'}</td>
+                  <td>${e.description}</td>
+                  <td class="${e.type}">${e.type === 'inflow' ? '+' : '-'}${e.amount}</td>
+                  <td>${e.added_by_user?.name || '-'}</td>
+                </tr>
+              `).join('')}
+            </table>
+          </body>
+        </html>
+      `;
+      const { uri } = await Print.printToFileAsync({ html });
+      await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
+    } catch (e) { Alert.alert('Error', 'Failed to generate PDF'); }
+  };
+
+  const downloadCSV = async () => {
+    try {
+      const header = 'Date,Type,Category,Description,Amount,Added By\n';
+      const rows = filtered.map(e => {
+        const date = new Date(e.date).toLocaleDateString();
+        const type = e.type === 'inflow' ? 'Inflow' : 'Outflow';
+        const category = e.category || '';
+        const desc = `"${(e.description || '').replace(/"/g, '""')}"`;
+        const amount = e.amount;
+        const by = e.added_by_user?.name || '';
+        return `${date},${type},${category},${desc},${amount},${by}`;
+      }).join('\n');
+      const csv = header + rows;
+      const fileUri = FileSystem.documentDirectory + 'expenses.csv';
+      await FileSystem.writeAsStringAsync(fileUri, csv);
+      await Sharing.shareAsync(fileUri, { UTI: 'public.comma-separated-values-text', mimeType: 'text/csv', dialogTitle: 'Download CSV' });
+    } catch (e: any) { console.error('CSV Error:', e); Alert.alert('Error', `Failed to generate CSV: ${e.message || 'Unknown error'}`); }
+  };
+
   const openEdit = (item: Entry) => {
     setForm({ type: item.type, amount: String(item.amount), description: item.description, category: item.category || '', date: item.date });
     setShowEdit(item);
@@ -230,6 +312,12 @@ export default function ExpensesScreen() {
           <Text style={styles.headerSub}>Society Fund Tracker</Text>
         </View>
         <View style={styles.headerActions}>
+          <TouchableOpacity style={styles.headerBtn} onPress={downloadPDF}>
+            <Ionicons name="document-text-outline" size={20} color={Colors.white} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.headerBtn} onPress={downloadCSV}>
+            <Ionicons name="download-outline" size={20} color={Colors.white} />
+          </TouchableOpacity>
           {canManage && (
             <TouchableOpacity style={styles.headerBtn} onPress={() => setShowAdd(true)}>
               <Ionicons name="add" size={22} color={Colors.white} />
@@ -306,17 +394,30 @@ export default function ExpensesScreen() {
           </View>
 
           {/* Filter chips */}
-          <View style={styles.chipRow}>
-            {(['all', 'inflow', 'outflow'] as const).map(t => (
-              <TouchableOpacity key={t}
-                style={[styles.chip, typeFilter === t && styles.chipActive]}
-                onPress={() => setTypeFilter(t)}
-              >
-                <Text style={[styles.chipText, typeFilter === t && styles.chipTextActive]}>
-                  {t === 'all' ? 'All' : t === 'inflow' ? '↓ Inflow' : '↑ Outflow'}
-                </Text>
-              </TouchableOpacity>
-            ))}
+          <View style={{ height: 56, marginBottom: 4 }}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+              {(['all', 'monthly', 'quarterly', 'yearly'] as const).map(t => (
+                <TouchableOpacity key={t}
+                  style={[styles.chip, timeFilter === t && styles.chipActive]}
+                  onPress={() => setTimeFilter(t)}
+                >
+                  <Text style={[styles.chipText, timeFilter === t && styles.chipTextActive]}>
+                    {t === 'all' ? 'All Time' : t === 'monthly' ? 'This Month' : t === 'quarterly' ? 'This Quarter' : 'This Year'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+              <View style={styles.chipDivider} />
+              {(['all', 'inflow', 'outflow'] as const).map(t => (
+                <TouchableOpacity key={t}
+                  style={[styles.chip, typeFilter === t && styles.chipActive]}
+                  onPress={() => setTypeFilter(t)}
+                >
+                  <Text style={[styles.chipText, typeFilter === t && styles.chipTextActive]}>
+                    {t === 'all' ? 'All Types' : t === 'inflow' ? '↓ Inflow' : '↑ Outflow'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
 
           <FlatList
@@ -582,10 +683,11 @@ const styles = StyleSheet.create({
   setBalanceBtnText: { fontSize: 13, fontWeight: '700', color: Colors.primary },
 
   chipRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingVertical: 10 },
-  chip: { borderWidth: 1.5, borderColor: Colors.border, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6, backgroundColor: Colors.white },
+  chip: { borderWidth: 1.5, borderColor: Colors.border, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6, backgroundColor: Colors.white, marginRight: 4 },
   chipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   chipText: { fontSize: 13, fontWeight: '600', color: Colors.text },
   chipTextActive: { color: Colors.white },
+  chipDivider: { width: 1, backgroundColor: Colors.border, marginHorizontal: 4, height: 24, alignSelf: 'center' },
 
   list: { paddingHorizontal: 16, paddingBottom: 32 },
   entryCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Colors.white, borderRadius: 14, padding: 14, marginBottom: 10, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 6, elevation: 2 },

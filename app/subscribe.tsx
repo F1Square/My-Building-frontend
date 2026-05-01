@@ -36,7 +36,7 @@ export default function SubscribeScreen() {
       icon: 'star-outline' as const,
       color: '#F59E0B',
       highlight: false,
-      features: ['Everything in Monthly', 'Save ₹30 per year', 'No monthly hassle', 'All modules included'],
+      features: ['Everything in Monthly', 'No monthly hassle', 'All modules included'],
     },
     {
       key: 'lifetime',
@@ -83,14 +83,18 @@ export default function SubscribeScreen() {
         promo_id: promoResult?.promo_id || undefined,
         include_newspaper: includeNewspaper,
       });
-      const { order_id, amount, key } = orderRes.data;
-      const backendUrl = API_BASE.replace('/api', '');
-      const checkoutUrl = `${backendUrl}/api/subscriptions/checkout/${order_id}?amount=${amount}&key=${key}&plan=${plan}&user_id=${user?.id}&newspaper=${includeNewspaper ? '1' : '0'}`;
-      await WebBrowser.openBrowserAsync(checkoutUrl, {
-        dismissButtonStyle: 'cancel',
-        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
-      });
-      await refreshSubscription();
+      const { checkout_url } = orderRes.data;
+      
+      const result = await WebBrowser.openAuthSessionAsync(checkout_url, 'mybuilding://subscription');
+      
+      if (result.type === 'success') {
+        setTimeout(async () => {
+          await refreshSubscription();
+          setTab('my-plan');
+        }, 1000);
+      } else {
+        await refreshSubscription();
+      }
       setPromoCode('');
       setPromoResult(null);
     } catch (e: any) {
@@ -105,14 +109,15 @@ export default function SubscribeScreen() {
     setNewspaperAddonLoading(true);
     try {
       const orderRes = await api.post('/subscriptions/newspaper-addon/order');
-      const { order_id, amount, key } = orderRes.data;
-      const backendUrl = API_BASE.replace('/api', '');
-      const checkoutUrl = `${backendUrl}/api/subscriptions/checkout/${order_id}?amount=${amount}&key=${key}&plan=newspaper_addon&user_id=${user?.id}`;
-      await WebBrowser.openBrowserAsync(checkoutUrl, {
-        dismissButtonStyle: 'cancel',
-        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
-      });
-      await refreshSubscription();
+      const { checkout_url } = orderRes.data;
+      
+      const result = await WebBrowser.openAuthSessionAsync(checkout_url, 'mybuilding://subscription');
+      
+      if (result.type === 'success') {
+        setTimeout(refreshSubscription, 1000);
+      } else {
+        await refreshSubscription();
+      }
     } catch (e: any) {
       Alert.alert('Error', e.response?.data?.error || 'Failed to initiate payment');
     } finally {

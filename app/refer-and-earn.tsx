@@ -35,8 +35,9 @@ const STATUS_LABELS: Record<string, { label: string; color: string; bg: string }
 
 export default function ReferAndEarnScreen() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, hasActiveSubscription } = useAuth();
   const isAdmin = user?.role === 'admin';
+  const isLocked = !isAdmin && !hasActiveSubscription;
 
   const [referralCode, setReferralCode] = useState<string | null>(null);
   const [referrals, setReferrals] = useState<Referral[]>([]);
@@ -213,7 +214,21 @@ export default function ReferAndEarnScreen() {
         <View style={{ width: 36 }} />
       </View>
 
-      {loading ? (
+      {isLocked ? (
+        <View style={styles.lockedContainer}>
+          <View style={styles.lockedIconBox}>
+            <Ionicons name="lock-closed" size={40} color={Colors.primary} />
+          </View>
+          <Text style={styles.lockedTitle}>Subscription Required</Text>
+          <Text style={styles.lockedDesc}>
+            Subscribe to access the Refer & Earn module and get rewards.
+          </Text>
+          <TouchableOpacity style={styles.lockedBtn} onPress={() => router.push('/subscribe' as any)}>
+            <Ionicons name="star-outline" size={18} color={Colors.white} />
+            <Text style={styles.lockedBtnText}>View Plans</Text>
+          </TouchableOpacity>
+        </View>
+      ) : loading ? (
         <ActivityIndicator style={{ marginTop: 60 }} size="large" color={Colors.primary} />
       ) : (
         <FlatList
@@ -446,4 +461,23 @@ const styles = StyleSheet.create({
   modalCancelText: { fontSize: 14, fontWeight: '700', color: Colors.text },
   modalSubmitBtn: { flex: 1, backgroundColor: '#EC4899', borderRadius: 10, padding: 12, alignItems: 'center' },
   modalSubmitText: { fontSize: 14, fontWeight: '700', color: Colors.white },
+  // Locked / paywall state
+  lockedContainer: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 40, gap: 16,
+  },
+  lockedIconBox: {
+    width: 88, height: 88, borderRadius: 44,
+    backgroundColor: Colors.primary + '15',
+    justifyContent: 'center', alignItems: 'center',
+    marginBottom: 4,
+  },
+  lockedTitle: { fontSize: 20, fontWeight: '800', color: Colors.text, textAlign: 'center' },
+  lockedDesc: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', lineHeight: 22 },
+  lockedBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: Colors.primary, borderRadius: 14,
+    paddingHorizontal: 28, paddingVertical: 14, marginTop: 8,
+  },
+  lockedBtnText: { fontSize: 15, fontWeight: '800', color: Colors.white },
 });

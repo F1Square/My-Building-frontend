@@ -61,7 +61,7 @@ export default function MyPaymentsScreen() {
       ]);
       setPayments(paymentsRes.data);
       if (advanceRes) setAdvanceStatus(advanceRes.data);
-    } catch {}
+    } catch { }
     finally { setLoading(false); setRefreshing(false); }
   };
 
@@ -72,11 +72,16 @@ export default function MyPaymentsScreen() {
     try {
       const res = await api.post('/maintenance/pay/order', { payment_record_id: recordId });
       const { checkout_url } = res.data;
-      await WebBrowser.openBrowserAsync(checkout_url, {
-        dismissButtonStyle: 'cancel',
-        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
-      });
-      fetch(); // refresh after returning
+
+      // Use openAuthSessionAsync to automatically close the browser when redirected back to mybuilding://
+      const result = await WebBrowser.openAuthSessionAsync(checkout_url, 'mybuilding://payment');
+
+      if (result.type === 'success') {
+        // Payment completed or failed, backend handled the status
+        setTimeout(fetch, 1000);
+      } else {
+        fetch();
+      }
     } catch (e: any) {
       alert(e.response?.data?.error || 'Failed to initiate payment');
     } finally { setPaying(null); }
@@ -144,7 +149,7 @@ export default function MyPaymentsScreen() {
   const buildingPaymentMethod = payments[0]?.building_payment_method ?? null;
   const buildingPaymentTc = payments[0]?.building_payment_tc ?? null;
 
-  
+
 
   return (
     <View style={styles.container}>
@@ -310,9 +315,9 @@ export default function MyPaymentsScreen() {
                       {uploadingReceipt === item.id
                         ? <ActivityIndicator size="small" color={Colors.primary} />
                         : <>
-                            <Ionicons name="cloud-upload-outline" size={15} color={Colors.primary} />
-                            <Text style={styles.uploadBtnText}>Upload Receipt</Text>
-                          </>
+                          <Ionicons name="cloud-upload-outline" size={15} color={Colors.primary} />
+                          <Text style={styles.uploadBtnText}>Upload Receipt</Text>
+                        </>
                       }
                     </TouchableOpacity>
                   )}
@@ -325,9 +330,9 @@ export default function MyPaymentsScreen() {
                       {downloading === item.id
                         ? <ActivityIndicator size="small" color={Colors.primary} />
                         : <>
-                            <Ionicons name="download-outline" size={15} color={Colors.primary} />
-                            <Text style={styles.receiptBtnText}>{t('receipt')}</Text>
-                          </>
+                          <Ionicons name="download-outline" size={15} color={Colors.primary} />
+                          <Text style={styles.receiptBtnText}>{t('receipt')}</Text>
+                        </>
                       }
                     </TouchableOpacity>
                   )}

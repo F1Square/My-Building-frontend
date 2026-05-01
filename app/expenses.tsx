@@ -58,7 +58,18 @@ export default function ExpensesScreen() {
   const [form, setForm] = useState({ type: 'outflow', amount: '', description: '', category: '', date: new Date().toISOString().slice(0, 10) });
   const [submitting, setSubmitting] = useState(false);
   const [typeFilter, setTypeFilter] = useState<'all' | 'inflow' | 'outflow'>('all');
-  const [timeFilter, setTimeFilter] = useState<'all' | 'monthly' | 'quarterly' | 'yearly'>('all');
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [showYearPicker, setShowYearPicker] = useState(false);
+
+  const MONTHS = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  const CURRENT_YEAR = new Date().getFullYear();
+  const CURRENT_MONTH = new Date().getMonth();
+  const YEARS = Array.from({ length: 10 }, (_, i) => CURRENT_YEAR - i);
 
   const [fetchError, setFetchError] = useState(false);
 
@@ -87,25 +98,14 @@ export default function ExpensesScreen() {
   const filtered = useMemo(() => {
     let result = entries;
     if (typeFilter !== 'all') result = result.filter(e => e.type === typeFilter);
-    const now = new Date();
-    if (timeFilter === 'monthly') {
-      result = result.filter(e => {
-        const d = new Date(e.date);
-        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-      });
-    } else if (timeFilter === 'quarterly') {
-      result = result.filter(e => {
-        const d = new Date(e.date);
-        return Math.floor(d.getMonth() / 3) === Math.floor(now.getMonth() / 3) && d.getFullYear() === now.getFullYear();
-      });
-    } else if (timeFilter === 'yearly') {
-      result = result.filter(e => {
-        const d = new Date(e.date);
-        return d.getFullYear() === now.getFullYear();
-      });
-    }
+    
+    result = result.filter(e => {
+      const d = new Date(e.date);
+      return d.getMonth() === selectedMonth && d.getFullYear() === selectedYear;
+    });
+    
     return result;
-  }, [entries, typeFilter, timeFilter]);
+  }, [entries, typeFilter, selectedMonth, selectedYear]);
 
   const totals = useMemo(() => {
     const inflow  = filtered.filter(e => e.type === 'inflow').reduce((s, e) => s + Number(e.amount), 0);
@@ -204,7 +204,7 @@ export default function ExpensesScreen() {
           <body>
             <h1>Society Expenses Report</h1>
             <p><strong>Building ID:</strong> ${buildingId}</p>
-            <p><strong>Report Period:</strong> ${timeFilter.toUpperCase()}</p>
+            <p><strong>Report Period:</strong> ${MONTHS[selectedMonth]} ${selectedYear}</p>
             <p><strong>Generated On:</strong> ${new Date().toLocaleDateString()}</p>
             <table>
               <tr><th>Date</th><th>Type</th><th>Category</th><th>Description</th><th>Amount (₹)</th><th>Added By</th></tr>
@@ -393,20 +393,9 @@ export default function ExpensesScreen() {
             )}
           </View>
 
-          {/* Filter chips */}
-          <View style={{ height: 56, marginBottom: 4 }}>
+          {/* Type Filter chips */}
+          <View style={{ marginBottom: 4 }}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-              {(['all', 'monthly', 'quarterly', 'yearly'] as const).map(t => (
-                <TouchableOpacity key={t}
-                  style={[styles.chip, timeFilter === t && styles.chipActive]}
-                  onPress={() => setTimeFilter(t)}
-                >
-                  <Text style={[styles.chipText, timeFilter === t && styles.chipTextActive]}>
-                    {t === 'all' ? 'All Time' : t === 'monthly' ? 'This Month' : t === 'quarterly' ? 'This Quarter' : 'This Year'}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-              <View style={styles.chipDivider} />
               {(['all', 'inflow', 'outflow'] as const).map(t => (
                 <TouchableOpacity key={t}
                   style={[styles.chip, typeFilter === t && styles.chipActive]}
@@ -418,6 +407,31 @@ export default function ExpensesScreen() {
                 </TouchableOpacity>
               ))}
             </ScrollView>
+          </View>
+
+          {/* Month/Year Selectors */}
+          <View style={styles.selectorContainer}>
+            <TouchableOpacity 
+              style={styles.selectorBtn} 
+              onPress={() => setShowMonthPicker(true)}
+            >
+              <View>
+                <Text style={styles.selectorLabel}>Select Month</Text>
+                <Text style={styles.selectorValue}>{MONTHS[selectedMonth]}</Text>
+              </View>
+              <Ionicons name="calendar-outline" size={20} color={Colors.primary} />
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.selectorBtn} 
+              onPress={() => setShowYearPicker(true)}
+            >
+              <View>
+                <Text style={styles.selectorLabel}>Select Year</Text>
+                <Text style={styles.selectorValue}>{selectedYear}</Text>
+              </View>
+              <Ionicons name="chevron-down" size={20} color={Colors.primary} />
+            </TouchableOpacity>
           </View>
 
           <FlatList
@@ -625,6 +639,76 @@ export default function ExpensesScreen() {
         </View>
       </Modal>
 
+      {/* ── Month Picker Modal ── */}
+      <Modal visible={showMonthPicker} transparent animationType="fade" onRequestClose={() => setShowMonthPicker(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowMonthPicker(false)}>
+          <View style={styles.pickerSheet}>
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>Select Month</Text>
+              <TouchableOpacity onPress={() => setShowMonthPicker(false)}>
+                <Ionicons name="close" size={24} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={{ maxHeight: 400 }}>
+              {MONTHS.map((m, i) => {
+                const isFuture = selectedYear === CURRENT_YEAR && i > CURRENT_MONTH;
+                const isSelected = selectedMonth === i;
+                return (
+                  <TouchableOpacity
+                    key={m}
+                    style={[styles.pickerOption, isSelected && styles.pickerOptionSelected, isFuture && { opacity: 0.3 }]}
+                    disabled={isFuture}
+                    onPress={() => {
+                      setSelectedMonth(i);
+                      setShowMonthPicker(false);
+                    }}
+                  >
+                    <Text style={[styles.pickerOptionText, isSelected && styles.pickerOptionTextSelected]}>{m}</Text>
+                    {isSelected && <Ionicons name="checkmark-circle" size={20} color={Colors.primary} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* ── Year Picker Modal ── */}
+      <Modal visible={showYearPicker} transparent animationType="fade" onRequestClose={() => setShowYearPicker(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowYearPicker(false)}>
+          <View style={styles.pickerSheet}>
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>Select Year</Text>
+              <TouchableOpacity onPress={() => setShowYearPicker(false)}>
+                <Ionicons name="close" size={24} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={{ maxHeight: 400 }}>
+              {YEARS.map(y => {
+                const isSelected = selectedYear === y;
+                return (
+                  <TouchableOpacity
+                    key={y}
+                    style={[styles.pickerOption, isSelected && styles.pickerOptionSelected]}
+                    onPress={() => {
+                      setSelectedYear(y);
+                      // If moving from past year to current year, ensure month isn't future
+                      if (y === CURRENT_YEAR && selectedMonth > CURRENT_MONTH) {
+                        setSelectedMonth(CURRENT_MONTH);
+                      }
+                      setShowYearPicker(false);
+                    }}
+                  >
+                    <Text style={[styles.pickerOptionText, isSelected && styles.pickerOptionTextSelected]}>{y}</Text>
+                    {isSelected && <Ionicons name="checkmark-circle" size={20} color={Colors.primary} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       {/* ── Edit Logs Modal ── */}
       <Modal visible={showLogs} animationType="slide" presentationStyle="pageSheet">
         <View style={styles.modal}>
@@ -747,4 +831,18 @@ const styles = StyleSheet.create({
   detailEditBtnText: { fontSize: 14, fontWeight: '700', color: Colors.primary },
   detailDeleteBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1.5, borderColor: Colors.danger, borderRadius: 12, paddingVertical: 13, paddingHorizontal: 20 },
   detailDeleteBtnText: { fontSize: 14, fontWeight: '700', color: Colors.danger },
+
+  // Month/Year Selectors
+  selectorContainer: { flexDirection: 'row', gap: 12, paddingHorizontal: 16, marginBottom: 16 },
+  selectorBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: Colors.white, borderRadius: 14, padding: 14, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 6, elevation: 2, borderWidth: 1, borderColor: Colors.border },
+  selectorLabel: { fontSize: 10, color: Colors.textMuted, fontWeight: '600', textTransform: 'uppercase', marginBottom: 2 },
+  selectorValue: { fontSize: 15, fontWeight: '700', color: Colors.text },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  pickerSheet: { backgroundColor: Colors.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 40 },
+  sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  sheetTitle: { fontSize: 18, fontWeight: '800', color: Colors.text },
+  pickerOption: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: Colors.bg },
+  pickerOptionSelected: { backgroundColor: Colors.primary + '10' },
+  pickerOptionText: { fontSize: 16, color: Colors.text, fontWeight: '500' },
+  pickerOptionTextSelected: { color: Colors.primary, fontWeight: '700' },
 });

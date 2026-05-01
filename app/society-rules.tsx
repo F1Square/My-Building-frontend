@@ -44,10 +44,11 @@ type Rule = {
 
 export default function SocietyRulesScreen() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, hasActiveSubscription } = useAuth();
   const isAdmin = user?.role === 'admin';
   const isPramukh = user?.role === 'pramukh';
   const canEdit = isAdmin || isPramukh;
+  const isLocked = !isAdmin && !hasActiveSubscription;
 
   const { buildings, loading: buildingsLoading } = useBuildings(isAdmin);
   const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null);
@@ -190,7 +191,7 @@ export default function SocietyRulesScreen() {
             {isAdmin ? (selectedBuilding?.name || 'Select a society') : `${rules.length} rule${rules.length !== 1 ? 's' : ''}`}
           </Text>
         </View>
-        {canEdit && showContent && (
+        {canEdit && showContent && !isLocked && (
           <TouchableOpacity style={styles.addBtn} onPress={openAdd}>
             <Ionicons name="add" size={22} color={Colors.white} />
           </TouchableOpacity>
@@ -211,7 +212,21 @@ export default function SocietyRulesScreen() {
       )}
 
       {/* Content */}
-      {!showContent ? (
+      {isLocked ? (
+        <View style={styles.lockedContainer}>
+          <View style={styles.lockedIconBox}>
+            <Ionicons name="lock-closed" size={40} color={Colors.primary} />
+          </View>
+          <Text style={styles.lockedTitle}>Subscription Required</Text>
+          <Text style={styles.lockedDesc}>
+            Subscribe to view and manage society rules.
+          </Text>
+          <TouchableOpacity style={styles.lockedBtn} onPress={() => router.push('/subscribe' as any)}>
+            <Ionicons name="star-outline" size={18} color={Colors.white} />
+            <Text style={styles.lockedBtnText}>View Plans</Text>
+          </TouchableOpacity>
+        </View>
+      ) : !showContent ? (
         <View style={styles.empty}>
           <Ionicons name="business-outline" size={52} color={Colors.border} />
           <Text style={styles.emptyTitle}>Select a society</Text>
@@ -384,4 +399,23 @@ const styles = StyleSheet.create({
     paddingVertical: 14, alignItems: 'center',
   },
   submitBtnText: { color: Colors.white, fontWeight: '700', fontSize: 15 },
+  // Locked / paywall state
+  lockedContainer: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 40, gap: 16,
+  },
+  lockedIconBox: {
+    width: 88, height: 88, borderRadius: 44,
+    backgroundColor: Colors.primary + '15',
+    justifyContent: 'center', alignItems: 'center',
+    marginBottom: 4,
+  },
+  lockedTitle: { fontSize: 20, fontWeight: '800', color: Colors.text, textAlign: 'center' },
+  lockedDesc: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', lineHeight: 22 },
+  lockedBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: Colors.primary, borderRadius: 14,
+    paddingHorizontal: 28, paddingVertical: 14, marginTop: 8,
+  },
+  lockedBtnText: { fontSize: 15, fontWeight: '800', color: Colors.white },
 });

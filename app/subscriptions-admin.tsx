@@ -46,17 +46,19 @@ export default function SubscriptionsAdminScreen() {
   const revoke = async (user_id: string) => {
     Alert.alert('Revoke', 'Cancel this subscription?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Revoke', style: 'destructive', onPress: async () => {
-        setActing(true);
-        try {
-          await api.post('/subscriptions/revoke', { user_id });
-          setSelected(null);
-          setRemark('');
-          fetchData();
-        } catch (e: any) {
-          Alert.alert('Error', e.response?.data?.error || 'Failed');
-        } finally { setActing(false); }
-      }},
+      {
+        text: 'Revoke', style: 'destructive', onPress: async () => {
+          setActing(true);
+          try {
+            await api.post('/subscriptions/revoke', { user_id });
+            setSelected(null);
+            setRemark('');
+            fetchData();
+          } catch (e: any) {
+            Alert.alert('Error', e.response?.data?.error || 'Failed');
+          } finally { setActing(false); }
+        }
+      },
     ]);
   };
 
@@ -103,7 +105,7 @@ export default function SubscriptionsAdminScreen() {
     </TouchableOpacity>
   );
 
-  
+
 
   return (
     <View style={styles.container}>

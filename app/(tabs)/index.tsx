@@ -19,7 +19,8 @@ const CARD_SIZE = (SCREEN_W - 48) / 3;
 const GATED_ROUTES = [
   '/maintenance', '/announcements', '/visitors',
   '/parking', '/chat', '/join-requests', '/my-details', '/helpline',
-  '/members', '/expenses',
+  '/members', '/expenses', '/refer-and-earn', '/society-rules',
+  '/complaints?view=society',
 ];
 
 const TYPE_TO_ROUTE: Record<string, string> = {
@@ -32,28 +33,28 @@ const TYPE_TO_ROUTE: Record<string, string> = {
 
 // Pastel bg + icon color pairs matching the reference design
 const MODULE_PALETTE: Record<string, { bg: string; icon: string }> = {
-  myDetails:     { bg: '#E8EEF9', icon: '#3B5FC0' },
-  members:       { bg: '#FFF3E0', icon: '#F59E0B' },
-  complaints:    { bg: '#FDE8E8', icon: '#EF4444' },
-  maintenance:   { bg: '#FFF3E0', icon: '#F59E0B' },
-  visitors:      { bg: '#EDE9FE', icon: '#7C3AED' },
-  parking:       { bg: '#E0F7F4', icon: '#0D9488' },
-  groupChat:     { bg: '#FEE2E2', icon: '#EF4444' },
-  helpline:      { bg: '#E0F2FE', icon: '#0EA5E9' },
-  subscription:  { bg: '#FEF9C3', icon: '#CA8A04' },
+  myDetails: { bg: '#E8EEF9', icon: '#3B5FC0' },
+  members: { bg: '#FFF3E0', icon: '#F59E0B' },
+  complaints: { bg: '#FDE8E8', icon: '#EF4444' },
+  maintenance: { bg: '#FFF3E0', icon: '#F59E0B' },
+  visitors: { bg: '#EDE9FE', icon: '#7C3AED' },
+  parking: { bg: '#E0F7F4', icon: '#0D9488' },
+  groupChat: { bg: '#FEE2E2', icon: '#EF4444' },
+  helpline: { bg: '#E0F2FE', icon: '#0EA5E9' },
+  subscription: { bg: '#FEF9C3', icon: '#CA8A04' },
   announcements: { bg: '#E0F2FE', icon: '#0EA5E9' },
-  expenses:      { bg: '#EDE9FE', icon: '#7C3AED' },
-  joinRequests:  { bg: '#DCFCE7', icon: '#16A34A' },
-  bankDetails:   { bg: '#EDE9FE', icon: '#7C3AED' },
-  adminPanel:    { bg: '#E8EEF9', icon: '#3B5FC0' },
-  users:         { bg: '#E0F7F4', icon: '#0D9488' },
-  inquiries:     { bg: '#E0F2FE', icon: '#0EA5E9' },
+  expenses: { bg: '#EDE9FE', icon: '#7C3AED' },
+  joinRequests: { bg: '#DCFCE7', icon: '#16A34A' },
+  bankDetails: { bg: '#EDE9FE', icon: '#7C3AED' },
+  adminPanel: { bg: '#E8EEF9', icon: '#3B5FC0' },
+  users: { bg: '#E0F7F4', icon: '#0D9488' },
+  inquiries: { bg: '#E0F2FE', icon: '#0EA5E9' },
   subscriptions: { bg: '#FEF9C3', icon: '#CA8A04' },
-  promoCodes:    { bg: '#FDE8E8', icon: '#EF4444' },
-  activityLogs:  { bg: '#F1F5F9', icon: '#475569' },
-  referAndEarn:  { bg: '#FFF0F5', icon: '#EC4899' },
-  newspaper:     { bg: '#FFF7ED', icon: '#EA580C' },
-  societyRules:  { bg: '#F0FDF4', icon: '#16A34A' },
+  promoCodes: { bg: '#FDE8E8', icon: '#EF4444' },
+  activityLogs: { bg: '#F1F5F9', icon: '#475569' },
+  referAndEarn: { bg: '#FFF0F5', icon: '#EC4899' },
+  newspaper: { bg: '#FFF7ED', icon: '#EA580C' },
+  societyRules: { bg: '#F0FDF4', icon: '#16A34A' },
 };
 
 const MODULE_ICONS: Record<string, string> = {
@@ -89,9 +90,9 @@ export default function HomeScreen() {
   const [totalUnread, setTotalUnread] = useState(0);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showUrgentModal, setShowUrgentModal] = useState(false);
-  const [latestAnnouncement, setLatestAnnouncement] = useState<any>(null);
   const [search, setSearch] = useState('');
   const [buildingLogo, setBuildingLogo] = useState<string | null>(null);
+  const [buildingName, setBuildingName] = useState<string | null>(null);
 
   const isPendingUser = user?.role === 'user' && !user?.building_id;
   const needsSubscription = user?.role !== 'admin' && !hasActiveSubscription;
@@ -129,29 +130,29 @@ export default function HomeScreen() {
   };
 
   const allModules = [
-    { titleKey: 'myDetails',    route: '/my-details',           userPramukhOnly: true },
-    { titleKey: 'members',      route: '/members',              userPramukhOnly: true },
-    { titleKey: 'expenses',     route: '/expenses' },
-    { titleKey: 'maintenance',  route: '/maintenance' },
-    { titleKey: 'announcements',route: '/announcements' },
-    { titleKey: 'visitors',     route: '/visitors' },
-    { titleKey: 'parking',      route: '/parking' },
-    { titleKey: 'groupChat',    route: '/chat',                 hideForAdmin: true },
-    { titleKey: 'complaints',   route: '/complaints?view=society', userPramukhOnly: true },
-    { titleKey: 'joinRequests', route: '/join-requests',        pramukhOnly: true },
-    { titleKey: 'helpline',     route: '/helpline',             hideForAdmin: true },
-    { titleKey: 'subscription', route: '/subscribe',            hideForAdmin: true },
-    { titleKey: 'bankDetails',  route: '/bank-details',         adminOnly: true },
-    { titleKey: 'adminPanel',   route: '/admin',                adminOnly: true },
-    { titleKey: 'users',        route: '/users',                adminOnly: true },
-    { titleKey: 'inquiries',    route: '/inquiries',            adminOnly: true },
-    { titleKey: 'complaints',   route: '/complaints-admin',     adminOnly: true },
-    { titleKey: 'helpline',     route: '/helpline',             adminOnly: true },
-    { titleKey: 'subscriptions',route: '/subscriptions-admin',  adminOnly: true },
-    { titleKey: 'promoCodes',   route: '/promos',               adminOnly: true },
-    { titleKey: 'activityLogs', route: '/activity-logs',        adminOnly: true },
+    { titleKey: 'myDetails', route: '/my-details', userPramukhOnly: true },
+    { titleKey: 'members', route: '/members', userPramukhOnly: true },
+    { titleKey: 'expenses', route: '/expenses' },
+    { titleKey: 'maintenance', route: '/maintenance' },
+    { titleKey: 'announcements', route: '/announcements' },
+    { titleKey: 'visitors', route: '/visitors' },
+    { titleKey: 'parking', route: '/parking' },
+    { titleKey: 'groupChat', route: '/chat', hideForAdmin: true },
+    { titleKey: 'complaints', route: '/complaints?view=society', userPramukhOnly: true },
+    { titleKey: 'joinRequests', route: '/join-requests', pramukhOnly: true },
+    { titleKey: 'helpline', route: '/helpline', hideForAdmin: true },
+    { titleKey: 'subscription', route: '/subscribe', hideForAdmin: true },
+    { titleKey: 'bankDetails', route: '/bank-details', adminOnly: true },
+    { titleKey: 'adminPanel', route: '/admin', adminOnly: true },
+    { titleKey: 'users', route: '/users', adminOnly: true },
+    { titleKey: 'inquiries', route: '/inquiries', adminOnly: true },
+    { titleKey: 'complaints', route: '/complaints-admin', adminOnly: true },
+    { titleKey: 'helpline', route: '/helpline', adminOnly: true },
+    { titleKey: 'subscriptions', route: '/subscriptions-admin', adminOnly: true },
+    { titleKey: 'promoCodes', route: '/promos', adminOnly: true },
+    { titleKey: 'activityLogs', route: '/activity-logs', adminOnly: true },
     { titleKey: 'referAndEarn', route: '/refer-and-earn' },
-    { titleKey: 'newspaper',    route: '/newspaper' },
+    { titleKey: 'newspaper', route: '/newspaper' },
     { titleKey: 'societyRules', route: '/society-rules' },
   ];
 
@@ -170,20 +171,16 @@ export default function HomeScreen() {
   const fetchData = async () => {
     try {
       if (user?.building_id) {
-        const [announcementsRes, buildingRes] = await Promise.all([
-          api.get('/announcements'),
-          api.get('/buildings/my').catch(() => null),
-        ]);
-        const all = announcementsRes.data as any[];
-        setLatestAnnouncement(all[0] || null);
+        const buildingRes = await api.get('/buildings/my').catch(() => null);
         setBuildingLogo(buildingRes?.data?.society_logo ?? null);
+        setBuildingName(buildingRes?.data?.name ?? null);
       }
-    } catch {}
+    } catch { }
   };
 
   const openUrgentInbox = async () => {
-    api.patch('/notifications/read-all').catch(() => {});
-    api.delete('/notifications/dismiss-types', { data: { types: ['announcement_urgent'] } }).catch(() => {});
+    api.patch('/notifications/read-all').catch(() => { });
+    api.delete('/notifications/dismiss-types', { data: { types: ['announcement_urgent'] } }).catch(() => { });
     setTotalUnread(0);
     try {
       const res = await api.get('/notifications');
@@ -206,7 +203,7 @@ export default function HomeScreen() {
       const total = Object.values(routeCounts).reduce((sum, n) => sum + n, 0);
       setTotalUnread(total);
       setBadgeCounts(routeCounts);
-    } catch {}
+    } catch { }
   }, [user]);
 
   useEffect(() => { fetchData(); }, [user?.building_id]);
@@ -276,7 +273,7 @@ export default function HomeScreen() {
         </View>
 
         {/* Greeting */}
-        <Text style={styles.greetingText}>{getGreeting()}, {user?.name?.split(' ')[0]} 👋</Text>
+        <Text style={styles.greetingText}>{buildingName}, {user?.name?.split(' ')[0]} 👋</Text>
 
         {/* Search bar */}
         <View style={styles.searchBar}>

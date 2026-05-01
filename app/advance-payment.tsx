@@ -62,11 +62,14 @@ export default function AdvancePaymentScreen() {
     setPaying(true);
     try {
       const res = await api.post('/maintenance/advance/order', { months: selectedMonths });
-      await WebBrowser.openBrowserAsync(res.data.checkout_url, {
-        dismissButtonStyle: 'cancel',
-        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
-      });
-      fetchStatus();
+      
+      const result = await WebBrowser.openAuthSessionAsync(res.data.checkout_url, 'mybuilding://advance-payment');
+      
+      if (result.type === 'success') {
+        setTimeout(fetchStatus, 1000);
+      } else {
+        fetchStatus();
+      }
     } catch (e: any) {
       Alert.alert('Error', e.response?.data?.error || 'Failed to initiate payment');
     } finally {
@@ -167,7 +170,7 @@ export default function AdvancePaymentScreen() {
                     <Ionicons name="card-outline" size={20} color={Colors.white} />
                     <Text style={styles.payBtnText}>
                       {totalForSelected
-                        ? `Pay ₹${totalForSelected.toLocaleString('en-IN')} via Razorpay`
+                        ? `Pay ₹${totalForSelected.toLocaleString('en-IN')}`
                         : 'Select a period to pay'}
                     </Text>
                   </>

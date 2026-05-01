@@ -394,7 +394,7 @@ function BillFormModal({ visible, category, members, onClose, onSubmit }: BillFo
                   </TouchableOpacity>
                 </View>
                 <View style={formStyles.calGrid}>
-                  {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => (
+                  {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
                     <Text key={d} style={formStyles.calDayLabel}>{d}</Text>
                   ))}
                   {(() => {
@@ -405,7 +405,7 @@ function BillFormModal({ visible, category, members, onClose, onSubmit }: BillFo
                     while (cells.length % 7 !== 0) cells.push(null);
                     return cells.map((day, i) => {
                       if (!day) return <View key={i} style={formStyles.calCell} />;
-                      const dateStr = `${dpYear}-${String(dpMonth).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                      const dateStr = `${dpYear}-${String(dpMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                       const selected = form.due_date === dateStr;
                       return (
                         <TouchableOpacity key={i} style={[formStyles.calCell, selected && formStyles.calCellSelected]}
@@ -866,7 +866,7 @@ export default function MaintenanceCategoryScreen() {
       if (effectiveBuildingId) params.building_id = effectiveBuildingId;
       const res = await api.get('/maintenance/payments', { params });
       setUserPayments(res.data);
-    } catch {}
+    } catch { }
     finally { setLoading(false); setRefreshing(false); }
   };
 
@@ -897,7 +897,7 @@ export default function MaintenanceCategoryScreen() {
         const paymentsRes = await api.get('/maintenance/payments', { params: allParams });
         setBillPayments(paymentsRes.data.filter((p: PaymentRecord) => p.bill_id === selectedBill.id));
       }
-    } catch {}
+    } catch { }
     finally { setLoading(false); setRefreshing(false); }
   };
 
@@ -907,7 +907,7 @@ export default function MaintenanceCategoryScreen() {
       if (effectiveBuildingId) params.building_id = effectiveBuildingId;
       const res = await api.get('/maintenance/payments', { params });
       setBillPayments(res.data.filter((p: PaymentRecord) => p.bill_id === bill.id));
-    } catch {}
+    } catch { }
   };
 
   useFocusEffect(useCallback(() => {
@@ -1160,7 +1160,7 @@ export default function MaintenanceCategoryScreen() {
                 ) : (
                   (activeTab === 'pending' ? myPendingBills : myPaidBills).map(record => (
                     <BillCard key={record.id} record={record} category={cat}
-                      onPay={paying ? () => {} : handlePay} onReceipt={handleReceipt} />
+                      onPay={paying ? () => { } : handlePay} onReceipt={handleReceipt} />
                   ))
                 )}
               </ScrollView>
@@ -1266,14 +1266,16 @@ export default function MaintenanceCategoryScreen() {
                               `Delete "${item.description || 'this bill'}"? All payment records will also be removed.`,
                               [
                                 { text: 'Cancel', style: 'cancel' },
-                                { text: 'Delete', style: 'destructive', onPress: async () => {
-                                  try {
-                                    await api.delete(`/maintenance/bills/${item.id}`);
-                                    fetchPramukhData();
-                                  } catch (e: any) {
-                                    Alert.alert('Error', e?.response?.data?.error || 'Could not delete bill.');
+                                {
+                                  text: 'Delete', style: 'destructive', onPress: async () => {
+                                    try {
+                                      await api.delete(`/maintenance/bills/${item.id}`);
+                                      fetchPramukhData();
+                                    } catch (e: any) {
+                                      Alert.alert('Error', e?.response?.data?.error || 'Could not delete bill.');
+                                    }
                                   }
-                                }},
+                                },
                               ]
                             );
                           }}
@@ -1328,7 +1330,7 @@ export default function MaintenanceCategoryScreen() {
                   key={record.id}
                   record={record}
                   category={cat}
-                  onPay={paying ? () => {} : handlePay}
+                  onPay={paying ? () => { } : handlePay}
                   onReceipt={handleReceipt}
                 />
               ))
@@ -1409,7 +1411,7 @@ export default function MaintenanceCategoryScreen() {
                     </TouchableOpacity>
                   </View>
                   <View style={formStyles.calGrid}>
-                    {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => (
+                    {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
                       <Text key={d} style={formStyles.calDayLabel}>{d}</Text>
                     ))}
                     {(() => {
@@ -1420,7 +1422,7 @@ export default function MaintenanceCategoryScreen() {
                       while (cells.length % 7 !== 0) cells.push(null);
                       return cells.map((day, i) => {
                         if (!day) return <View key={i} style={formStyles.calCell} />;
-                        const dateStr = `${editDpYear}-${String(editDpMonth).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                        const dateStr = `${editDpYear}-${String(editDpMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                         const selected = editForm.due_date === dateStr;
                         return (
                           <TouchableOpacity key={i} style={[formStyles.calCell, selected && formStyles.calCellSelected]}

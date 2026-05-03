@@ -60,7 +60,7 @@ export default function InquiriesScreen() {
 
   const hasGatewayLink = selected?.payment_method === 'Online (Payment Gateway)' && selected?.payment_gateway_link;
 
-  
+
 
   return (
     <View style={styles.container}>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
@@ -11,7 +11,7 @@ import api from '../utils/api';
 import BuildingDropdown from '../components/BuildingDropdown';
 import type { Building } from '../hooks/useBuildings';
 
-type ModalType = 'none' | 'createBuilding' | 'createPramukh' | 'members' | 'subscriptions' | 'grantSub' | 'buildingSelector';
+type ModalType = 'none' | 'createBuilding' | 'createPramukh' | 'members' | 'subscriptions' | 'grantSub' | 'buildingSelector' | 'appSettings';
 type Member = { id: string; name: string; email: string; role: string; flat_no?: string; status: string };
 type SubRecord = {
   id: string; user_id: string; plan: string; status: string;
@@ -41,7 +41,16 @@ export default function AdminScreen() {
   const [submitting, setSubmitting] = useState(false);
 
   // create building form
-  const [bForm, setBForm] = useState({ name: '', address: '' });
+  const [bForm, setBForm] = useState({
+    name: '',
+    address: '',
+    has_wings: false,
+    wings: '',
+    late_fees_enabled: false,
+    late_fees_amount: '',
+    water_reading_enabled: false,
+    payment_methods: ['Online', 'Cash', 'Cheque']
+  });
 
   // create pramukh form
   const [pBuilding, setPBuilding] = useState<Building | null>(null);
@@ -64,6 +73,14 @@ export default function AdminScreen() {
   const [selectedModuleRoute, setSelectedModuleRoute] = useState<string>('');
   const [buildingSearchQuery, setBuildingSearchQuery] = useState('');
   const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null);
+  
+  // App Config Settings
+  const [appConfig, setAppConfig] = useState({
+    version: '',
+    maintenance_mode: false,
+    maintenance_message: ''
+  });
+  const [configLoading, setConfigLoading] = useState(false);
 
   const filteredBuildings = buildings.filter(b =>
     b.name.toLowerCase().includes(buildingSearchQuery.toLowerCase()) ||
@@ -71,7 +88,7 @@ export default function AdminScreen() {
     b.id.toLowerCase().includes(buildingSearchQuery.toLowerCase())
   );
 
-  React.useEffect(() => { fetchBuildings(); }, []);
+  useEffect(() => { fetchBuildings(); }, []);
 
   const fetchBuildings = async () => {
     try { const r = await api.get('/buildings'); setBuildings(r.data); }
@@ -85,8 +102,26 @@ export default function AdminScreen() {
     if (!bForm.name.trim()) return Alert.alert('Error', 'Building name is required');
     setSubmitting(true);
     try {
-      await api.post('/buildings/create', { name: bForm.name.trim(), address: bForm.address.trim() });
-      setBForm({ name: '', address: '' });
+      await api.post('/buildings/create', {
+        name: bForm.name.trim(),
+        address: bForm.address.trim(),
+        has_wings: bForm.has_wings,
+        wings: bForm.has_wings ? bForm.wings.trim() : null,
+        late_fees_enabled: bForm.late_fees_enabled,
+        late_fees_amount: bForm.late_fees_amount,
+        water_reading_enabled: bForm.water_reading_enabled,
+        payment_methods: bForm.payment_methods
+      });
+      setBForm({
+        name: '',
+        address: '',
+        has_wings: false,
+        wings: '',
+        late_fees_enabled: false,
+        late_fees_amount: '',
+        water_reading_enabled: false,
+        payment_methods: ['Online', 'Cash', 'Cheque']
+      });
       closeModal();
       fetchBuildings();
       Alert.alert('Done', 'Building created');
@@ -133,7 +168,8 @@ export default function AdminScreen() {
 
   const openGrantSub = async () => {
     // load all users for picker
-    try { const r = await api.get('/buildings'); 
+    try {
+      const r = await api.get('/buildings');
       // fetch members from all buildings
       const all: { id: string; name: string; email: string }[] = [];
       for (const b of r.data) {
@@ -141,7 +177,7 @@ export default function AdminScreen() {
         m.data.forEach((u: any) => { if (!all.find(x => x.id === u.id)) all.push({ id: u.id, name: u.name, email: u.email }); });
       }
       setAllUsers(all);
-    } catch {}
+    } catch { }
     setGrantForm({ user_id: '', plan: 'monthly', months: '1', remark: '' });
     setUserDropdownOpen(false);
     setUserSearch('');
@@ -168,18 +204,73 @@ export default function AdminScreen() {
   const revokeSubscription = async (user_id: string, name: string) => {
     Alert.alert('Revoke Subscription', `Revoke subscription for ${name}?`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Revoke', style: 'destructive', onPress: async () => {
-        try {
-          await api.post('/subscriptions/revoke', { user_id });
-          setSubs(prev => prev.map(s => s.user_id === user_id ? { ...s, status: 'cancelled' } : s));
-        } catch (e: any) { Alert.alert('Error', e.response?.data?.error || 'Failed'); }
-      }},
+      {
+        text: 'Revoke', style: 'destructive', onPress: async () => {
+          try {
+            await api.post('/subscriptions/revoke', { user_id });
+            setSubs(prev => prev.map(s => s.user_id === user_id ? { ...s, status: 'cancelled' } : s));
+          } catch (e: any) { Alert.alert('Error', e.response?.data?.error || 'Failed'); }
+        }
+      },
     ]);
   };
 
   const navigateTo = (route: string, b: Building) => {
     router.push({ pathname: route as any, params: { building_id: b.id, building_name: b.name } });
     setSelectedBuilding(null);
+  };
+
+  const openAppSettings = async () => {
+    setModal('appSettings');
+    setConfigLoading(true);
+    try {
+      const r = await api.get('/app-config');
+      setAppConfig(r.data);
+    } catch (e: any) {
+      Alert.alert('Error', 'Failed to load app config');
+    } finally {
+      setConfigLoading(false);
+    }
+  };
+
+  const updateConfigKey = async (key: string, value: any) => {
+    // For maintenance_mode, we show a confirmation alert first
+    if (key === 'maintenance_mode') {
+      const isEnabling = value === 'true';
+      Alert.alert(
+        isEnabling ? 'Enable Maintenance Mode?' : 'Disable Maintenance Mode?',
+        isEnabling 
+          ? 'This will block all non-admin users from using the app. Are you sure?'
+          : 'This will restore access for all users. Are you sure?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: isEnabling ? 'Enable' : 'Disable', onPress: () => performUpdate(key, value) }
+        ]
+      );
+    } else {
+      performUpdate(key, value);
+    }
+  };
+
+  const performUpdate = async (key: string, value: any) => {
+    const stateKey = key === 'app_version' ? 'version' : key;
+    const previousValue = (appConfig as any)[stateKey];
+    
+    // 1. Optimistic Update (Immediate UI response)
+    // Convert 'true'/'false' strings to actual booleans for the state
+    const displayValue = key === 'maintenance_mode' ? value === 'true' : value;
+    setAppConfig(prev => ({ ...prev, [stateKey]: displayValue }));
+
+    try {
+      setSubmitting(true);
+      await api.patch('/app-config', { key, value });
+    } catch (e: any) {
+      // 2. Rollback on error
+      setAppConfig(prev => ({ ...prev, [stateKey]: previousValue }));
+      Alert.alert('Error', e.response?.data?.error || 'Failed to update');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const openBuildingSelector = (route: string) => {
@@ -205,13 +296,13 @@ export default function AdminScreen() {
     r === 'pramukh' ? Colors.primary : r === 'user' ? Colors.success : Colors.textMuted;
 
   const BUILD_ACTIONS = [
-    { route: '/maintenance',   icon: 'wallet',       color: '#10B981', label: 'Maintenance' },
-    { route: '/announcements', icon: 'megaphone',    color: '#F59E0B', label: 'Notices' },
-    { route: '/visitors',      icon: 'people',       color: '#6366F1', label: 'Visitors' },
-    { route: '/parking',       icon: 'car',          color: '#0EA5E9', label: 'Parking' },
+    { route: '/maintenance', icon: 'wallet', color: '#10B981', label: 'Maintenance' },
+    { route: '/announcements', icon: 'megaphone', color: '#F59E0B', label: 'Notices' },
+    { route: '/visitors', icon: 'people', color: '#6366F1', label: 'Visitors' },
+    { route: '/parking', icon: 'car', color: '#0EA5E9', label: 'Parking' },
   ];
 
-  
+
 
   return (
     <View style={styles.container}>
@@ -234,16 +325,20 @@ export default function AdminScreen() {
         >
           <Text style={styles.sectionTitle}>Quick Actions</Text>
           <View style={styles.actionsRow}>
-            <ActionCard icon="business"    label="New Building"   color={Colors.primary} onPress={() => setModal('createBuilding')} />
-            <ActionCard icon="person-add"  label="New Pramukh"    color="#7C3AED"        onPress={() => setModal('createPramukh')} />
+            <ActionCard icon="business" label="New Building" color={Colors.primary} onPress={() => setModal('createBuilding')} />
+            <ActionCard icon="person-add" label="New Pramukh" color="#7C3AED" onPress={() => setModal('createPramukh')} />
           </View>
           <View style={styles.actionsRow}>
             <ActionCard icon="globe-outline" label="Web Inquiries" color="#F59E0B" onPress={() => router.push('/website-contacts' as any)} />
+            <ActionCard icon="settings-outline" label="App Settings" color="#64748B" onPress={openAppSettings} />
+          </View>
+          <View style={styles.actionsRow}>
             <ActionCard icon="gift" label="Grant Sub" color="#EC4899" onPress={openGrantSub} />
+            <View style={{ flex: 1 }} />
           </View>
 
           <Text style={styles.sectionTitle}>Buildings</Text>
-          
+
           {/* Search bar */}
           {buildings.length > 0 && (
             <View style={styles.searchBar}>
@@ -271,7 +366,7 @@ export default function AdminScreen() {
             </View>
           ) : filteredBuildings.map((b) => (
             <View key={b.id} style={styles.buildingCard}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.buildingNameRow}
                 onPress={() => handleBuildingClick(b)}
                 activeOpacity={0.7}
@@ -282,7 +377,7 @@ export default function AdminScreen() {
                   {selectedBuilding?.id === b.id && (
                     <View style={styles.buildingIdRow}>
                       <Text style={styles.buildingId}>ID: {b.id}</Text>
-                      <TouchableOpacity 
+                      <TouchableOpacity
                         style={styles.copyBtn}
                         onPress={(e) => {
                           e.stopPropagation();
@@ -294,13 +389,13 @@ export default function AdminScreen() {
                     </View>
                   )}
                 </View>
-                <Ionicons 
-                  name={selectedBuilding?.id === b.id ? "chevron-up" : "chevron-down"} 
-                  size={20} 
-                  color={Colors.textMuted} 
+                <Ionicons
+                  name={selectedBuilding?.id === b.id ? "chevron-up" : "chevron-down"}
+                  size={20}
+                  color={Colors.textMuted}
                 />
               </TouchableOpacity>
-              
+
               {selectedBuilding?.id === b.id && (
                 <View style={styles.buildingExpandedSection}>
                   {b.address && (
@@ -309,7 +404,7 @@ export default function AdminScreen() {
                       <Text style={styles.buildingInfoText}>{b.address}</Text>
                     </View>
                   )}
-                  
+
                   <View style={styles.buildingActionsExpanded}>
                     <TouchableOpacity style={styles.membersBtn} onPress={() => openMembers(b)}>
                       <Ionicons name="people" size={14} color={Colors.primary} />
@@ -343,11 +438,103 @@ export default function AdminScreen() {
             <Text style={styles.modalTitle}>New Building</Text>
             <TouchableOpacity onPress={closeModal}><Ionicons name="close" size={24} color={Colors.text} /></TouchableOpacity>
           </View>
-          <ScrollView keyboardShouldPersistTaps="handled">
+          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <Text style={styles.label}>Building Name *</Text>
             <TextInput style={styles.input} value={bForm.name} onChangeText={(v) => setBForm({ ...bForm, name: v })} placeholder="e.g. Shree Residency" placeholderTextColor={Colors.textMuted} />
+
             <Text style={styles.label}>Address</Text>
             <TextInput style={styles.input} value={bForm.address} onChangeText={(v) => setBForm({ ...bForm, address: v })} placeholder="e.g. 12, MG Road, Ahmedabad" placeholderTextColor={Colors.textMuted} />
+
+            <View style={styles.switchRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.switchLabel}>Has Wings?</Text>
+                <Text style={styles.switchSub}>Does this society have multiple wings (A, B, C...)?</Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.switch, bForm.has_wings && styles.switchOn]}
+                onPress={() => setBForm({ ...bForm, has_wings: !bForm.has_wings })}
+              >
+                <View style={[styles.switchThumb, bForm.has_wings && styles.switchThumbOn]} />
+              </TouchableOpacity>
+            </View>
+
+            {bForm.has_wings && (
+              <View style={{ marginTop: 4 }}>
+                <Text style={styles.label}>Wings (comma separated)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={bForm.wings}
+                  onChangeText={(v) => setBForm({ ...bForm, wings: v })}
+                  placeholder="e.g. A, B, C"
+                  placeholderTextColor={Colors.textMuted}
+                />
+              </View>
+            )}
+
+            <View style={styles.switchRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.switchLabel}>Late Fees</Text>
+                <Text style={styles.switchSub}>Enable automatic late fee calculation</Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.switch, bForm.late_fees_enabled && styles.switchOn]}
+                onPress={() => setBForm({ ...bForm, late_fees_enabled: !bForm.late_fees_enabled })}
+              >
+                <View style={[styles.switchThumb, bForm.late_fees_enabled && styles.switchThumbOn]} />
+              </TouchableOpacity>
+            </View>
+
+            {bForm.late_fees_enabled && (
+              <View style={{ marginTop: 4 }}>
+                <Text style={styles.label}>Late Fee Amount (₹)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={bForm.late_fees_amount}
+                  onChangeText={(v) => setBForm({ ...bForm, late_fees_amount: v })}
+                  placeholder="e.g. 100"
+                  keyboardType="numeric"
+                  placeholderTextColor={Colors.textMuted}
+                />
+              </View>
+            )}
+
+            <View style={styles.switchRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.switchLabel}>Water Reading</Text>
+                <Text style={styles.switchSub}>Enable separate water bill module</Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.switch, bForm.water_reading_enabled && styles.switchOn]}
+                onPress={() => setBForm({ ...bForm, water_reading_enabled: !bForm.water_reading_enabled })}
+              >
+                <View style={[styles.switchThumb, bForm.water_reading_enabled && styles.switchThumbOn]} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.label}>Payment Methods</Text>
+            <View style={styles.checkboxGroup}>
+              {['Online', 'Cash', 'Cheque'].map(m => {
+                const isSelected = bForm.payment_methods.includes(m);
+                return (
+                  <TouchableOpacity
+                    key={m}
+                    style={styles.checkboxRow}
+                    onPress={() => {
+                      const newMethods = isSelected
+                        ? bForm.payment_methods.filter(x => x !== m)
+                        : [...bForm.payment_methods, m];
+                      setBForm({ ...bForm, payment_methods: newMethods });
+                    }}
+                  >
+                    <View style={[styles.checkbox, isSelected && styles.checkboxChecked]}>
+                      {isSelected && <Ionicons name="checkmark" size={14} color={Colors.white} />}
+                    </View>
+                    <Text style={styles.checkboxText}>{m}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
             <TouchableOpacity style={styles.submitBtn} onPress={createBuilding} disabled={submitting}>
               {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>Create Building</Text>}
             </TouchableOpacity>
@@ -604,17 +791,17 @@ export default function AdminScreen() {
               ))}
             </View>
 
-            {grantForm.plan === 'monthly' && (              <>
-                <Text style={styles.label}>Months *</Text>
-                <TextInput
-                  style={styles.input}
-                  value={grantForm.months}
-                  onChangeText={(v) => setGrantForm({ ...grantForm, months: v })}
-                  placeholder="e.g. 1"
-                  keyboardType="number-pad"
-                  placeholderTextColor={Colors.textMuted}
-                />
-              </>
+            {grantForm.plan === 'monthly' && (<>
+              <Text style={styles.label}>Months *</Text>
+              <TextInput
+                style={styles.input}
+                value={grantForm.months}
+                onChangeText={(v) => setGrantForm({ ...grantForm, months: v })}
+                placeholder="e.g. 1"
+                keyboardType="number-pad"
+                placeholderTextColor={Colors.textMuted}
+              />
+            </>
             )}
 
             <Text style={styles.label}>Remark * <Text style={{ fontWeight: '400', color: Colors.textMuted }}>(who handled this?)</Text></Text>
@@ -631,6 +818,76 @@ export default function AdminScreen() {
               {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>Grant Subscription</Text>}
             </TouchableOpacity>
           </ScrollView>
+        </View>
+      </Modal>
+
+      {/* ── App Settings ── */}
+      <Modal visible={modal === 'appSettings'} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.modal}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>App Configuration</Text>
+            <TouchableOpacity onPress={closeModal}><Ionicons name="close" size={24} color={Colors.text} /></TouchableOpacity>
+          </View>
+          
+          {configLoading ? (
+            <ActivityIndicator style={{ marginTop: 40 }} size="large" color={Colors.primary} />
+          ) : (
+            <ScrollView keyboardShouldPersistTaps="handled">
+              <View style={styles.configCard}>
+                <Text style={styles.label}>App Version (Live on Stores)</Text>
+                <View style={styles.inlineActionRow}>
+                  <TextInput 
+                    style={[styles.input, { flex: 1, marginBottom: 0 }]} 
+                    value={appConfig.version} 
+                    onChangeText={(v) => setAppConfig({ ...appConfig, version: v })} 
+                    placeholder="e.g. 1.13.0" 
+                  />
+                  <TouchableOpacity 
+                    style={styles.inlineUpdateBtn} 
+                    onPress={() => updateConfigKey('app_version', appConfig.version)}
+                    disabled={submitting}
+                  >
+                    <Text style={styles.inlineUpdateBtnText}>Save</Text>
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.switchSub}>Changing this triggers the "Update Available" popup for users on older versions.</Text>
+              </View>
+
+              <View style={styles.configCard}>
+                <View style={styles.switchRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.switchLabel}>Maintenance Mode</Text>
+                    <Text style={styles.switchSub}>Block all users from using the app</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.switch, appConfig.maintenance_mode && styles.switchOn]}
+                    onPress={() => updateConfigKey('maintenance_mode', !appConfig.maintenance_mode ? 'true' : 'false')}
+                    disabled={submitting}
+                  >
+                    <View style={[styles.switchThumb, appConfig.maintenance_mode && styles.switchThumbOn]} />
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={[styles.label, { marginTop: 16 }]}>Maintenance Message</Text>
+                <TextInput
+                  style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
+                  value={appConfig.maintenance_message}
+                  onChangeText={(v) => setAppConfig({ ...appConfig, maintenance_message: v })}
+                  placeholder="Tell users why the app is down..."
+                  multiline
+                />
+                <TouchableOpacity 
+                  style={[styles.submitBtn, { marginTop: 0 }]} 
+                  onPress={() => updateConfigKey('maintenance_message', appConfig.maintenance_message)}
+                  disabled={submitting}
+                >
+                  <Text style={styles.submitBtnText}>Update Message</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={{ height: 40 }} />
+            </ScrollView>
+          )}
         </View>
       </Modal>
     </View>
@@ -723,4 +980,22 @@ const styles = StyleSheet.create({
   planToggle: { flex: 1, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 10, padding: 12, alignItems: 'center' },
   planToggleActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   planToggleText: { fontSize: 14, fontWeight: '700', color: Colors.text },
+  // Switch styles
+  switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, backgroundColor: Colors.bg, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: Colors.border },
+  switchLabel: { fontSize: 14, fontWeight: '700', color: Colors.text },
+  switchSub: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
+  switch: { width: 44, height: 24, borderRadius: 12, backgroundColor: '#E5E7EB', padding: 2 },
+  switchOn: { backgroundColor: Colors.primary },
+  switchThumb: { width: 20, height: 20, borderRadius: 10, backgroundColor: Colors.white },
+  switchThumbOn: { alignSelf: 'flex-end' },
+  // Checkbox styles
+  checkboxGroup: { flexDirection: 'row', gap: 16, marginTop: 4 },
+  checkboxRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  checkbox: { width: 20, height: 20, borderRadius: 4, borderWidth: 2, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' },
+  checkboxChecked: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  checkboxText: { fontSize: 14, color: Colors.text, fontWeight: '600' },
+  configCard: { backgroundColor: Colors.white, borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: Colors.border, shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 5, elevation: 2 },
+  inlineActionRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 },
+  inlineUpdateBtn: { backgroundColor: Colors.primary, borderRadius: 10, paddingHorizontal: 16, height: 48, justifyContent: 'center', alignItems: 'center' },
+  inlineUpdateBtnText: { color: Colors.white, fontSize: 14, fontWeight: '700' },
 });

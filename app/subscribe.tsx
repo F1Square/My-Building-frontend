@@ -81,12 +81,12 @@ export default function SubscribeScreen() {
       const orderRes = await api.post('/subscriptions/order', {
         plan,
         promo_id: promoResult?.promo_id || undefined,
-        include_newspaper: includeNewspaper,
+        include_newspaper: plan === 'lifetime' ? false : includeNewspaper,
       });
       const { checkout_url } = orderRes.data;
-      
+
       const result = await WebBrowser.openAuthSessionAsync(checkout_url, 'mybuilding://subscription');
-      
+
       if (result.type === 'success') {
         setTimeout(async () => {
           await refreshSubscription();
@@ -105,14 +105,14 @@ export default function SubscribeScreen() {
   };
 
   // Enable newspaper add-on for existing subscriber (₹3 Razorpay payment)
-  const enableNewspaperAddon = async () => {
+  const enableNewspaperAddon = async (plan?: string) => {
     setNewspaperAddonLoading(true);
     try {
-      const orderRes = await api.post('/subscriptions/newspaper-addon/order');
+      const orderRes = await api.post('/subscriptions/newspaper-addon/order', { plan });
       const { checkout_url } = orderRes.data;
-      
+
       const result = await WebBrowser.openAuthSessionAsync(checkout_url, 'mybuilding://subscription');
-      
+
       if (result.type === 'success') {
         setTimeout(refreshSubscription, 1000);
       } else {
@@ -129,17 +129,19 @@ export default function SubscribeScreen() {
   const disableNewspaperAddon = async () => {
     Alert.alert('Disable Newspaper', 'Are you sure you want to disable the newspaper add-on?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Disable', style: 'destructive', onPress: async () => {
-        setNewspaperAddonLoading(true);
-        try {
-          await api.post('/subscriptions/newspaper-addon', { enable: false });
-          await refreshSubscription();
-        } catch (e: any) {
-          Alert.alert('Error', e.response?.data?.error || 'Failed');
-        } finally {
-          setNewspaperAddonLoading(false);
+      {
+        text: 'Disable', style: 'destructive', onPress: async () => {
+          setNewspaperAddonLoading(true);
+          try {
+            await api.post('/subscriptions/newspaper-addon', { enable: false });
+            await refreshSubscription();
+          } catch (e: any) {
+            Alert.alert('Error', e.response?.data?.error || 'Failed');
+          } finally {
+            setNewspaperAddonLoading(false);
+          }
         }
-      }},
+      },
     ]);
   };
 
@@ -163,10 +165,10 @@ export default function SubscribeScreen() {
 
   const planLabel = isLifetime ? 'Lifetime Plan' : isYearly ? 'Yearly Plan' : 'Monthly Plan';
   const planPrice = isLifetime ? '₹1,500' : isYearly ? '₹180/yr' : '₹15/mo';
-  const planIcon  = isLifetime ? 'infinite-outline' : isYearly ? 'star-outline' : 'calendar-outline';
+  const planIcon = isLifetime ? 'infinite-outline' : isYearly ? 'star-outline' : 'calendar-outline';
   const planColor = isLifetime ? Colors.success : isYearly ? '#F59E0B' : Colors.primary;
 
-  
+
 
   return (
     <View style={styles.container}>
@@ -196,92 +198,111 @@ export default function SubscribeScreen() {
           <>
             {hasActiveSubscription && subscription ? (
               <>
-              <View style={styles.activePlanCard}>
-                <View style={styles.activePlanTop}>
-                  <View style={[styles.planIconBox, { backgroundColor: planColor + '20' }]}>
-                    <Ionicons name={planIcon as any} size={28} color={planColor} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.activePlanTitle}>{planLabel}</Text>
-                    <View style={styles.activeBadge}>
-                      <View style={styles.activeDot} />
-                      <Text style={styles.activeBadgeText}>{t('active')}</Text>
+                <View style={styles.activePlanCard}>
+                  <View style={styles.activePlanTop}>
+                    <View style={[styles.planIconBox, { backgroundColor: planColor + '20' }]}>
+                      <Ionicons name={planIcon as any} size={28} color={planColor} />
                     </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.activePlanTitle}>{planLabel}</Text>
+                      <View style={styles.activeBadge}>
+                        <View style={styles.activeDot} />
+                        <Text style={styles.activeBadgeText}>{t('active')}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.activePlanPrice}>{planPrice}</Text>
                   </View>
-                  <Text style={styles.activePlanPrice}>{planPrice}</Text>
+
+                  <View style={styles.divider} />
+
+                  {isLifetime ? (
+                    <View style={styles.infoRow}>
+                      <Ionicons name="infinite" size={16} color={Colors.success} />
+                      <Text style={styles.infoText}>Never expires — you're set for life</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.infoRow}>
+                      <Ionicons name="time-outline" size={16} color={daysLeft && daysLeft <= 5 ? Colors.danger : Colors.primary} />
+                      <Text style={[styles.infoText, daysLeft !== null && daysLeft <= 5 ? { color: Colors.danger } : undefined]}>
+                        {daysLeft !== null && daysLeft > 0 ? `${daysLeft} day${daysLeft !== 1 ? 's' : ''} remaining` : 'Expires today'}
+                      </Text>
+                    </View>
+                  )}
+
+                  {expiresAt && (
+                    <View style={styles.infoRow}>
+                      <Ionicons name="calendar-outline" size={16} color={Colors.textMuted} />
+                      <Text style={styles.infoText}>Renews on {expiresAt.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</Text>
+                    </View>
+                  )}
+
+                  <View style={styles.infoRow}>
+                    <Ionicons name="checkmark-circle" size={16} color={Colors.success} />
+                    <Text style={styles.infoText}>All modules unlocked</Text>
+                  </View>
+
+                  {!isLifetime && (
+                    <TouchableOpacity style={styles.upgradeBtn} onPress={() => setTab('explore')}>
+                      <Ionicons name="arrow-up-circle-outline" size={18} color={Colors.success} />
+                      <Text style={styles.upgradeBtnText}>
+                        {isYearly ? 'Upgrade to Lifetime' : 'Upgrade Plan'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
 
-                <View style={styles.divider} />
-
-                {isLifetime ? (
-                  <View style={styles.infoRow}>
-                    <Ionicons name="infinite" size={16} color={Colors.success} />
-                    <Text style={styles.infoText}>Never expires — you're set for life</Text>
+                {/* Newspaper Add-On Card */}
+                <View style={styles.addonCardLarge}>
+                  <View style={styles.addonHeader}>
+                    <View style={styles.addonIconBox}>
+                      <Ionicons name="newspaper-outline" size={24} color="#EA580C" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.addonTitleLarge}>📰 Newspaper</Text>
+                      <Text style={styles.addonDescLarge}>Daily newspapers in English, Hindi & Gujarati</Text>
+                    </View>
+                    {subscription?.newspaper_addon && (
+                      <View style={styles.activePill}>
+                        <Text style={styles.activePillText}>Active</Text>
+                      </View>
+                    )}
                   </View>
-                ) : (
-                  <View style={styles.infoRow}>
-                    <Ionicons name="time-outline" size={16} color={daysLeft && daysLeft <= 5 ? Colors.danger : Colors.primary} />
-                    <Text style={[styles.infoText, daysLeft !== null && daysLeft <= 5 ? { color: Colors.danger } : undefined]}>
-                      {daysLeft !== null && daysLeft > 0 ? `${daysLeft} day${daysLeft !== 1 ? 's' : ''} remaining` : 'Expires today'}
-                    </Text>
-                  </View>
-                )}
 
-                {expiresAt && (
-                  <View style={styles.infoRow}>
-                    <Ionicons name="calendar-outline" size={16} color={Colors.textMuted} />
-                    <Text style={styles.infoText}>Renews on {expiresAt.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</Text>
-                  </View>
-                )}
+                  {subscription?.newspaper_addon ? (
+                    <View style={styles.addonActiveInfo}>
+                      <Text style={styles.addonStatusText}>✓ Access unlocked until your plan expires</Text>
+                      <TouchableOpacity onPress={disableNewspaperAddon} style={styles.addonDisableBtnFull}>
+                        {newspaperAddonLoading ? <ActivityIndicator size="small" color={Colors.danger} /> : <Text style={styles.addonDisableBtnText}>Disable plan</Text>}
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <View style={styles.addonOptionsGrid}>
+                      <TouchableOpacity
+                        style={styles.addonOption}
+                        onPress={() => enableNewspaperAddon('monthly')}
+                        disabled={newspaperAddonLoading}
+                      >
+                        <Text style={styles.addonOptionTitle}>Monthly</Text>
+                        <Text style={styles.addonOptionPrice}>₹3</Text>
+                        <View style={styles.addonOptionBtn}><Text style={styles.addonOptionBtnText}>Add</Text></View>
+                      </TouchableOpacity>
 
-                <View style={styles.infoRow}>
-                  <Ionicons name="checkmark-circle" size={16} color={Colors.success} />
-                  <Text style={styles.infoText}>All modules unlocked</Text>
+                      <TouchableOpacity
+                        style={styles.addonOption}
+                        onPress={() => enableNewspaperAddon('yearly')}
+                        disabled={newspaperAddonLoading}
+                      >
+                        <Text style={styles.addonOptionTitle}>Yearly</Text>
+                        <Text style={styles.addonOptionPrice}>₹36</Text>
+                        <View style={styles.addonOptionBtn}><Text style={styles.addonOptionBtnText}>Add</Text></View>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                  {newspaperAddonLoading && !subscription?.newspaper_addon && (
+                    <ActivityIndicator style={{ marginTop: 12 }} color={Colors.primary} />
+                  )}
                 </View>
-
-                {!isLifetime && (
-                  <TouchableOpacity style={styles.upgradeBtn} onPress={() => setTab('explore')}>
-                    <Ionicons name="arrow-up-circle-outline" size={18} color={Colors.success} />
-                    <Text style={styles.upgradeBtnText}>
-                      {isYearly ? 'Upgrade to Lifetime' : 'Upgrade Plan'}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              {/* Newspaper Add-On Card */}
-              <View style={styles.addonCard}>
-                <View style={styles.addonLeft}>
-                  <View style={styles.addonIconBox}>
-                    <Ionicons name="newspaper-outline" size={22} color="#EA580C" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.addonTitle}>📰 Newspaper Add-On</Text>
-                    <Text style={styles.addonDesc}>
-                      {subscription?.newspaper_addon
-                        ? 'Daily newspapers in English, Hindi & Gujarati — Active ✓'
-                        : 'Read daily newspapers in English, Hindi & Gujarati'}
-                    </Text>
-                    <Text style={styles.addonPrice}>
-                      {isLifetime ? '+₹500 / lifetime' : isYearly ? '+₹36 / year' : '+₹3 / month'}
-                    </Text>
-                  </View>
-                </View>
-                {newspaperAddonLoading ? (
-                  <ActivityIndicator color={Colors.primary} />
-                ) : subscription?.newspaper_addon ? (
-                  <TouchableOpacity onPress={disableNewspaperAddon} style={styles.addonDisableBtn}>
-                    <Text style={styles.addonDisableBtnText}>Disable</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity onPress={enableNewspaperAddon} style={styles.addonEnableBtn}>
-                    <Text style={styles.addonEnableBtnText}>
-                      {isLifetime ? 'Add ₹500' : isYearly ? 'Add ₹36' : 'Add ₹3'}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </>
+              </>
             ) : (
               <View style={styles.noSubCard}>
                 <Ionicons name="lock-closed-outline" size={48} color={Colors.border} style={{ marginBottom: 12 }} />
@@ -316,7 +337,7 @@ export default function SubscribeScreen() {
                   <Ionicons name="newspaper-outline" size={22} color="#EA580C" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.addonTitle}>📰 Newspaper Add-On</Text>
+                  <Text style={styles.addonTitle}>📰 Newspaper</Text>
                   <Text style={styles.addonDesc}>Daily English, Hindi & Gujarati newspapers</Text>
                   <Text style={styles.addonPrice}>From +₹3 / month</Text>
                 </View>
@@ -420,11 +441,11 @@ export default function SubscribeScreen() {
                       {loading === plan.key
                         ? <ActivityIndicator color={Colors.white} />
                         : <Text style={styles.subscribeBtnText}>
-                            {hasActiveSubscription ? `Upgrade — ${plan.price}` : `Subscribe — ${plan.price}`}
-                            {includeNewspaper ? ` + ${plan.key === 'lifetime' ? '₹500' : plan.key === 'yearly' ? '₹36' : '₹3'} newspaper` : ''}
-                            {promoResult && promoResult.final_amount !== undefined
-                              ? ` → ₹${promoResult.final_amount}` : ''}
-                          </Text>}
+                          {hasActiveSubscription ? `Upgrade — ${plan.price}` : `Subscribe — ${plan.price}`}
+                          {includeNewspaper && plan.key !== 'lifetime' ? ` + ${plan.key === 'yearly' ? '₹36' : '₹3'} newspaper` : ''}
+                          {promoResult && promoResult.final_amount !== undefined
+                            ? ` → ₹${promoResult.final_amount}` : ''}
+                        </Text>}
                     </TouchableOpacity>
                   )}
                 </View>
@@ -518,5 +539,24 @@ const styles = StyleSheet.create({
   addonEnableBtnText: { color: Colors.white, fontWeight: '700', fontSize: 13 },
   addonDisableBtn: { borderWidth: 1.5, borderColor: Colors.danger, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8 },
   addonDisableBtnText: { color: Colors.danger, fontWeight: '700', fontSize: 13 },
+  // Large addon card
+  addonCardLarge: { backgroundColor: Colors.white, borderRadius: 18, padding: 16, marginTop: 16, borderWidth: 1.5, borderColor: Colors.border, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 6, elevation: 3 },
+  addonHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
+  addonTitleLarge: { fontSize: 16, fontWeight: '800', color: Colors.text },
+  addonDescLarge: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
+  activePill: { backgroundColor: Colors.success + '15', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
+  activePillText: { fontSize: 11, fontWeight: '800', color: Colors.success },
+  addonOptionsGrid: { flexDirection: 'row', gap: 10 },
+  addonOption: { flex: 1, backgroundColor: Colors.bg, borderRadius: 12, padding: 12, alignItems: 'center', borderWidth: 1.5, borderColor: Colors.border },
+  addonOptionHighlight: { borderColor: Colors.success + '40', backgroundColor: Colors.success + '05' },
+  addonOptionTitle: { fontSize: 11, fontWeight: '700', color: Colors.textMuted, marginBottom: 4, textTransform: 'uppercase' },
+  addonOptionPrice: { fontSize: 17, fontWeight: '800', color: Colors.text, marginBottom: 8 },
+  addonOptionBtn: { backgroundColor: Colors.primary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, width: '100%', alignItems: 'center' },
+  addonOptionBtnText: { color: Colors.white, fontSize: 12, fontWeight: '700' },
+  bestBadgeMini: { position: 'absolute', top: -8, backgroundColor: Colors.success, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  bestBadgeTextMini: { color: Colors.white, fontSize: 9, fontWeight: '900' },
+  addonActiveInfo: { alignItems: 'center', paddingTop: 8 },
+  addonStatusText: { fontSize: 13, color: Colors.success, fontWeight: '600', marginBottom: 12 },
+  addonDisableBtnFull: { width: '100%', borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 12, alignItems: 'center' },
 });
 

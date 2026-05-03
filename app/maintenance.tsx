@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
@@ -62,6 +62,7 @@ export default function MaintenanceScreen() {
 
   const { buildings, loading: buildingsLoading } = useBuildings(isAdmin);
   const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null);
+  const [myBuilding, setMyBuilding] = useState<Building | null>(null);
 
   const [pendingCounts, setPendingCounts] = useState<Record<BillingCategory, number>>({
     maintenance: 0, water_meter: 0, special: 0,
@@ -98,7 +99,14 @@ export default function MaintenanceScreen() {
     try {
       const params: any = { mine: 'true' };
       if (isAdmin && selectedBuilding) params.building_id = selectedBuilding.id;
+      
       const res = await api.get('/maintenance/payments', { params });
+      
+      if (!isAdmin) {
+        const myBuildingRes = await api.get('/buildings/my').catch(() => null);
+        if (myBuildingRes?.data) setMyBuilding(myBuildingRes.data);
+      }
+
       await cacheManager.set(cacheKey, res.data, CACHE_PRESETS.userSpecific);
       const counts: Record<BillingCategory, number> = { maintenance: 0, water_meter: 0, special: 0 };
       for (const p of res.data) {
@@ -128,7 +136,7 @@ export default function MaintenanceScreen() {
   };
 
   // Trigger fetch when selectedBuilding changes
-  React.useEffect(() => {
+  useEffect(() => {
     if (isAdmin && selectedBuilding) {
       fetchPendingCounts();
     }
@@ -187,7 +195,15 @@ export default function MaintenanceScreen() {
           loading ? (
             <ActivityIndicator style={{ marginTop: 40 }} size="large" color={Colors.primary} />
           ) : (
-            CATEGORIES.map(cat => {
+            CATEGORIES.filter(cat => {
+              if (cat.category === 'water_meter') {
+                const activeBuilding = isAdmin ? selectedBuilding : myBuilding;
+                // If we haven't loaded building data yet, default to false
+                if (!activeBuilding) return false;
+                return activeBuilding.water_reading_enabled === true;
+              }
+              return true;
+            }).map(cat => {
               const pending = !isAdmin ? pendingCounts[cat.category] : 0;
               return (
                 <TouchableOpacity

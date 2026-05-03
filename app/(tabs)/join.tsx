@@ -3,7 +3,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import { Colors } from '../../constants/colors';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
-  Alert, ActivityIndicator, ScrollView
+  Alert, ActivityIndicator, ScrollView, Keyboard
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -14,10 +14,15 @@ export default function JoinBuildingScreen() {
   const { user, refreshUser } = useAuth();
   const router = useRouter();
   const { t } = useLanguage();
-  const [buildingId, setBuildingId] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [selectedBuilding, setSelectedBuilding] = useState<any>(null);
+
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Poll for approval every 5 seconds after request is sent
   useEffect(() => {
@@ -37,15 +42,32 @@ export default function JoinBuildingScreen() {
     }
   }, [user?.building_id]);
 
+  useEffect(() => {
+    if (searchQuery.trim().length >= 2 && !selectedBuilding) {
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+      setSearching(true);
+      searchTimeoutRef.current = setTimeout(async () => {
+        try {
+          const res = await api.get(`/buildings/search?query=${encodeURIComponent(searchQuery)}`);
+          setSearchResults(res.data);
+        } catch (e) {
+          console.error(e);
+        } finally {
+          setSearching(false);
+        }
+      }, 500);
+    } else {
+      setSearchResults([]);
+      setSearching(false);
+    }
+  }, [searchQuery, selectedBuilding]);
+
   const handleJoin = async () => {
-    const trimmed = buildingId.trim();
-    if (!trimmed) return Alert.alert('Error', 'Please enter a Building ID');
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(trimmed)) return Alert.alert('Invalid ID', 'Please enter a valid Building ID');
+    if (!selectedBuilding) return Alert.alert('Error', 'Please select a building to join');
 
     setSubmitting(true);
     try {
-      await api.post('/buildings/join', { building_id: trimmed });
+      await api.post('/buildings/join', { building_id: selectedBuilding.id });
       setSubmitted(true);
     } catch (e: any) {
       Alert.alert('Error', e.response?.data?.error || 'Failed to send request');
@@ -53,8 +75,6 @@ export default function JoinBuildingScreen() {
       setSubmitting(false);
     }
   };
-
-  
 
   if (submitted) {
     return (
@@ -71,7 +91,7 @@ export default function JoinBuildingScreen() {
           </View>
           <Text style={styles.successTitle}>Request Sent!</Text>
           <Text style={styles.successSubtitle}>
-            Your request has been sent to the Pramukh. You'll be notified once they approve you.
+            Your request has been sent to the Pramukh of {selectedBuilding?.name}. You'll be notified once they approve you.
           </Text>
           <View style={styles.waitingCard}>
             <Ionicons name="time-outline" size={20} color={Colors.warning} />
@@ -96,32 +116,67 @@ export default function JoinBuildingScreen() {
 
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.infoCard}>
-          <Ionicons name="information-circle-outline" size={22} color={Colors.primary} />
+          <Ionicons name="search-outline" size={22} color={Colors.primary} />
           <Text style={styles.infoText}>
-            Ask your Pramukh for the Building ID. It looks like:{'\n'}
-            <Text style={styles.exampleId}>xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</Text>
+            Search for your society by name. Once you find it, select it to send a join request to the Pramukh.
           </Text>
         </View>
 
-        <Text style={styles.label}>Building ID</Text>
+        <Text style={styles.label}>Society Name</Text>
         <TextInput
           style={styles.input}
-          value={buildingId}
-          onChangeText={setBuildingId}
-          placeholder="Paste or type the Building ID"
+          value={searchQuery}
+          onChangeText={(v) => { setSearchQuery(v); setSelectedBuilding(null); }}
+          placeholder="e.g., Maheta Nagar"
           placeholderTextColor={Colors.textMuted}
-          autoCapitalize="none"
-          autoCorrect={false}
+          autoCapitalize="words"
         />
 
-        {buildingId.length > 0 && (
-          <View style={styles.previewBox}>
-            <Text style={styles.previewLabel}>Building ID entered:</Text>
-            <Text style={styles.previewId}>{buildingId}</Text>
+        {searching && <ActivityIndicator style={{ marginTop: 16 }} color={Colors.primary} />}
+
+        {!searching && searchQuery.length >= 2 && searchResults.length === 0 && !selectedBuilding && (
+          <Text style={styles.noResultsText}>No societies found matching "{searchQuery}"</Text>
+        )}
+
+        {!selectedBuilding && searchResults.length > 0 && (
+          <View style={styles.resultsContainer}>
+            {searchResults.map((b) => (
+              <TouchableOpacity
+                key={b.id}
+                style={styles.resultItem}
+                onPress={() => {
+                  setSelectedBuilding(b);
+                  setSearchQuery(b.name);
+                  setSearchResults([]);
+                  Keyboard.dismiss();
+                }}
+              >
+                <Ionicons name="business-outline" size={20} color={Colors.primary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.resultName}>{b.name}</Text>
+                  {b.address && <Text style={styles.resultAddress}>{b.address}</Text>}
+                </View>
+              </TouchableOpacity>
+            ))}
           </View>
         )}
 
-        <TouchableOpacity style={styles.submitBtn} onPress={handleJoin} disabled={submitting}>
+        {selectedBuilding && (
+          <View style={styles.previewBox}>
+            <Text style={styles.previewLabel}>Selected Society:</Text>
+            <Text style={styles.previewId}>{selectedBuilding.name}</Text>
+            {selectedBuilding.address && <Text style={styles.previewAddress}>{selectedBuilding.address}</Text>}
+            <TouchableOpacity style={styles.clearBtn} onPress={() => { setSelectedBuilding(null); setSearchQuery(''); }}>
+              <Text style={styles.clearBtnText}>Change</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <TouchableOpacity
+          style={[styles.submitBtn, !selectedBuilding && { opacity: 0.5 }]}
+          onPress={handleJoin}
+          disabled={submitting || !selectedBuilding}
+        >
           {submitting
             ? <ActivityIndicator color={Colors.white} />
             : (
@@ -155,19 +210,25 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary + '15', borderRadius: 12, padding: 14, marginBottom: 24,
   },
   infoText: { flex: 1, fontSize: 13, color: Colors.text, lineHeight: 20 },
-  exampleId: { fontFamily: 'monospace', fontSize: 12, color: Colors.textMuted },
   label: { fontSize: 13, fontWeight: '700', color: Colors.text, marginBottom: 8 },
   input: {
     borderWidth: 1.5, borderColor: Colors.border, borderRadius: 12,
     padding: 14, fontSize: 14, color: Colors.text, backgroundColor: Colors.white,
-    fontFamily: 'monospace',
   },
+  resultsContainer: { backgroundColor: Colors.white, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, marginTop: 8, maxHeight: 250 },
+  resultItem: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  resultName: { fontSize: 15, fontWeight: '700', color: Colors.text },
+  resultAddress: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
+  noResultsText: { textAlign: 'center', color: Colors.textMuted, marginTop: 16, fontSize: 13 },
   previewBox: {
-    backgroundColor: Colors.white, borderRadius: 10, padding: 12,
-    marginTop: 12, borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: Colors.white, borderRadius: 12, padding: 16,
+    marginTop: 16, borderWidth: 1.5, borderColor: Colors.primary,
   },
-  previewLabel: { fontSize: 11, color: Colors.textMuted, marginBottom: 4 },
-  previewId: { fontSize: 13, color: Colors.text, fontFamily: 'monospace' },
+  previewLabel: { fontSize: 12, color: Colors.textMuted, marginBottom: 4 },
+  previewId: { fontSize: 16, color: Colors.text, fontWeight: '800' },
+  previewAddress: { fontSize: 13, color: Colors.textMuted, marginTop: 4 },
+  clearBtn: { alignSelf: 'flex-start', marginTop: 12, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: Colors.bg, borderRadius: 6 },
+  clearBtnText: { color: Colors.primary, fontSize: 12, fontWeight: '700' },
   submitBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     backgroundColor: Colors.primary, borderRadius: 14, padding: 16, marginTop: 24,

@@ -12,6 +12,7 @@ import { useAuth } from '../../context/AuthContext';
 import api from '../../utils/api';
 import { useActivityLog } from '../../hooks/useActivityLog';
 import { cacheManager } from '../../utils/CacheManager';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const CARD_SIZE = (SCREEN_W - 48) / 3;
@@ -171,9 +172,21 @@ export default function HomeScreen() {
   const fetchData = async () => {
     try {
       if (user?.building_id) {
+        // 1. Try cache first (no flicker)
+        const cached = await AsyncStorage.getItem('building_data');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          setBuildingLogo(parsed.society_logo);
+          setBuildingName(parsed.name);
+        }
+
+        // 2. Fetch fresh data in background
         const buildingRes = await api.get('/buildings/my').catch(() => null);
-        setBuildingLogo(buildingRes?.data?.society_logo ?? null);
-        setBuildingName(buildingRes?.data?.name ?? null);
+        if (buildingRes?.data) {
+          setBuildingLogo(buildingRes.data.society_logo ?? null);
+          setBuildingName(buildingRes.data.name ?? null);
+          await AsyncStorage.setItem('building_data', JSON.stringify(buildingRes.data));
+        }
       }
     } catch { }
   };
@@ -228,7 +241,7 @@ export default function HomeScreen() {
             <TouchableOpacity onPress={() => router.push('/profile' as any)} style={styles.avatarCircle}>
               <Text style={styles.avatarText}>{user?.name?.[0]?.toUpperCase()}</Text>
             </TouchableOpacity>
-            <Text style={styles.greetingText}>{t('welcome')}, {user?.name}</Text>
+            <Text style={styles.greetingText}>{t('welcome')} {user?.name}</Text>
           </View>
         </View>
         <View style={styles.pendingContainer}>
@@ -273,7 +286,11 @@ export default function HomeScreen() {
         </View>
 
         {/* Greeting */}
-        <Text style={styles.greetingText}>{buildingName}, {user?.name?.split(' ')[0]} 👋</Text>
+        {buildingName === null && user?.building_id ? (
+          <View style={{ height: 26, width: 220, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 8, marginBottom: 16 }} />
+        ) : (
+          <Text style={styles.greetingText} numberOfLines={1}>{buildingName ? `${buildingName}, ` : `${t('welcome')} `}{user?.name?.split(' ')[0]} 👋</Text>
+        )}
 
         {/* Search bar */}
         <View style={styles.searchBar}>
@@ -421,7 +438,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 8, elevation: 3,
   },
-  searchInput: { flex: 1, fontSize: 14, color: Colors.text },
+  searchInput: { flex: 1, fontSize: 14, color: Colors.text, letterSpacing: 0 },
 
   // ── Scrollable content ───────────────────────────────────────────────────
   scrollContent: { flex: 1 },

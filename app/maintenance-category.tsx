@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
   RefreshControl, ScrollView, Modal, TextInput, FlatList,
@@ -9,6 +9,7 @@ import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
@@ -23,7 +24,7 @@ interface PaymentRecord {
   user_id: string;
   amount: number;
   flat_amount?: number;
-  status: 'pending' | 'paid';
+  status: 'pending' | 'paid' | 'receipt_uploaded';
   paid_at?: string;
   razorpay_payment_id?: string;
   category?: BillingCategory;
@@ -37,6 +38,7 @@ interface PaymentRecord {
     year?: number;
     category?: BillingCategory;
   };
+  building_payment_method?: string;
 }
 
 interface Bill {
@@ -123,6 +125,8 @@ function BillCard({ record, category, onPay, onReceipt }: BillCardProps) {
   const penaltyAmount = category === 'maintenance' && overdue && bill?.penalty_amount ? bill.penalty_amount : 0;
   const totalDue = record.amount + penaltyAmount;
 
+  const isApprovalPending = record.status === 'receipt_uploaded';
+
   return (
     <View style={cardStyles.card}>
       <View style={cardStyles.cardHeader}>
@@ -134,10 +138,10 @@ function BillCard({ record, category, onPay, onReceipt }: BillCardProps) {
         </View>
         <View style={[
           cardStyles.statusBadge,
-          record.status === 'paid' ? cardStyles.paidBadge : overdue ? cardStyles.overdueBadge : cardStyles.pendingBadge,
+          record.status === 'paid' ? cardStyles.paidBadge : isApprovalPending ? { backgroundColor: '#DBEAFE' } : overdue ? cardStyles.overdueBadge : cardStyles.pendingBadge,
         ]}>
-          <Text style={cardStyles.statusText}>
-            {record.status === 'paid' ? 'Paid' : overdue ? 'Overdue' : 'Pending'}
+          <Text style={[cardStyles.statusText, isApprovalPending && { color: '#1E3A8A' }]}>
+            {record.status === 'paid' ? 'Paid' : isApprovalPending ? 'Approval Pending' : overdue ? 'Overdue' : 'Pending'}
           </Text>
         </View>
       </View>
@@ -162,6 +166,12 @@ function BillCard({ record, category, onPay, onReceipt }: BillCardProps) {
           <Ionicons name="card-outline" size={16} color={Colors.white} />
           <Text style={cardStyles.payBtnText}>Pay {formatAmount(totalDue)}</Text>
         </TouchableOpacity>
+      )}
+      {isApprovalPending && (
+        <View style={[cardStyles.payBtn, { backgroundColor: '#9CA3AF' }]}>
+          <Ionicons name="time-outline" size={16} color={Colors.white} />
+          <Text style={cardStyles.payBtnText}>Approval Pending</Text>
+        </View>
       )}
       {record.status === 'paid' && (
         <TouchableOpacity style={cardStyles.receiptBtn} onPress={() => onReceipt(record)} activeOpacity={0.8}>
@@ -209,11 +219,14 @@ interface PaymentDetailModalProps {
   record: PaymentRecord | null;
   visible: boolean;
   onClose: () => void;
+  onApprove?: (record: PaymentRecord) => void;
 }
 
-function PaymentDetailModal({ record, visible, onClose }: PaymentDetailModalProps) {
+function PaymentDetailModal({ record, visible, onClose, onApprove }: PaymentDetailModalProps) {
   if (!record) return null;
   const bill = record.maintenance_bills;
+  const isApprovalPending = record.status === 'receipt_uploaded';
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={detailStyles.overlay}>
@@ -231,8 +244,8 @@ function PaymentDetailModal({ record, visible, onClose }: PaymentDetailModalProp
           </View>
           <View style={detailStyles.row}>
             <Text style={detailStyles.label}>Status</Text>
-            <Text style={[detailStyles.value, { color: record.status === 'paid' ? Colors.success : Colors.danger, fontWeight: '700' }]}>
-              {record.status === 'paid' ? 'Paid' : 'Pending'}
+            <Text style={[detailStyles.value, { color: record.status === 'paid' ? Colors.success : isApprovalPending ? '#2563EB' : Colors.danger, fontWeight: '700' }]}>
+              {record.status === 'paid' ? 'Paid' : isApprovalPending ? 'Approval Pending' : 'Pending'}
             </Text>
           </View>
           <View style={detailStyles.row}>
@@ -252,6 +265,12 @@ function PaymentDetailModal({ record, visible, onClose }: PaymentDetailModalProp
                 </View>
               )}
             </>
+          )}
+
+          {isApprovalPending && onApprove && (
+            <TouchableOpacity style={[detailStyles.closeBtn, { backgroundColor: Colors.success, marginTop: 10 }]} onPress={() => onApprove(record)}>
+              <Text style={detailStyles.closeBtnText}>Approve Payment</Text>
+            </TouchableOpacity>
           )}
 
           <TouchableOpacity style={detailStyles.closeBtn} onPress={onClose}>
@@ -281,6 +300,58 @@ const detailStyles = StyleSheet.create({
   closeBtnText: { color: Colors.white, fontWeight: '700', fontSize: 15 },
 });
 
+// ─── Payment Method Modal ───────────────────────────────────────────────────────
+
+interface PaymentMethodModalProps {
+  record: PaymentRecord | null;
+  visible: boolean;
+  onClose: () => void;
+  onSelectMethod: (method: 'Online' | 'Cash' | 'Cheque', record: PaymentRecord) => void;
+  supportedMethods: string[];
+}
+
+function PaymentMethodModal({ record, visible, onClose, onSelectMethod, supportedMethods }: PaymentMethodModalProps) {
+  if (!record) return null;
+  const methods = supportedMethods.length ? supportedMethods : ['Online'];
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={detailStyles.overlay}>
+        <View style={detailStyles.sheet}>
+          <View style={detailStyles.handle} />
+          <Text style={detailStyles.title}>Select Payment Method</Text>
+
+          {methods.map(method => (
+            <TouchableOpacity
+              key={method}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14,
+                borderBottomWidth: 1, borderBottomColor: Colors.border
+              }}
+              onPress={() => onSelectMethod(method as 'Online' | 'Cash' | 'Cheque', record)}
+            >
+              <View style={[exportStyles.iconCircle, { backgroundColor: method === 'Online' ? '#DCFCE7' : '#FEF3C7', width: 40, height: 40 }]}>
+                <Ionicons name={method === 'Online' ? "card-outline" : method === 'Cash' ? "cash-outline" : "document-text-outline"} size={20} color={method === 'Online' ? "#16A34A" : "#D97706"} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={exportStyles.optionTitle}>{method}</Text>
+                <Text style={exportStyles.optionSub}>
+                  {method === 'Online' ? 'Instant payment via gateway' : `Requires Pramukh approval`}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={Colors.border} />
+            </TouchableOpacity>
+          ))}
+
+          <TouchableOpacity style={exportStyles.cancelBtn} onPress={onClose}>
+            <Text style={exportStyles.cancelText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ─── Bill Creation Form Modal ─────────────────────────────────────────────────
 
 interface BillFormModalProps {
@@ -289,9 +360,10 @@ interface BillFormModalProps {
   members: Member[];
   onClose: () => void;
   onSubmit: (form: BillFormState) => Promise<void>;
+  buildingInfo?: any;
 }
 
-function BillFormModal({ visible, category, members, onClose, onSubmit }: BillFormModalProps) {
+function BillFormModal({ visible, category, members, onClose, onSubmit, buildingInfo }: BillFormModalProps) {
   const currentYear = new Date().getFullYear();
   const [form, setForm] = useState<BillFormState>({
     due_date: '',
@@ -311,7 +383,7 @@ function BillFormModal({ visible, category, members, onClose, onSubmit }: BillFo
   const [dpMonth, setDpMonth] = useState(new Date().getMonth() + 1);
 
   // Sync flat_amounts when members change
-  React.useEffect(() => {
+  useEffect(() => {
     setForm(f => ({
       ...f,
       flat_amounts: members.map(m => {
@@ -457,15 +529,19 @@ function BillFormModal({ visible, category, members, onClose, onSubmit }: BillFo
                     />
                   </View>
                 </View>
-                <Text style={formStyles.label}>Penalty Amount (₹)</Text>
-                <TextInput
-                  style={formStyles.input}
-                  placeholder="0"
-                  value={form.penalty_amount}
-                  onChangeText={v => set('penalty_amount', v)}
-                  keyboardType="numeric"
-                  placeholderTextColor={Colors.textMuted}
-                />
+                {buildingInfo?.late_fees_enabled && (
+                  <>
+                    <Text style={formStyles.label}>Penalty Amount (₹)</Text>
+                    <TextInput
+                      style={formStyles.input}
+                      placeholder={buildingInfo?.late_fees_amount ? String(buildingInfo.late_fees_amount) : "0"}
+                      value={form.penalty_amount}
+                      onChangeText={v => set('penalty_amount', v)}
+                      keyboardType="numeric"
+                      placeholderTextColor={Colors.textMuted}
+                    />
+                  </>
+                )}
               </>
             )}
 
@@ -850,11 +926,16 @@ export default function MaintenanceCategoryScreen() {
   const [editDatePickerVisible, setEditDatePickerVisible] = useState(false);
   const [editDpYear, setEditDpYear] = useState(new Date().getFullYear());
   const [editDpMonth, setEditDpMonth] = useState(new Date().getMonth() + 1);
+  const [buildingInfo, setBuildingInfo] = useState<any>(null);
 
   // ── Shared state ──
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [paying, setPaying] = useState<string | null>(null);
+  
+  // Payment Method Modal
+  const [methodModalVisible, setMethodModalVisible] = useState(false);
+  const [methodModalRecord, setMethodModalRecord] = useState<PaymentRecord | null>(null);
 
   const cat = (category as BillingCategory) || 'maintenance';
 
@@ -866,6 +947,8 @@ export default function MaintenanceCategoryScreen() {
       if (effectiveBuildingId) params.building_id = effectiveBuildingId;
       const res = await api.get('/maintenance/payments', { params });
       setUserPayments(res.data);
+      const bRes = await api.get('/buildings/my');
+      setBuildingInfo(bRes.data);
     } catch { }
     finally { setLoading(false); setRefreshing(false); }
   };
@@ -883,14 +966,16 @@ export default function MaintenanceCategoryScreen() {
         ? `/buildings/members/${effectiveBuildingId}`
         : '/buildings/members';
 
-      const [billsRes, membersRes, myPaymentsRes] = await Promise.all([
+      const [billsRes, membersRes, myPaymentsRes, buildingRes] = await Promise.all([
         api.get('/maintenance/bills', { params: billParams }),
         api.get(membersUrl),
         api.get('/maintenance/payments', { params: payParams }),
+        effectiveBuildingId ? api.get(`/buildings/my?building_id=${effectiveBuildingId}`) : api.get('/buildings/my'),
       ]);
       setBills(billsRes.data);
       setMembers(membersRes.data);
       setMyPramukhPayments(myPaymentsRes.data);
+      setBuildingInfo(buildingRes.data);
       if (selectedBill) {
         const allParams: any = { category: cat };
         if (effectiveBuildingId) allParams.building_id = effectiveBuildingId;
@@ -920,7 +1005,7 @@ export default function MaintenanceCategoryScreen() {
   }, [cat, isPramukh]));
 
   // Deep-link listener for payment completion
-  React.useEffect(() => {
+  useEffect(() => {
     const sub = Linking.addEventListener('url', ({ url }) => {
       if (url.includes('mybuilding://payment')) {
         if (isPramukh) fetchPramukhData();
@@ -933,20 +1018,101 @@ export default function MaintenanceCategoryScreen() {
   // ── Payment flow ──
 
   const handlePay = async (record: PaymentRecord) => {
-    setPaying(record.id);
-    try {
-      const res = await api.post('/maintenance/pay/order', { payment_record_id: record.id });
-      const { checkout_url } = res.data;
-      if (checkout_url) {
-        await WebBrowser.openBrowserAsync(checkout_url);
-        // Refresh after returning from browser
+    // Check if building supports multiple methods
+    const methodsStr = record.building_payment_method || 'Online';
+    const supportedMethods = methodsStr.split(',').map(m => m.trim());
+    
+    if (supportedMethods.length > 1 && supportedMethods.some(m => ['Cash', 'Cheque'].includes(m))) {
+      setMethodModalRecord(record);
+      setMethodModalVisible(true);
+      return;
+    }
+    
+    // Default to online
+    processPayment('Online', record);
+  };
+
+  const handleMethodSelect = (method: 'Online' | 'Cash' | 'Cheque', record: PaymentRecord) => {
+    setMethodModalVisible(false);
+    processPayment(method, record);
+  };
+
+  const processPayment = async (method: 'Online' | 'Cash' | 'Cheque', record: PaymentRecord) => {
+    if (method === 'Online') {
+      setPaying(record.id);
+      try {
+        const res = await api.post('/maintenance/pay/order', { payment_record_id: record.id });
+        const { checkout_url } = res.data;
+        if (checkout_url) {
+          await WebBrowser.openBrowserAsync(checkout_url);
+          if (isPramukh) fetchPramukhData();
+          else await fetchUserData();
+        }
+      } catch (e: any) {
+        Alert.alert('Payment Error', e?.response?.data?.error || 'Could not initiate payment.');
+      } finally {
+        setPaying(null);
+      }
+    } else if (method === 'Cheque') {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (permissionResult.granted === false) {
+        Alert.alert("Permission Required", "You need to grant permission to access your photos to upload a photo of the cheque.");
+        return;
+      }
+      
+      const pickerResult = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.8,
+      });
+
+      if (pickerResult.canceled || !pickerResult.assets?.[0]) return;
+
+      setPaying(record.id);
+      try {
+        const formData = new FormData();
+        const asset = pickerResult.assets[0];
+        
+        const uriParts = asset.uri.split('.');
+        const fileType = uriParts[uriParts.length - 1];
+        
+        formData.append('receipt', {
+          uri: asset.uri,
+          name: `cheque.${fileType}`,
+          type: `image/${fileType}`,
+        } as any);
+        
+        formData.append('payment_record_id', record.id);
+        formData.append('payment_method', 'Cheque');
+
+        await api.post('/maintenance/upload-receipt', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+
+        Alert.alert('Payment Submitted', `Your Cheque payment has been submitted for Pramukh approval.`);
         if (isPramukh) fetchPramukhData();
         else await fetchUserData();
+      } catch (e: any) {
+        Alert.alert('Payment Error', e?.response?.data?.error || `Could not submit Cheque payment.`);
+      } finally {
+        setPaying(null);
       }
-    } catch (e: any) {
-      Alert.alert('Payment Error', e?.response?.data?.error || 'Could not initiate payment.');
-    } finally {
-      setPaying(null);
+    } else {
+      // Manual payment (Cash)
+      setPaying(record.id);
+      try {
+        await api.patch(`/maintenance/payments/${record.id}/receipt`, {
+          receipt_url: `manual_${method.toLowerCase()}`,
+          payment_method: method
+        });
+        Alert.alert('Payment Submitted', `Your ${method} payment has been submitted for Pramukh approval.`);
+        if (isPramukh) fetchPramukhData();
+        else await fetchUserData();
+      } catch (e: any) {
+        Alert.alert('Payment Error', e?.response?.data?.error || `Could not submit ${method} payment.`);
+      } finally {
+        setPaying(null);
+      }
     }
   };
 
@@ -1044,6 +1210,29 @@ export default function MaintenanceCategoryScreen() {
     } finally {
       setEditSubmitting(false);
     }
+  };
+
+  const handleApprovePayment = async (record: PaymentRecord) => {
+    Alert.alert(
+      'Approve Payment',
+      `Approve manual payment of ${formatAmount(record.amount)}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Approve', style: 'default', onPress: async () => {
+            try {
+              setDetailVisible(false);
+              setFlatDetailVisible(false);
+              await api.patch(`/maintenance/payments/${record.id}/approve`);
+              Alert.alert('Success', 'Payment approved successfully.');
+              fetchPramukhData();
+            } catch (e: any) {
+              Alert.alert('Error', e?.response?.data?.error || 'Could not approve payment.');
+            }
+          }
+        }
+      ]
+    );
   };
 
   // ── Derived data ──
@@ -1191,6 +1380,7 @@ export default function MaintenanceCategoryScreen() {
               <View style={styles.legendRow}>
                 <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: Colors.success }]} /><Text style={styles.legendText}>Paid</Text></View>
                 <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: '#F59E0B' }]} /><Text style={styles.legendText}>Pending</Text></View>
+                <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: '#2563EB' }]} /><Text style={styles.legendText}>Approval Pending</Text></View>
                 <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: Colors.danger }]} /><Text style={styles.legendText}>Overdue</Text></View>
               </View>
 
@@ -1201,9 +1391,10 @@ export default function MaintenanceCategoryScreen() {
                 {billPayments.map(item => {
                   const p = item as any;
                   const paid = p.status === 'paid';
+                  const isApprovalPending = p.status === 'receipt_uploaded';
                   const due = p.maintenance_bills?.due_date;
-                  const overdue = !paid && due && new Date(due) < new Date();
-                  const bgColor = paid ? Colors.success : overdue ? Colors.danger : '#F59E0B';
+                  const overdue = !paid && !isApprovalPending && due && new Date(due) < new Date();
+                  const bgColor = paid ? Colors.success : isApprovalPending ? '#2563EB' : overdue ? Colors.danger : '#F59E0B';
                   const flatNo = p.users?.flat_no ?? p.user?.flat_no ?? '—';
                   const wing = p.users?.wing ?? p.user?.wing;
                   const name = p.users?.name ?? p.user?.name ?? '—';
@@ -1218,6 +1409,7 @@ export default function MaintenanceCategoryScreen() {
                       <Text style={styles.flatBlockName} numberOfLines={1}>{name}</Text>
                       <Text style={styles.flatBlockAmt}>{formatAmount(p.flat_amount ?? p.amount)}</Text>
                       {paid && <Ionicons name="checkmark-circle" size={14} color="rgba(255,255,255,0.9)" style={{ marginTop: 2 }} />}
+                      {isApprovalPending && <Text style={styles.flatBlockOverdue}>APPROVE?</Text>}
                       {overdue && <Text style={styles.flatBlockOverdue}>Overdue</Text>}
                     </TouchableOpacity>
                   );
@@ -1340,12 +1532,21 @@ export default function MaintenanceCategoryScreen() {
       )}
 
       {/* Modals */}
+      <PaymentMethodModal
+        record={methodModalRecord}
+        visible={methodModalVisible}
+        onClose={() => setMethodModalVisible(false)}
+        onSelectMethod={handleMethodSelect}
+        supportedMethods={methodModalRecord?.building_payment_method?.split(',').map(m => m.trim()) || ['Online']}
+      />
+
       <BillFormModal
         visible={createVisible}
         category={cat}
         members={members}
         onClose={() => setCreateVisible(false)}
         onSubmit={handleCreateBill}
+        buildingInfo={buildingInfo}
       />
 
       <ExportSheet
@@ -1364,6 +1565,7 @@ export default function MaintenanceCategoryScreen() {
           setSelectedRecord(null);
           setFlatDetailRecord(null);
         }}
+        onApprove={isPramukh ? handleApprovePayment : undefined}
       />
 
       {/* Edit Bill Modal */}

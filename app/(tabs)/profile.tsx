@@ -36,10 +36,10 @@ export default function ProfileScreen() {
   const roleColor = isAdmin ? Colors.danger : isPramukh ? Colors.accent : Colors.success;
   const currentLang = LANGUAGES.find(l => l.code === language)!;
 
-  const menuItems = isAdmin ? [] : [
-    { icon: 'warning-outline', label: t('myComplaints'), onPress: () => router.push('/complaints?mine=true' as any), disabled: !hasBuilding },
-    { icon: 'car-outline', label: t('myVehicles'), onPress: () => router.push('/my-vehicles' as any), disabled: !hasBuilding },
-    { icon: 'wallet-outline', label: t('paymentHistory'), onPress: () => router.push('/my-payments' as any), disabled: !hasBuilding },
+  const menuItems = isAdmin || !hasBuilding ? [] : [
+    { icon: 'warning-outline', label: t('myComplaints'), onPress: () => router.push('/complaints?mine=true' as any), disabled: false },
+    { icon: 'car-outline', label: t('myVehicles'), onPress: () => router.push('/my-vehicles' as any), disabled: false },
+    { icon: 'wallet-outline', label: t('paymentHistory'), onPress: () => router.push('/my-payments' as any), disabled: false },
   ];
 
   return (

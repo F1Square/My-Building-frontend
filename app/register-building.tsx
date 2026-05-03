@@ -180,7 +180,7 @@ export default function RegisterBuildingScreen() {
     }
   };
 
-  
+
 
   return (
     <View style={styles.container}>
@@ -223,9 +223,9 @@ export default function RegisterBuildingScreen() {
               {form.society_logo
                 ? <Image source={{ uri: form.society_logo }} style={styles.logoPreview} />
                 : <View style={styles.logoPlaceholder}>
-                    <Ionicons name="image-outline" size={32} color={Colors.textMuted} />
-                    <Text style={styles.logoPlaceholderText}>Tap to select logo</Text>
-                  </View>
+                  <Ionicons name="image-outline" size={32} color={Colors.textMuted} />
+                  <Text style={styles.logoPlaceholderText}>Tap to select logo</Text>
+                </View>
               }
             </TouchableOpacity>
             {logoError ? <Text style={styles.logoError}>{logoError}</Text> : null}
@@ -269,30 +269,6 @@ export default function RegisterBuildingScreen() {
                 <Text style={styles.infoNoteText}>Members will be able to upload a transaction receipt as proof of payment.</Text>
               </View>
             )}
-            {form.payment_method === 'Online (Payment Gateway)' && (
-              <>
-                <Text style={styles.label}>Payment Gateway Link</Text>
-                <TextInput
-                  style={styles.input}
-                  value={form.payment_gateway_link}
-                  onChangeText={v => set('payment_gateway_link', v)}
-                  placeholder="https://pay.example.com/..."
-                  placeholderTextColor={Colors.textMuted}
-                  keyboardType="url"
-                  autoCapitalize="none"
-                />
-              </>
-            )}
-            <Text style={styles.label}>Payment Terms & Conditions (optional)</Text>
-            <TextInput
-              style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
-              value={form.payment_tc}
-              onChangeText={v => { if (v.length <= 1000) set('payment_tc', v); }}
-              placeholder="e.g. Payment is due by the 10th of each month..."
-              placeholderTextColor={Colors.textMuted}
-              multiline
-              maxLength={1000}
-            />
             <Text style={[styles.charCount, form.payment_tc.length >= 900 && styles.charCountWarn]}>
               {form.payment_tc.length}/1000
             </Text>
@@ -330,9 +306,9 @@ export default function RegisterBuildingScreen() {
             {submitting
               ? <ActivityIndicator color={Colors.white} />
               : <>
-                  <Text style={styles.nextBtnText}>{step === STEPS.length - 1 ? 'Submit Request' : 'Next'}</Text>
-                  {step < STEPS.length - 1 && <Ionicons name="arrow-forward" size={18} color={Colors.white} />}
-                </>}
+                <Text style={styles.nextBtnText}>{step === STEPS.length - 1 ? 'Submit Request' : 'Next'}</Text>
+                {step < STEPS.length - 1 && <Ionicons name="arrow-forward" size={18} color={Colors.white} />}
+              </>}
           </TouchableOpacity>
         </View>
 

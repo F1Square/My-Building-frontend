@@ -31,12 +31,12 @@ export default function LoginScreen() {
       router.replace('/');
     } catch (e: any) {
       let msg = 'An unexpected error occurred';
-      
+
       if (e.response) {
         // Server responded with an error
         const status = e.response.status;
         const errorMsg = e.response.data?.error;
-        
+
         if (status === 401 || status === 400 || status === 422) {
           // Authentication or validation errors
           msg = errorMsg || 'Invalid email or password';
@@ -54,14 +54,14 @@ export default function LoginScreen() {
         // Other errors with a message
         msg = e.message;
       }
-      
+
       Alert.alert('Login Failed', msg);
     } finally {
       setLoading(false);
     }
   };
 
-  
+
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -106,9 +106,9 @@ export default function LoginScreen() {
           <TouchableOpacity style={styles.btn} onPress={handleLogin} disabled={loading}>
             {loading
               ? <View style={styles.loadingRow}>
-                  <ActivityIndicator color="#fff" size="small" />
-                  <Text style={styles.btnText}>Signing in...</Text>
-                </View>
+                <ActivityIndicator color="#fff" size="small" />
+                <Text style={styles.btnText}>Signing in...</Text>
+              </View>
               : <Text style={styles.btnText}>Sign In</Text>
             }
           </TouchableOpacity>
@@ -140,9 +140,9 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 22, fontWeight: '800', color: Colors.text, marginBottom: 4 },
   cardSub: { fontSize: 14, color: Colors.textMuted, marginBottom: 24 },
   label: { fontSize: 13, fontWeight: '600', color: Colors.text, marginBottom: 6 },
-  input: { borderWidth: 1.5, borderColor: Colors.border, borderRadius: 10, padding: 12, fontSize: 15, color: Colors.text, marginBottom: 16, backgroundColor: Colors.bg },
+  input: { borderWidth: 1.5, borderColor: Colors.border, borderRadius: 10, padding: 12, fontSize: 15, color: Colors.text, marginBottom: 16, backgroundColor: Colors.bg, letterSpacing: 0 },
   passwordRow: { flexDirection: 'row', alignItems: 'center', borderWidth: 1.5, borderColor: Colors.border, borderRadius: 10, backgroundColor: Colors.bg, marginBottom: 20 },
-  passwordInput: { flex: 1, padding: 12, fontSize: 15, color: Colors.text },
+  passwordInput: { flex: 1, padding: 12, fontSize: 15, color: Colors.text, letterSpacing: 0 },
   eyeBtn: { paddingHorizontal: 12 },
   btn: { backgroundColor: Colors.primary, borderRadius: 12, padding: 15, alignItems: 'center' },
   btnText: { color: Colors.white, fontSize: 16, fontWeight: '700' },

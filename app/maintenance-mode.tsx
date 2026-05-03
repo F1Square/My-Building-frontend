@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, StyleSheet, SafeAreaView, StatusBar, Image, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, StatusBar, Dimensions } from 'react-native';
 import { Colors } from '../constants/colors';
 import { useLocalSearchParams } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 
 const { width } = Dimensions.get('window');
 
@@ -14,11 +15,7 @@ export default function MaintenanceModeScreen() {
       <View style={styles.content}>
         <View style={styles.imageContainer}>
           <View style={styles.badgeContainer}>
-            <Image
-              source={require('../assets/images/maintenance-dog-final.png')}
-              style={styles.illustration}
-              resizeMode="cover"
-            />
+            <Ionicons name="construct" size={width * 0.3} color={Colors.white} />
           </View>
         </View>
 

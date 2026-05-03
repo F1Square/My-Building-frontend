@@ -2,7 +2,7 @@
   "expo": {
     "name": "My Building",
     "slug": "My_Building",
-    "version": "1.13.0",
+    "version": "1.14.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "splash": {
@@ -24,7 +24,7 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.f1square.mybuilding",
-      "versionCode": 13,
+      "versionCode": 14,
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_MEDIA_IMAGES",

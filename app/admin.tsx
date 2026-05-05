@@ -11,7 +11,7 @@ import api from '../utils/api';
 import BuildingDropdown from '../components/BuildingDropdown';
 import type { Building } from '../hooks/useBuildings';
 
-type ModalType = 'none' | 'createBuilding' | 'createPramukh' | 'members' | 'subscriptions' | 'grantSub' | 'buildingSelector' | 'appSettings';
+type ModalType = 'none' | 'createBuilding' | 'createPramukh' | 'members' | 'subscriptions' | 'grantSub' | 'buildingSelector' | 'appSettings' | 'buildingActions' | 'deleteBuilding';
 type Member = { id: string; name: string; email: string; role: string; flat_no?: string; status: string };
 type SubRecord = {
   id: string; user_id: string; plan: string; status: string;
@@ -66,6 +66,7 @@ export default function AdminScreen() {
   const [subsLoading, setSubsLoading] = useState(false);
   const [grantForm, setGrantForm] = useState({ user_id: '', plan: 'monthly', months: '1', remark: '' });
   const [allUsers, setAllUsers] = useState<{ id: string; name: string; email: string }[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [userSearch, setUserSearch] = useState('');
 
@@ -129,6 +130,34 @@ export default function AdminScreen() {
     finally { setSubmitting(false); }
   };
 
+  const deleteBuilding = async (b: Building) => {
+    Alert.alert(
+      'Delete Everything?',
+      `Are you sure you want to delete "${b.name}"?\n\nThis will permanently delete:\n• All Residents & Roles\n• All Notices & Announcements\n• All Maintenance Bills & Payments\n• All Expenses & Funds\n• All Parking & Visitor Logs\n\nThis action CANNOT be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'DELETE PERMANENTLY', 
+          style: 'destructive', 
+          onPress: async () => {
+            setSubmitting(true);
+            try {
+              await api.delete(`/buildings/${b.id}`);
+              fetchBuildings();
+              closeModal();
+              Alert.alert('Success', 'Building and all associated data deleted');
+            } catch (e: any) {
+              Alert.alert('Error', e.response?.data?.error || 'Failed to delete');
+            } finally {
+              setSubmitting(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+
   const createPramukh = async () => {
     if (!pBuilding) return Alert.alert('Error', 'Select a building');
     if (!pForm.name.trim() || !pForm.email.trim() || !pForm.password.trim())
@@ -167,17 +196,16 @@ export default function AdminScreen() {
   };
 
   const openGrantSub = async () => {
-    // load all users for picker
+    // Optimized: fetch all users in a single request instead of N+1 loop
+    setUsersLoading(true);
     try {
-      const r = await api.get('/buildings');
-      // fetch members from all buildings
-      const all: { id: string; name: string; email: string }[] = [];
-      for (const b of r.data) {
-        const m = await api.get(`/buildings/members/${b.id}`);
-        m.data.forEach((u: any) => { if (!all.find(x => x.id === u.id)) all.push({ id: u.id, name: u.name, email: u.email }); });
-      }
-      setAllUsers(all);
-    } catch { }
+      const r = await api.get('/buildings/admin/users');
+      setAllUsers(r.data.map((u: any) => ({ id: u.id, name: u.name, email: u.email })));
+    } catch (e) {
+      console.log('Failed to fetch users for grant sub', e);
+    } finally {
+      setUsersLoading(false);
+    }
     setGrantForm({ user_id: '', plan: 'monthly', months: '1', remark: '' });
     setUserDropdownOpen(false);
     setUserSearch('');
@@ -325,7 +353,7 @@ export default function AdminScreen() {
         >
           <Text style={styles.sectionTitle}>Quick Actions</Text>
           <View style={styles.actionsRow}>
-            <ActionCard icon="business" label="New Building" color={Colors.primary} onPress={() => setModal('createBuilding')} />
+            <ActionCard icon="business" label="Building" color={Colors.primary} onPress={() => setModal('buildingActions')} />
             <ActionCard icon="person-add" label="New Pramukh" color="#7C3AED" onPress={() => setModal('createPramukh')} />
           </View>
           <View style={styles.actionsRow}>
@@ -431,7 +459,80 @@ export default function AdminScreen() {
         </ScrollView>
       )}
 
+      {/* ── Building Actions Choice ── */}
+      <Modal visible={modal === 'buildingActions'} transparent animationType="fade">
+        <View style={styles.choiceOverlay}>
+          <View style={styles.choiceSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Building Management</Text>
+              <TouchableOpacity onPress={closeModal}><Ionicons name="close" size={24} color={Colors.text} /></TouchableOpacity>
+            </View>
+            <View style={styles.choiceRow}>
+              <TouchableOpacity style={styles.choiceBtn} onPress={() => setModal('createBuilding')}>
+                <View style={[styles.choiceIcon, { backgroundColor: Colors.primary + '15' }]}>
+                  <Ionicons name="add-circle" size={32} color={Colors.primary} />
+                </View>
+                <Text style={styles.choiceLabel}>Create New</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.choiceBtn} onPress={() => setModal('deleteBuilding')}>
+                <View style={[styles.choiceIcon, { backgroundColor: Colors.danger + '15' }]}>
+                  <Ionicons name="trash" size={32} color={Colors.danger} />
+                </View>
+                <Text style={styles.choiceLabel}>Delete Existing</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Delete Building Selector ── */}
+      <Modal visible={modal === 'deleteBuilding'} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.modal}>
+          <View style={styles.modalHeader}>
+            <View>
+              <Text style={styles.modalTitle}>Delete Building</Text>
+              <Text style={styles.modalSub}>Select a building to remove</Text>
+            </View>
+            <TouchableOpacity onPress={closeModal}><Ionicons name="close" size={24} color={Colors.text} /></TouchableOpacity>
+          </View>
+          
+          <View style={[styles.searchBar, { margin: 16 }]}>
+            <Ionicons name="search" size={18} color={Colors.textMuted} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search building to delete..."
+              value={buildingSearchQuery}
+              onChangeText={setBuildingSearchQuery}
+              placeholderTextColor={Colors.textMuted}
+            />
+          </View>
+
+          <FlatList
+            data={filteredBuildings}
+            keyExtractor={item => item.id}
+            contentContainerStyle={{ padding: 16 }}
+            renderItem={({ item }) => (
+              <TouchableOpacity style={styles.deleteItem} onPress={() => deleteBuilding(item)}>
+                <View style={styles.deleteItemInfo}>
+                  <Text style={styles.deleteItemName}>{item.name}</Text>
+                  <Text style={styles.deleteItemAddress}>{item.address || 'No address'}</Text>
+                </View>
+                <View style={styles.deleteIconBox}>
+                  <Ionicons name="trash-outline" size={20} color={Colors.danger} />
+                </View>
+              </TouchableOpacity>
+            )}
+            ListEmptyComponent={
+              <View style={styles.deleteEmptyState}>
+                <Text style={styles.emptyTitle}>No buildings found</Text>
+              </View>
+            }
+          />
+        </View>
+      </Modal>
+
       {/* ── Create Building ── */}
+
       <Modal visible={modal === 'createBuilding'} animationType="slide" presentationStyle="pageSheet">
         <View style={styles.modal}>
           <View style={styles.modalHeader}>
@@ -720,7 +821,7 @@ export default function AdminScreen() {
                         </>
                       ) : (
                         <Text style={styles.dropdownTriggerPlaceholder}>
-                          {allUsers.length === 0 ? 'Loading users...' : 'Select a user'}
+                          {usersLoading ? 'Loading users...' : 'Select a user'}
                         </Text>
                       )}
                     </View>
@@ -998,4 +1099,18 @@ const styles = StyleSheet.create({
   inlineActionRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 },
   inlineUpdateBtn: { backgroundColor: Colors.primary, borderRadius: 10, paddingHorizontal: 16, height: 48, justifyContent: 'center', alignItems: 'center' },
   inlineUpdateBtnText: { color: Colors.white, fontSize: 14, fontWeight: '700' },
+  // Building Management Choices
+  choiceOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  choiceSheet: { backgroundColor: Colors.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 40 },
+  choiceRow: { flexDirection: 'row', gap: 16, marginTop: 10 },
+  choiceBtn: { flex: 1, backgroundColor: Colors.bg, borderRadius: 20, padding: 20, alignItems: 'center', borderWidth: 1, borderColor: Colors.border },
+  choiceIcon: { width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
+  choiceLabel: { fontSize: 15, fontWeight: '800', color: Colors.text },
+  // Delete List
+  deleteItem: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: Colors.bg, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.border },
+  deleteItemInfo: { flex: 1 },
+  deleteItemName: { fontSize: 16, fontWeight: '700', color: Colors.text },
+  deleteItemAddress: { fontSize: 13, color: Colors.textMuted, marginTop: 2 },
+  deleteIconBox: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.danger + '10', justifyContent: 'center', alignItems: 'center' },
+  deleteEmptyState: { alignItems: 'center', marginTop: 40 },
 });

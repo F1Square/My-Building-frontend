@@ -3,12 +3,50 @@ import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, ActivityIndicator, Alert,
+  TextInput, ActivityIndicator, Alert, Modal, FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
+
+// ── Picker Modal ──────────────────────────────────────────────────────────────
+function PickerModal({ visible, title, options, onSelect, onClose }: {
+  visible: boolean; title: string; options: string[];
+  onSelect: (v: string) => void; onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <View style={pm.overlay}>
+        <View style={pm.sheet}>
+          <View style={pm.header}>
+            <Text style={pm.title}>{title}</Text>
+            <TouchableOpacity onPress={onClose}><Ionicons name="close" size={22} color={Colors.text} /></TouchableOpacity>
+          </View>
+          <FlatList
+            data={options}
+            keyExtractor={(i) => i}
+            renderItem={({ item }) => (
+              <TouchableOpacity style={pm.item} onPress={() => { onSelect(item); onClose(); }}>
+                <Text style={pm.itemText}>{item}</Text>
+                <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
+              </TouchableOpacity>
+            )}
+          />
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const pm = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: Colors.white, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '70%' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  title: { fontSize: 16, fontWeight: '800', color: Colors.text },
+  item: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  itemText: { fontSize: 15, color: Colors.text },
+});
 
 export default function MyDetailsScreen() {
   const { user, refreshUser } = useAuth();
@@ -22,6 +60,25 @@ export default function MyDetailsScreen() {
     wing: user?.wing || '',
     total_members: user?.total_members ? String(user.total_members) : '',
   });
+
+  const [buildingWings, setBuildingWings] = useState<string[]>([]);
+  const [showWingPicker, setShowWingPicker] = useState(false);
+
+  useEffect(() => {
+    if (user?.building_id) fetchBuildingInfo();
+  }, [user?.building_id]);
+
+  const fetchBuildingInfo = async () => {
+    try {
+      const res = await api.get('/buildings/my');
+      if (res.data.has_wings && res.data.wings) {
+        const wings = res.data.wings.split(',').map((w: string) => w.trim()).filter(Boolean);
+        setBuildingWings(wings);
+      }
+    } catch (e) {
+      console.log('Failed to fetch building wings', e);
+    }
+  };
 
   useEffect(() => {
     setDetails({
@@ -125,16 +182,28 @@ export default function MyDetailsScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.label}>{row.label}{editing ? <Text style={{ color: Colors.danger }}> *</Text> : null}</Text>
               {editing ? (
-                <TextInput
-                  style={styles.input}
-                  value={(details as any)[row.field]}
-                  onChangeText={(v) => setDetails((d) => ({ ...d, [row.field]: v }))}
-                  placeholder={row.placeholder}
-                  placeholderTextColor={Colors.textMuted}
-                  keyboardType={row.keyboardType}
-                  maxLength={row.maxLength}
-                  autoFocus={idx === 0}
-                />
+                row.field === 'wing' && buildingWings.length > 0 ? (
+                  <TouchableOpacity 
+                    style={styles.pickerTrigger} 
+                    onPress={() => setShowWingPicker(true)}
+                  >
+                    <Text style={[styles.pickerValue, !details.wing && { color: Colors.textMuted }]}>
+                      {details.wing || 'Select Wing'}
+                    </Text>
+                    <Ionicons name="chevron-down" size={16} color={Colors.primary} />
+                  </TouchableOpacity>
+                ) : (
+                  <TextInput
+                    style={styles.input}
+                    value={(details as any)[row.field]}
+                    onChangeText={(v) => setDetails((d) => ({ ...d, [row.field]: v }))}
+                    placeholder={row.placeholder}
+                    placeholderTextColor={Colors.textMuted}
+                    keyboardType={row.keyboardType}
+                    maxLength={row.maxLength}
+                    autoFocus={idx === 0}
+                  />
+                )
               ) : (
                 <Text style={styles.value}>
                   {(details as any)[row.field] || <Text style={styles.empty}>Not set</Text>}
@@ -157,6 +226,14 @@ export default function MyDetailsScreen() {
           </TouchableOpacity>
         </View>
       )}
+
+      <PickerModal 
+        visible={showWingPicker}
+        title="Select Wing"
+        options={buildingWings}
+        onSelect={(v) => setDetails(d => ({ ...d, wing: v }))}
+        onClose={() => setShowWingPicker(false)}
+      />
 
       <View style={{ height: 40 }} />
     </ScrollView>
@@ -184,4 +261,6 @@ const styles = StyleSheet.create({
   saveText: { fontSize: 15, fontWeight: '700', color: Colors.white },
   missingBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.warning + '15', padding: 12, borderBottomWidth: 1, borderBottomColor: Colors.border },
   missingText: { fontSize: 13, color: Colors.warning, fontWeight: '600', flex: 1 },
+  pickerTrigger: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1.5, borderBottomColor: Colors.primary, paddingVertical: 4 },
+  pickerValue: { fontSize: 16, color: Colors.text, fontWeight: '600' },
 });

@@ -68,6 +68,7 @@ interface Member {
 interface FlatAmountEntry {
   user_id: string;
   flat_no: string;
+  wing?: string;
   name: string;
   amount: string;
 }
@@ -372,7 +373,7 @@ function BillFormModal({ visible, category, members, onClose, onSubmit, building
     penalty_amount: '',
     month: String(new Date().getMonth() + 1),
     year: String(currentYear),
-    flat_amounts: members.map(m => ({ user_id: m.id, flat_no: m.flat_no, name: m.name, amount: '' })),
+    flat_amounts: members.map(m => ({ user_id: m.id, flat_no: m.flat_no, wing: m.wing, name: m.name, amount: '' })),
     amount_mode: 'uniform',
     targeting_mode: 'building_wide',
     targeted_user_ids: [],
@@ -382,13 +383,20 @@ function BillFormModal({ visible, category, members, onClose, onSubmit, building
   const [dpYear, setDpYear] = useState(new Date().getFullYear());
   const [dpMonth, setDpMonth] = useState(new Date().getMonth() + 1);
 
+  // Prefill penalty from building info
+  useEffect(() => {
+    if (visible && category === 'maintenance' && buildingInfo?.late_fees_enabled && !form.penalty_amount) {
+      set('penalty_amount', String(buildingInfo.late_fees_amount || ''));
+    }
+  }, [visible, buildingInfo, category]);
+
   // Sync flat_amounts when members change
   useEffect(() => {
     setForm(f => ({
       ...f,
       flat_amounts: members.map(m => {
         const existing = f.flat_amounts.find(fa => fa.user_id === m.id);
-        return existing ?? { user_id: m.id, flat_no: m.flat_no, name: m.name, amount: '' };
+        return existing ?? { user_id: m.id, flat_no: m.flat_no, wing: m.wing, name: m.name, amount: '' };
       }),
     }));
   }, [members]);
@@ -402,6 +410,16 @@ function BillFormModal({ visible, category, members, onClose, onSubmit, building
         : [...f.targeted_user_ids, userId];
       return { ...f, targeted_user_ids: ids };
     });
+  };
+
+  const handleModeChange = (mode: 'uniform' | 'flat_wise') => {
+    setForm(f => ({
+      ...f,
+      amount_mode: mode,
+      // Clear alternative mode values when switching
+      amount: mode === 'flat_wise' ? '' : f.amount,
+      flat_amounts: mode === 'uniform' ? f.flat_amounts.map(fa => ({ ...fa, amount: '' })) : f.flat_amounts
+    }));
   };
 
   const updateFlatAmount = (userId: string, amount: string) => {
@@ -495,10 +513,11 @@ function BillFormModal({ visible, category, members, onClose, onSubmit, building
             <Text style={formStyles.label}>Description {category !== 'special' ? '' : '*'}</Text>
             <TextInput
               style={formStyles.input}
-              placeholder={category === 'water_meter' ? 'Optional' : 'e.g. Festival decoration levy'}
+              placeholder={category === 'water_meter' ? 'e.g. Water charges for July' : 'e.g. Festival decoration levy'}
               value={form.description}
               onChangeText={v => set('description', v)}
               placeholderTextColor={Colors.textMuted}
+              autoCapitalize="sentences"
             />
 
             {/* Maintenance-specific: month, year, penalty */}
@@ -554,7 +573,7 @@ function BillFormModal({ visible, category, members, onClose, onSubmit, building
                     <TouchableOpacity
                       key={mode}
                       style={[formStyles.toggleBtn, form.amount_mode === mode && formStyles.toggleBtnActive]}
-                      onPress={() => set('amount_mode', mode)}
+                      onPress={() => handleModeChange(mode)}
                     >
                       <Text style={[formStyles.toggleText, form.amount_mode === mode && formStyles.toggleTextActive]}>
                         {mode === 'uniform' ? 'Uniform' : 'Flat-wise'}
@@ -636,7 +655,7 @@ function BillFormModal({ visible, category, members, onClose, onSubmit, building
                 ).map(fa => (
                   <View key={fa.user_id} style={formStyles.flatAmountRow}>
                     <Text style={formStyles.flatLabel}>
-                      {fa.flat_no} — {fa.name}
+                      {fa.wing ? `${fa.wing}-` : ''}{fa.flat_no} — {fa.name}
                     </Text>
                     <TextInput
                       style={formStyles.flatInput}
@@ -921,7 +940,13 @@ export default function MaintenanceCategoryScreen() {
   const [flatDetailVisible, setFlatDetailVisible] = useState(false);
   const [pramukhTab, setPramukhTab] = useState<'bills' | 'my-bill'>('bills');
   const [editBill, setEditBill] = useState<Bill | null>(null);
-  const [editForm, setEditForm] = useState({ description: '', due_date: '', amount: '', penalty_amount: '' });
+  const [editForm, setEditForm] = useState({ 
+    description: '', 
+    due_date: '', 
+    amount: '', 
+    penalty_amount: '',
+    flat_amounts: [] as FlatAmountEntry[]
+  });
   const [editSubmitting, setEditSubmitting] = useState(false);
   const [editDatePickerVisible, setEditDatePickerVisible] = useState(false);
   const [editDpYear, setEditDpYear] = useState(new Date().getFullYear());
@@ -1133,6 +1158,8 @@ export default function MaintenanceCategoryScreen() {
         category: cat,
         due_date: form.due_date,
         description: form.description,
+        month: parseInt(form.month, 10),
+        year: parseInt(form.year, 10),
       };
       if (effectiveBuildingId) body.building_id = effectiveBuildingId;
 
@@ -1178,12 +1205,32 @@ export default function MaintenanceCategoryScreen() {
     }
   };
 
-  const openEditBill = (bill: Bill) => {
+  const openEditBill = async (bill: Bill) => {
+    let fa: FlatAmountEntry[] = [];
+    if (bill.amount_mode === 'flat_wise') {
+      try {
+        // Fetch only payments for this specific bill
+        const params: any = { bill_id: bill.id };
+        if (effectiveBuildingId) params.building_id = effectiveBuildingId;
+        const res = await api.get('/maintenance/payments', { params });
+        fa = res.data.map((p: any) => ({
+          user_id: p.user_id,
+          flat_no: p.users?.flat_no || p.user?.flat_no || '',
+          wing: p.users?.wing || p.user?.wing || '',
+          name: p.users?.name || p.user?.name || '',
+          amount: String(p.flat_amount ?? p.amount ?? ''),
+        }));
+      } catch (e) {
+        console.log('Error fetching payments for edit:', e);
+      }
+    }
+
     setEditForm({
       description: bill.description || '',
       due_date: bill.due_date || '',
       amount: bill.amount ? String(bill.amount) : '',
       penalty_amount: bill.penalty_amount ? String(bill.penalty_amount) : '',
+      flat_amounts: fa
     });
     const due = bill.due_date ? new Date(bill.due_date) : new Date();
     setEditDpYear(due.getFullYear());
@@ -1199,6 +1246,12 @@ export default function MaintenanceCategoryScreen() {
       if (editForm.description !== editBill.description) body.description = editForm.description;
       if (editForm.due_date !== editBill.due_date) body.due_date = editForm.due_date;
       if (editForm.amount && parseFloat(editForm.amount) !== editBill.amount) body.amount = parseFloat(editForm.amount);
+      if (editBill.amount_mode === 'flat_wise') {
+        body.flat_amounts = editForm.flat_amounts.map(fa => ({
+          user_id: fa.user_id,
+          amount: fa.amount || '0'
+        }));
+      }
       if (cat === 'maintenance' && editForm.penalty_amount !== undefined)
         body.penalty_amount = parseFloat(editForm.penalty_amount) || 0;
       await api.patch('/maintenance/bills', body);
@@ -1638,7 +1691,7 @@ export default function MaintenanceCategoryScreen() {
                 </View>
               )}
 
-              {editBill?.amount_mode !== 'flat_wise' && (
+              {editBill?.amount_mode !== 'flat_wise' ? (
                 <>
                   <Text style={formStyles.label}>Amount (₹)</Text>
                   <TextInput
@@ -1648,6 +1701,30 @@ export default function MaintenanceCategoryScreen() {
                     keyboardType="numeric"
                     placeholderTextColor={Colors.textMuted}
                   />
+                </>
+              ) : (
+                <>
+                  <Text style={formStyles.label}>Flat-wise Amounts (₹) *</Text>
+                  {editForm.flat_amounts.map(fa => (
+                    <View key={fa.user_id} style={formStyles.flatAmountRow}>
+                      <Text style={formStyles.flatLabel}>
+                        {fa.wing ? `${fa.wing}-` : ''}{fa.flat_no} — {fa.name}
+                      </Text>
+                      <TextInput
+                        style={formStyles.flatInput}
+                        placeholder="₹"
+                        value={fa.amount}
+                        onChangeText={v => {
+                          setEditForm(f => ({
+                            ...f,
+                            flat_amounts: f.flat_amounts.map(x => x.user_id === fa.user_id ? { ...x, amount: v } : x)
+                          }));
+                        }}
+                        keyboardType="numeric"
+                        placeholderTextColor={Colors.textMuted}
+                      />
+                    </View>
+                  ))}
                 </>
               )}
 

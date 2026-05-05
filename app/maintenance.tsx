@@ -8,6 +8,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../utils/api';
 import { useMarkNotificationsRead } from '../hooks/useMarkNotificationsRead';
 import { useActivityLog } from '../hooks/useActivityLog';
@@ -70,6 +71,20 @@ export default function MaintenanceScreen() {
   const [loading, setLoading] = useState(!isAdmin); // admin waits for building selection
   const [refreshing, setRefreshing] = useState(false);
 
+  // Load cached building info instantly on mount
+  useEffect(() => {
+    if (!isAdmin) {
+      AsyncStorage.getItem('my_building_config').then(s => {
+        if (s) setMyBuilding(JSON.parse(s));
+      });
+    } else {
+      // For Admin, load the last selected building to avoid flicker
+      AsyncStorage.getItem('admin_last_selected_building').then(s => {
+        if (s) setSelectedBuilding(JSON.parse(s));
+      });
+    }
+  }, [isAdmin]);
+
   const fetchPendingCounts = useCallback(async (forceRefresh = false) => {
     // Admin must select a building first
     if (isAdmin && !selectedBuilding) return;
@@ -104,7 +119,10 @@ export default function MaintenanceScreen() {
       
       if (!isAdmin) {
         const myBuildingRes = await api.get('/buildings/my').catch(() => null);
-        if (myBuildingRes?.data) setMyBuilding(myBuildingRes.data);
+        if (myBuildingRes?.data) {
+          setMyBuilding(myBuildingRes.data);
+          AsyncStorage.setItem('my_building_config', JSON.stringify(myBuildingRes.data));
+        }
       }
 
       await cacheManager.set(cacheKey, res.data, CACHE_PRESETS.userSpecific);
@@ -131,6 +149,11 @@ export default function MaintenanceScreen() {
   // When admin selects a building, fetch counts
   const handleBuildingSelect = (b: Building | null) => {
     setSelectedBuilding(b);
+    if (b) {
+      AsyncStorage.setItem('admin_last_selected_building', JSON.stringify(b));
+    } else {
+      AsyncStorage.removeItem('admin_last_selected_building');
+    }
     setLoading(true);
     setPendingCounts({ maintenance: 0, water_meter: 0, special: 0 });
   };

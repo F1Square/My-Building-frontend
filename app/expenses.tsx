@@ -187,6 +187,9 @@ export default function ExpensesScreen() {
   };
 
   const downloadPDF = async () => {
+    if (filtered.length === 0) {
+      return Alert.alert('No Entries', `There are no expense entries recorded for ${MONTHS[selectedMonth]} ${selectedYear}.`);
+    }
     try {
       const html = `
         <html>
@@ -228,6 +231,9 @@ export default function ExpensesScreen() {
   };
 
   const downloadCSV = async () => {
+    if (filtered.length === 0) {
+      return Alert.alert('No Entries', `There are no expense entries recorded for ${MONTHS[selectedMonth]} ${selectedYear}.`);
+    }
     try {
       const header = 'Date,Type,Category,Description,Amount,Added By\n';
       const rows = filtered.map(e => {

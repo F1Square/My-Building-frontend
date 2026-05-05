@@ -93,7 +93,6 @@ const styles = StyleSheet.create({
     width: '100%',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
-    backdropFilter: 'blur(10px)', // For web, but nice to have in mind
   },
   statusBadge: {
     flexDirection: 'row',

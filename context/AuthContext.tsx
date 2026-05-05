@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
+import api from '../utils/api';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
@@ -55,14 +55,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchSubscription = async (t: string) => {
     try {
-      const res = await axios.get(`${API_BASE}/subscriptions/me`, {
-        headers: { Authorization: `Bearer ${t}` },
-      });
+      // Use the api instance which now handles the base URL and auth header automatically
+      // if the token is already in AsyncStorage. For the very first call after login,
+      // we can still pass the header manually or just rely on the interceptor if we await storage.
+      const res = await api.get('/subscriptions/me');
       const sub = res.data as Subscription;
       setSubscription(sub);
       await AsyncStorage.setItem('subscription', JSON.stringify(sub));
-    } catch {
-      // keep cached value on network error
+    } catch (err) {
+      console.error('[AuthContext] Fetch subscription failed:', err);
     }
   };
 
@@ -120,11 +121,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
       }
       const tokenData = await Notifications.getExpoPushTokenAsync();
-      await axios.post(`${API_BASE}/auth/push-token`, { expo_push_token: tokenData.data }, {
-        headers: { Authorization: `Bearer ${t}` },
-      });
-    } catch {
-      // silently fail — push is non-critical
+      await api.post('/auth/push-token', { expo_push_token: tokenData.data });
+    } catch (err) {
+      console.log('[AuthContext] Push token registration failed:', err);
     }
   };
 
@@ -163,15 +162,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshUser = async () => {
     try {
-      const storedToken = token || (await AsyncStorage.getItem('token'));
-      if (!storedToken) return;
-      const res = await axios.get(`${API_BASE}/auth/me`, {
-        headers: { Authorization: `Bearer ${storedToken}` },
-      });
+      const res = await api.get('/auth/me');
       const updated = res.data.user as User;
       await AsyncStorage.setItem('user', JSON.stringify(updated));
       setUser(updated);
-    } catch {}
+    } catch (err) {
+      console.error('[AuthContext] Refresh user failed:', err);
+    }
   };
 
   return (

@@ -11,7 +11,9 @@ import UpdateModal from '../components/UpdateModal';
 import api from '../utils/api';
 import appJson from '../app.json';
 
-const CURRENT_VERSION = appJson.expo.version;
+import Constants from 'expo-constants';
+
+const CURRENT_VERSION = Constants.expoConfig?.version || appJson.expo.version;
 
 function RootNavigator() {
   const { user, loading: authLoading } = useAuth();
@@ -50,17 +52,16 @@ function RootNavigator() {
     const checkConfig = async () => {
       try {
         const res = await api.get('/app-config');
-        if (res.data.maintenance_mode) {
-          setIsMaintenance(true);
-          setMaintenanceMessage(res.data.maintenance_message);
-        }
+        const { maintenance_mode, maintenance_message, version: remoteVersion } = res.data;
         
-        if (res.data.version && res.data.version !== CURRENT_VERSION) {
-          // Only show update modal if version is different (usually you'd check if remote is higher)
+        setIsMaintenance(!!maintenance_mode);
+        if (maintenance_message) setMaintenanceMessage(maintenance_message);
+        
+        if (remoteVersion && isNewerVersion(remoteVersion, CURRENT_VERSION)) {
           setShowUpdateModal(true);
         }
       } catch (err) {
-        console.log('App config check failed:', err);
+        console.error('App config check failed:', err);
       } finally {
         setConfigLoading(false);
       }
@@ -68,6 +69,21 @@ function RootNavigator() {
     
     checkConfig();
   }, []);
+
+  // Helper to compare version strings (e.g., "1.14.1" > "1.14.0")
+  const isNewerVersion = (remote: string, local: string) => {
+    const clean = (v: string) => v.replace(/^v/, '').split('.').map(x => parseInt(x, 10) || 0);
+    const remoteParts = clean(remote);
+    const localParts = clean(local);
+    
+    for (let i = 0; i < Math.max(remoteParts.length, localParts.length); i++) {
+      const r = remoteParts[i] || 0;
+      const l = localParts[i] || 0;
+      if (r > l) return true;
+      if (r < l) return false;
+    }
+    return false;
+  };
 
   // Routing logic — only runs once both auth and language are resolved
   useEffect(() => {
@@ -106,7 +122,7 @@ function RootNavigator() {
     if (inAuth || inLangPicker || inMaintenance) {
       router.replace('/' as any);
     }
-  }, [user, authLoading, hasChosen, langLoading, isMaintenance]);
+  }, [user, authLoading, hasChosen, langLoading, isMaintenance, segments, maintenanceMessage, configLoading]);
 
   if (authLoading || langLoading || configLoading) {
     return (

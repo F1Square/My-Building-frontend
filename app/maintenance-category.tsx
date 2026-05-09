@@ -2,7 +2,7 @@ import React, { useCallback, useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
   RefreshControl, ScrollView, Modal, TextInput, FlatList,
-  Alert, Linking,
+  Alert, Linking, Image, Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
@@ -24,9 +24,13 @@ interface PaymentRecord {
   user_id: string;
   amount: number;
   flat_amount?: number;
-  status: 'pending' | 'paid' | 'receipt_uploaded';
+  status: 'pending' | 'paid' | 'receipt_uploaded' | 'cash_requested';
   paid_at?: string;
+  gateway_payment_id?: string;
   razorpay_payment_id?: string;
+  receipt_url?: string | null;
+  cheque_photo_url?: string | null;
+  payment_method?: string | null;
   category?: BillingCategory;
   maintenance_bills?: {
     id: string;
@@ -39,6 +43,7 @@ interface PaymentRecord {
     category?: BillingCategory;
   };
   building_payment_method?: string;
+  users?: { name?: string; flat_no?: string; wing?: string; email?: string; phone?: string };
 }
 
 interface Bill {
@@ -97,6 +102,10 @@ const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
+const SCREEN_H = Dimensions.get('window').height;
+/** Scroll area inside payment detail so the sheet never exceeds ~88% of the screen. */
+const PAYMENT_DETAIL_SCROLL_MAX = Math.min(SCREEN_H * 0.72, 520);
+
 function isOverdue(dueDate: string): boolean {
   return new Date(dueDate) < new Date();
 }
@@ -109,6 +118,25 @@ function formatDate(dateStr?: string): string {
 
 function formatAmount(amount: number): string {
   return `₹${amount.toLocaleString('en-IN')}`;
+}
+
+/** Cloudinary / HTTPS URL for cheque image (upload may set both cheque_photo_url and receipt_url). */
+function getChequePhotoUri(record: PaymentRecord): string | null {
+  const cheq = record.cheque_photo_url;
+  if (cheq && /^https?:\/\//i.test(String(cheq))) return String(cheq);
+  const method = String(record.payment_method || '').toLowerCase();
+  const rec = record.receipt_url;
+  if (method === 'cheque' && rec && /^https?:\/\//i.test(String(rec))) return String(rec);
+  return null;
+}
+
+function formatPaymentMethodLabel(method?: string | null): string {
+  if (!method) return '—';
+  const m = method.toLowerCase();
+  if (m === 'cheque') return 'Cheque';
+  if (m === 'cash') return 'Cash';
+  if (m === 'online' || m === 'easebuzz' || m === 'razorpay') return 'Online';
+  return method.charAt(0).toUpperCase() + method.slice(1);
 }
 
 // ─── User Bill Card ───────────────────────────────────────────────────────────
@@ -227,22 +255,46 @@ function PaymentDetailModal({ record, visible, onClose, onApprove }: PaymentDeta
   if (!record) return null;
   const bill = record.maintenance_bills;
   const isApprovalPending = record.status === 'receipt_uploaded';
+  const member = record.users;
+  const chequeUri = getChequePhotoUri(record);
+  const showChequePhoto = !!chequeUri;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={detailStyles.overlay}>
-        <View style={detailStyles.sheet}>
+        <View style={detailStyles.sheetScrollWrap}>
           <View style={detailStyles.handle} />
           <Text style={detailStyles.title}>Payment Detail</Text>
 
+          <ScrollView
+            style={[detailStyles.sheetScroll, { maxHeight: PAYMENT_DETAIL_SCROLL_MAX }]}
+            contentContainerStyle={detailStyles.sheetScrollContent}
+            showsVerticalScrollIndicator
+            keyboardShouldPersistTaps="handled"
+          >
           <View style={detailStyles.row}>
             <Text style={detailStyles.label}>Description</Text>
             <Text style={detailStyles.value}>{bill?.description || '—'}</Text>
           </View>
+          {member && (member.name || member.flat_no) && (
+            <View style={detailStyles.row}>
+              <Text style={detailStyles.label}>Member</Text>
+              <Text style={detailStyles.value} numberOfLines={2}>
+                {member.name || '—'}
+                {member.flat_no ? `  •  ${member.wing ? `${member.wing}-` : ''}${member.flat_no}` : ''}
+              </Text>
+            </View>
+          )}
           <View style={detailStyles.row}>
             <Text style={detailStyles.label}>Amount</Text>
             <Text style={detailStyles.value}>{formatAmount(record.amount)}</Text>
           </View>
+          {(record.payment_method || showChequePhoto) && (
+            <View style={detailStyles.row}>
+              <Text style={detailStyles.label}>Payment method</Text>
+              <Text style={detailStyles.value}>{formatPaymentMethodLabel(record.payment_method)}</Text>
+            </View>
+          )}
           <View style={detailStyles.row}>
             <Text style={detailStyles.label}>Status</Text>
             <Text style={[detailStyles.value, { color: record.status === 'paid' ? Colors.success : isApprovalPending ? '#2563EB' : Colors.danger, fontWeight: '700' }]}>
@@ -259,24 +311,42 @@ function PaymentDetailModal({ record, visible, onClose, onApprove }: PaymentDeta
                 <Text style={detailStyles.label}>Paid On</Text>
                 <Text style={detailStyles.value}>{formatDate(record.paid_at)}</Text>
               </View>
-              {record.razorpay_payment_id && (
+              {(record.gateway_payment_id || record.razorpay_payment_id) && (
                 <View style={detailStyles.row}>
-                  <Text style={detailStyles.label}>Payment ID</Text>
-                  <Text style={[detailStyles.value, { fontSize: 12 }]}>{record.razorpay_payment_id}</Text>
+                  <Text style={detailStyles.label}>Gateway ID</Text>
+                  <Text style={[detailStyles.value, { fontSize: 12 }]}>{record.gateway_payment_id || record.razorpay_payment_id}</Text>
                 </View>
               )}
             </>
           )}
 
+          {showChequePhoto && chequeUri && (
+            <View style={detailStyles.chequeSection}>
+              <Text style={detailStyles.chequeSectionTitle}>Cheque photograph</Text>
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={() => Linking.openURL(chequeUri).catch(() => {})}
+              >
+                <Image
+                  source={{ uri: chequeUri }}
+                  style={detailStyles.chequeImage}
+                  resizeMode="contain"
+                />
+              </TouchableOpacity>
+              <Text style={detailStyles.chequeHint}>Tap image to open full size in browser</Text>
+            </View>
+          )}
+
           {isApprovalPending && onApprove && (
-            <TouchableOpacity style={[detailStyles.closeBtn, { backgroundColor: Colors.success, marginTop: 10 }]} onPress={() => onApprove(record)}>
+            <TouchableOpacity style={[detailStyles.closeBtn, { backgroundColor: Colors.success, marginTop: 16 }]} onPress={() => onApprove(record)}>
               <Text style={detailStyles.closeBtnText}>Approve Payment</Text>
             </TouchableOpacity>
           )}
 
-          <TouchableOpacity style={detailStyles.closeBtn} onPress={onClose}>
+          <TouchableOpacity style={[detailStyles.closeBtn, { marginTop: isApprovalPending && onApprove ? 10 : 16 }]} onPress={onClose}>
             <Text style={detailStyles.closeBtnText}>Close</Text>
           </TouchableOpacity>
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -289,6 +359,23 @@ const detailStyles = StyleSheet.create({
     backgroundColor: Colors.white, borderTopLeftRadius: 24, borderTopRightRadius: 24,
     padding: 24, paddingBottom: 40,
   },
+  sheetScrollWrap: {
+    backgroundColor: Colors.white, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingHorizontal: 24, paddingTop: 8, paddingBottom: 24, maxHeight: '88%',
+  },
+  sheetScroll: {},
+  sheetScrollContent: { paddingBottom: 8 },
+  chequeSection: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: Colors.border },
+  chequeSectionTitle: { fontSize: 14, fontWeight: '700', color: Colors.text, marginBottom: 10 },
+  chequeImage: {
+    width: '100%',
+    height: 240,
+    backgroundColor: Colors.bg,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  chequeHint: { fontSize: 12, color: Colors.textMuted, textAlign: 'center', marginTop: 8 },
   handle: { width: 40, height: 4, backgroundColor: Colors.border, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
   title: { fontSize: 18, fontWeight: '800', color: Colors.text, marginBottom: 16 },
   row: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.border },
@@ -352,6 +439,163 @@ function PaymentMethodModal({ record, visible, onClose, onSelectMethod, supporte
     </Modal>
   );
 }
+
+/** Dedicated sheet so image picker opens after the method modal is gone (avoids RN modal stacking issues). */
+interface ChequeUploadModalProps {
+  record: PaymentRecord | null;
+  visible: boolean;
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
+function ChequeUploadModal({ record, visible, onClose, onSuccess }: ChequeUploadModalProps) {
+  const [uri, setUri] = useState<string | null>(null);
+  const [mimeHint, setMimeHint] = useState<string | undefined>(undefined);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!visible) {
+      setUri(null);
+      setMimeHint(undefined);
+      setSubmitting(false);
+    }
+  }, [visible]);
+
+  if (!record) return null;
+
+  const pickFromLibrary = async () => {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissionResult.granted) {
+      Alert.alert('Permission required', 'Allow photo library access to upload your cheque.');
+      return;
+    }
+    const pickerResult = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      quality: 0.85,
+    });
+    if (!pickerResult.canceled && pickerResult.assets?.[0]) {
+      const a = pickerResult.assets[0];
+      setUri(a.uri);
+      setMimeHint(a.mimeType || undefined);
+    }
+  };
+
+  const takePhoto = async () => {
+    const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permissionResult.granted) {
+      Alert.alert('Permission required', 'Allow camera access to photograph your cheque.');
+      return;
+    }
+    const pickerResult = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      quality: 0.85,
+    });
+    if (!pickerResult.canceled && pickerResult.assets?.[0]) {
+      const a = pickerResult.assets[0];
+      setUri(a.uri);
+      setMimeHint(a.mimeType || undefined);
+    }
+  };
+
+  const submit = async () => {
+    if (!uri) {
+      Alert.alert('Photo required', 'Add a photo of your cheque before submitting.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const formData = new FormData();
+      const uriClean = uri.split('?')[0];
+      const extGuess = uriClean.includes('.') ? uriClean.split('.').pop()!.toLowerCase() : 'jpg';
+      const safeExt = ['jpg', 'jpeg', 'png', 'webp'].includes(extGuess) ? extGuess : 'jpg';
+      const mime =
+        mimeHint ||
+        (safeExt === 'png' ? 'image/png' : safeExt === 'webp' ? 'image/webp' : 'image/jpeg');
+      formData.append('receipt', {
+        uri,
+        name: `cheque.${safeExt}`,
+        type: mime,
+      } as any);
+      formData.append('payment_record_id', record.id);
+      formData.append('payment_method', 'Cheque');
+      await api.post('/maintenance/upload-receipt', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      Alert.alert('Payment submitted', 'Your cheque payment has been submitted for Pramukh approval.');
+      onSuccess();
+      onClose();
+    } catch (e: any) {
+      Alert.alert('Payment error', e?.response?.data?.error || 'Could not submit cheque payment.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={detailStyles.overlay}>
+        <View style={[detailStyles.sheet, { maxHeight: '88%' }]}>
+          <View style={detailStyles.handle} />
+          <Text style={detailStyles.title}>Cheque payment</Text>
+          <Text style={{ fontSize: 13, color: Colors.textMuted, marginBottom: 16 }}>
+            Photograph or upload a clear picture of your cheque. Pramukh will verify it before marking paid.
+          </Text>
+
+          {uri ? (
+            <Image source={{ uri }} style={{ width: '100%', height: 180, borderRadius: 12, marginBottom: 12 }} resizeMode="contain" />
+          ) : (
+            <View style={{
+              height: 140, borderRadius: 12, borderWidth: 2, borderColor: Colors.border,
+              borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', marginBottom: 12,
+              backgroundColor: Colors.bg,
+            }}>
+              <Ionicons name="image-outline" size={40} color={Colors.textMuted} />
+              <Text style={{ fontSize: 13, color: Colors.textMuted, marginTop: 8 }}>No photo yet</Text>
+            </View>
+          )}
+
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
+            <TouchableOpacity style={chequePickStyles.btn} onPress={pickFromLibrary} disabled={submitting}>
+              <Ionicons name="images-outline" size={20} color={Colors.primary} />
+              <Text style={chequePickStyles.btnText}>Gallery</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={chequePickStyles.btn} onPress={takePhoto} disabled={submitting}>
+              <Ionicons name="camera-outline" size={20} color={Colors.primary} />
+              <Text style={chequePickStyles.btnText}>Camera</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            style={[detailStyles.closeBtn, !uri && { opacity: 0.45 }]}
+            onPress={submit}
+            disabled={submitting || !uri}
+          >
+            {submitting ? (
+              <ActivityIndicator color={Colors.white} />
+            ) : (
+              <Text style={detailStyles.closeBtnText}>Submit cheque</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity style={[exportStyles.cancelBtn, { marginTop: 10 }]} onPress={onClose} disabled={submitting}>
+            <Text style={exportStyles.cancelText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const chequePickStyles = StyleSheet.create({
+  btn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: 14, borderRadius: 12, borderWidth: 1.5, borderColor: Colors.primary,
+    backgroundColor: Colors.white,
+  },
+  btnText: { fontSize: 14, fontWeight: '700', color: Colors.primary },
+});
 
 // ─── Bill Creation Form Modal ─────────────────────────────────────────────────
 
@@ -961,6 +1205,8 @@ export default function MaintenanceCategoryScreen() {
   // Payment Method Modal
   const [methodModalVisible, setMethodModalVisible] = useState(false);
   const [methodModalRecord, setMethodModalRecord] = useState<PaymentRecord | null>(null);
+  const [chequeModalVisible, setChequeModalVisible] = useState(false);
+  const [chequeModalRecord, setChequeModalRecord] = useState<PaymentRecord | null>(null);
 
   const cat = (category as BillingCategory) || 'maintenance';
 
@@ -1043,22 +1289,41 @@ export default function MaintenanceCategoryScreen() {
   // ── Payment flow ──
 
   const handlePay = async (record: PaymentRecord) => {
-    // Check if building supports multiple methods
     const methodsStr = record.building_payment_method || 'Online';
-    const supportedMethods = methodsStr.split(',').map(m => m.trim());
-    
-    if (supportedMethods.length > 1 && supportedMethods.some(m => ['Cash', 'Cheque'].includes(m))) {
+    const supportedMethods = methodsStr.split(',').map(m => m.trim()).filter(Boolean);
+
+    if (supportedMethods.length > 1) {
       setMethodModalRecord(record);
       setMethodModalVisible(true);
       return;
     }
-    
-    // Default to online
+
+    if (supportedMethods.length === 1) {
+      const only = supportedMethods[0];
+      if (only === 'Cheque') {
+        setChequeModalRecord(record);
+        setChequeModalVisible(true);
+        return;
+      }
+      if (only === 'Cash') {
+        processPayment('Cash', record);
+        return;
+      }
+      processPayment('Online', record);
+      return;
+    }
+
     processPayment('Online', record);
   };
 
   const handleMethodSelect = (method: 'Online' | 'Cash' | 'Cheque', record: PaymentRecord) => {
     setMethodModalVisible(false);
+    setMethodModalRecord(null);
+    if (method === 'Cheque') {
+      setChequeModalRecord(record);
+      setChequeModalVisible(true);
+      return;
+    }
     processPayment(method, record);
   };
 
@@ -1069,56 +1334,37 @@ export default function MaintenanceCategoryScreen() {
         const res = await api.post('/maintenance/pay/order', { payment_record_id: record.id });
         const { checkout_url } = res.data;
         if (checkout_url) {
-          await WebBrowser.openBrowserAsync(checkout_url);
-          if (isPramukh) fetchPramukhData();
+          /**
+           * Same as subscribe / my-payments: `openAuthSessionAsync` uses SFSafariViewController /
+           * Chrome Custom Tabs and hands `mybuilding://payment?...` back to the app.
+           * `openBrowserAsync` opens external Safari, which often shows “cannot load page” on scheme redirects.
+           */
+          const result = await WebBrowser.openAuthSessionAsync(
+            checkout_url,
+            'mybuilding://payment',
+          );
+
+          if (result.type === 'success' && 'url' in result && result.url) {
+            try {
+              const q = result.url.includes('?') ? result.url.split('?')[1] : '';
+              const st = new URLSearchParams(q).get('status');
+              if (st === 'success') {
+                Alert.alert('Payment successful', 'Your payment was recorded. You can download the receipt when it appears under Paid.');
+              } else if (st === 'failed') {
+                Alert.alert('Payment not completed', 'The payment did not finish in the browser. If your account was debited, check Paid bills or contact your Pramukh.');
+              }
+            } catch { /* ignore parse errors */ }
+          } else {
+            // User dismissed or session ended — refresh in case payment completed server-side
+            await new Promise((r) => setTimeout(r, 600));
+          }
+
+          if (isPramukh) await fetchPramukhData();
           else await fetchUserData();
+          await WebBrowser.coolDownAsync().catch(() => {});
         }
       } catch (e: any) {
         Alert.alert('Payment Error', e?.response?.data?.error || 'Could not initiate payment.');
-      } finally {
-        setPaying(null);
-      }
-    } else if (method === 'Cheque') {
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (permissionResult.granted === false) {
-        Alert.alert("Permission Required", "You need to grant permission to access your photos to upload a photo of the cheque.");
-        return;
-      }
-      
-      const pickerResult = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        quality: 0.8,
-      });
-
-      if (pickerResult.canceled || !pickerResult.assets?.[0]) return;
-
-      setPaying(record.id);
-      try {
-        const formData = new FormData();
-        const asset = pickerResult.assets[0];
-        
-        const uriParts = asset.uri.split('.');
-        const fileType = uriParts[uriParts.length - 1];
-        
-        formData.append('receipt', {
-          uri: asset.uri,
-          name: `cheque.${fileType}`,
-          type: `image/${fileType}`,
-        } as any);
-        
-        formData.append('payment_record_id', record.id);
-        formData.append('payment_method', 'Cheque');
-
-        await api.post('/maintenance/upload-receipt', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
-
-        Alert.alert('Payment Submitted', `Your Cheque payment has been submitted for Pramukh approval.`);
-        if (isPramukh) fetchPramukhData();
-        else await fetchUserData();
-      } catch (e: any) {
-        Alert.alert('Payment Error', e?.response?.data?.error || `Could not submit Cheque payment.`);
       } finally {
         setPaying(null);
       }
@@ -1590,7 +1836,20 @@ export default function MaintenanceCategoryScreen() {
         visible={methodModalVisible}
         onClose={() => setMethodModalVisible(false)}
         onSelectMethod={handleMethodSelect}
-        supportedMethods={methodModalRecord?.building_payment_method?.split(',').map(m => m.trim()) || ['Online']}
+        supportedMethods={methodModalRecord?.building_payment_method?.split(',').map(m => m.trim()).filter(Boolean) || ['Online']}
+      />
+
+      <ChequeUploadModal
+        record={chequeModalRecord}
+        visible={chequeModalVisible}
+        onClose={() => {
+          setChequeModalVisible(false);
+          setChequeModalRecord(null);
+        }}
+        onSuccess={() => {
+          if (isPramukh) fetchPramukhData();
+          else fetchUserData();
+        }}
       />
 
       <BillFormModal

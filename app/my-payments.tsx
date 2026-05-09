@@ -76,12 +76,22 @@ export default function MyPaymentsScreen() {
       // Use openAuthSessionAsync to automatically close the browser when redirected back to mybuilding://
       const result = await WebBrowser.openAuthSessionAsync(checkout_url, 'mybuilding://payment');
 
-      if (result.type === 'success') {
-        // Payment completed or failed, backend handled the status
+      if (result.type === 'success' && 'url' in result && result.url) {
+        try {
+          const q = result.url.includes('?') ? result.url.split('?')[1] : '';
+          const st = new URLSearchParams(q).get('status');
+          if (st === 'success') {
+            Alert.alert('Payment successful', 'Your payment was recorded.');
+          } else if (st === 'failed') {
+            Alert.alert('Payment not completed', 'The payment did not finish. If your account was debited, refresh this screen.');
+          }
+        } catch { /* ignore */ }
         setTimeout(fetch, 1000);
       } else {
+        await new Promise((r) => setTimeout(r, 600));
         fetch();
       }
+      await WebBrowser.coolDownAsync().catch(() => {});
     } catch (e: any) {
       alert(e.response?.data?.error || 'Failed to initiate payment');
     } finally { setPaying(null); }
@@ -89,7 +99,7 @@ export default function MyPaymentsScreen() {
 
   const uploadReceipt = async (recordId: string) => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       base64: true,
       quality: 0.8,
     });
@@ -267,7 +277,7 @@ export default function MyPaymentsScreen() {
                     <Ionicons name="checkmark-circle" size={13} color={Colors.success} />
                     <Text style={styles.paidText}>
                       Paid on {new Date(item.paid_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                      {item.razorpay_payment_id ? ` · ${item.razorpay_payment_id}` : ''}
+                      {(item.gateway_payment_id || item.razorpay_payment_id) ? ` · ${item.gateway_payment_id || item.razorpay_payment_id}` : ''}
                       {item.payment_method === 'advance' ? ' · via advance credit' : ''}
                     </Text>
                   </View>

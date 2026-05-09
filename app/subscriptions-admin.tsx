@@ -163,7 +163,7 @@ export default function SubscriptionsAdminScreen() {
                 ['Promo Used', selected.promo_code_used || '—'],
                 ['Started', new Date(selected.started_at).toLocaleString('en-IN')],
                 ['Expires', selected.expires_at ? new Date(selected.expires_at).toLocaleString('en-IN') : 'Never (Lifetime)'],
-                ['Payment ID', selected.razorpay_payment_id || '—'],
+                ['Gateway ID', selected.gateway_payment_id || selected.razorpay_payment_id || '—'],
               ].map(([k, v]) => (
                 <View key={k as string} style={styles.detailRow}>
                   <Text style={styles.detailKey}>{k as string}</Text>

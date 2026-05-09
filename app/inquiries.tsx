@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  Modal, ScrollView, Alert, ActivityIndicator, RefreshControl, Image, Linking,
+  Modal, ScrollView, Alert, ActivityIndicator, RefreshControl,
+  Image, Linking, TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -14,10 +15,14 @@ export default function InquiriesScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selected, setSelected] = useState<any>(null);
+  const [searchText, setSearchText] = useState('');
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async (search = '') => {
     try {
-      const res = await api.get('/inquiries');
+      const params: Record<string, string> = {};
+      if (search.trim()) params.search = search.trim();
+      const res = await api.get('/inquiries', { params });
       setInquiries(res.data);
     } catch (e: any) {
       Alert.alert('Error', e.response?.data?.error || 'Failed to load');
@@ -25,9 +30,23 @@ export default function InquiriesScreen() {
       setLoading(false);
       setRefreshing(false);
     }
+  }, []);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const handleSearchChange = (text: string) => {
+    setSearchText(text);
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(() => {
+      setLoading(true);
+      fetchData(text);
+    }, 400);
   };
 
-  useEffect(() => { fetchData(); }, []);
+  const formatSubmitter = (name: string | null, email: string | null) => {
+    const parts = [name, email].filter(Boolean);
+    return parts.length ? parts.join(' · ') : 'Unknown';
+  };
 
   const renderItem = ({ item }: { item: any }) => (
     <TouchableOpacity style={styles.card} onPress={() => setSelected(item)}>
@@ -35,14 +54,14 @@ export default function InquiriesScreen() {
       <Text style={styles.cardMeta}>{item.society_type} · {item.city}, {item.state}</Text>
       <View style={styles.cardRow}>
         <Ionicons name="person-outline" size={13} color={Colors.textMuted} />
-        <Text style={styles.cardSub}>{item.user_name} · {item.user_email}</Text>
+        <Text style={styles.cardSub}>{formatSubmitter(item.user_name, item.user_email)}</Text>
       </View>
       <Text style={styles.cardDate}>{new Date(item.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</Text>
     </TouchableOpacity>
   );
 
   const fields = selected ? [
-    ['Submitted By', `${selected.user_name} (${selected.user_email})`],
+    ['Submitted By', formatSubmitter(selected.user_name, selected.user_email)],
     ['Society Type', selected.society_type],
     ['Society Name', selected.society_name],
     ['Total Wings', selected.total_wings],
@@ -72,6 +91,24 @@ export default function InquiriesScreen() {
         <View style={{ width: 36 }} />
       </View>
 
+      <View style={styles.searchBox}>
+        <Ionicons name="search-outline" size={16} color={Colors.textMuted} style={{ marginRight: 8 }} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search by name, city, state, email…"
+          placeholderTextColor={Colors.textMuted}
+          value={searchText}
+          onChangeText={handleSearchChange}
+          returnKeyType="search"
+          clearButtonMode="while-editing"
+        />
+        {searchText.length > 0 && (
+          <TouchableOpacity onPress={() => { setSearchText(''); setLoading(true); fetchData(''); }}>
+            <Ionicons name="close-circle" size={16} color={Colors.textMuted} />
+          </TouchableOpacity>
+        )}
+      </View>
+
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} size="large" color={Colors.primary} />
       ) : (
@@ -80,8 +117,17 @@ export default function InquiriesScreen() {
           keyExtractor={i => i.id}
           renderItem={renderItem}
           contentContainerStyle={{ padding: 16 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} />}
-          ListEmptyComponent={<Text style={styles.empty}>No inquiries yet</Text>}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => { setRefreshing(true); fetchData(searchText); }}
+            />
+          }
+          ListEmptyComponent={
+            <Text style={styles.empty}>
+              {searchText.trim() ? 'No inquiries match your search' : 'No inquiries yet'}
+            </Text>
+          }
         />
       )}
 
@@ -135,6 +181,8 @@ const styles = StyleSheet.create({
   header: { backgroundColor: '#3B5FC0', paddingTop: 52, paddingBottom: 16, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
   headerTitle: { fontSize: 18, fontWeight: '800', color: Colors.white },
+  searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.white, marginHorizontal: 16, marginTop: 12, marginBottom: 4, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
+  searchInput: { flex: 1, fontSize: 14, color: Colors.text, paddingVertical: 0 },
   card: { backgroundColor: Colors.white, borderRadius: 14, padding: 16, marginBottom: 12, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 6, elevation: 2 },
   cardName: { fontSize: 16, fontWeight: '700', color: Colors.text, marginBottom: 4 },
   cardMeta: { fontSize: 13, color: Colors.textMuted, marginBottom: 6 },

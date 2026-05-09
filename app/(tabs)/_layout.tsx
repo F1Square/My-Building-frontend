@@ -10,6 +10,10 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
+        // Hide the bottom tab bar whenever the soft keyboard is visible —
+        // otherwise the bar floats over the inputs on screens like Join
+        // Building / Profile and blocks the focused field.
+        tabBarHideOnKeyboard: true,
         tabBarActiveTintColor: Colors.primary,
         tabBarInactiveTintColor: Colors.textMuted,
         tabBarStyle: {

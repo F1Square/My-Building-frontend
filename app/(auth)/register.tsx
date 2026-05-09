@@ -25,13 +25,14 @@ const PASSWORD_RULES = [
 ];
 
 export default function RegisterScreen() {
-  const [form, setForm] = useState({ name: '', email: '', phone: '', password: '' });
+  const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', referral_code: '' });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const { t } = useLanguage();
 
-  const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const set = (k: string, v: string) =>
+    setForm((f) => ({ ...f, [k]: k === 'referral_code' ? v.toUpperCase().replace(/\s/g, '') : v }));
 
   const passwordStrength = PASSWORD_RULES.filter((r) => r.test(form.password)).length;
   const strengthColor = passwordStrength <= 2 ? Colors.danger : passwordStrength <= 3 ? Colors.warning : Colors.success;
@@ -50,9 +51,19 @@ export default function RegisterScreen() {
     const failedRule = PASSWORD_RULES.find((r) => !r.test(form.password));
     if (failedRule) return Alert.alert('Weak Password', failedRule.label);
 
+    const refCode = form.referral_code.trim();
+    if (refCode && !/^[A-Z0-9]{4,12}$/.test(refCode))
+      return Alert.alert('Invalid Referral Code', 'Referral code must be 4–12 letters or digits.');
+
     setLoading(true);
     try {
-      await api.post('/auth/signup', form);
+      await api.post('/auth/signup', {
+        name: form.name,
+        email: form.email,
+        phone: form.phone,
+        password: form.password,
+        ...(refCode ? { referral_code: refCode } : {}),
+      });
       Alert.alert('Success', 'Account created! You can now log in and join a building.', [
         { text: 'OK', onPress: () => router.back() },
       ]);
@@ -159,6 +170,27 @@ export default function RegisterScreen() {
             </View>
           )}
 
+          <View style={styles.referralLabelRow}>
+            <Text style={styles.label}>Referral Code</Text>
+            <Text style={styles.optionalTag}>Optional</Text>
+          </View>
+          <View style={styles.referralRow}>
+            <Ionicons name="gift-outline" size={18} color={Colors.primary} style={{ marginLeft: 12 }} />
+            <TextInput
+              style={styles.referralInput}
+              placeholder="Enter friend's code"
+              value={form.referral_code}
+              onChangeText={(v) => set('referral_code', v)}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              maxLength={12}
+              placeholderTextColor={Colors.textMuted}
+            />
+          </View>
+          <Text style={styles.referralHint}>
+            Got a code from a friend? Enter it here so they earn rewards.
+          </Text>
+
           <TouchableOpacity style={styles.btn} onPress={handleRegister} disabled={loading}>
             {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Create Account</Text>}
           </TouchableOpacity>
@@ -197,4 +229,9 @@ const styles = StyleSheet.create({
   btn: { backgroundColor: Colors.primary, borderRadius: 12, padding: 15, alignItems: 'center', marginTop: 4 },
   btnText: { color: Colors.white, fontSize: 16, fontWeight: '700' },
   note: { marginTop: 16, fontSize: 12, color: Colors.textMuted, textAlign: 'center', lineHeight: 18 },
+  referralLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  optionalTag: { fontSize: 11, fontWeight: '600', color: Colors.textMuted, backgroundColor: Colors.bg, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  referralRow: { flexDirection: 'row', alignItems: 'center', borderWidth: 1.5, borderColor: Colors.border, borderRadius: 10, backgroundColor: Colors.bg, marginBottom: 6 },
+  referralInput: { flex: 1, padding: 12, fontSize: 15, color: Colors.text, letterSpacing: 2 },
+  referralHint: { fontSize: 11, color: Colors.textMuted, marginBottom: 14, lineHeight: 16 },
 });

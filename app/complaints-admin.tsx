@@ -86,7 +86,7 @@ export default function AdminComplaintsScreen() {
     formSetter: (fn: (f: any) => any) => void
   ) => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images, base64: true, quality: 0.6,
+      mediaTypes: ['images'], base64: true, quality: 0.6,
     });
     if (!result.canceled && result.assets[0]) {
       setter(result.assets[0].uri);

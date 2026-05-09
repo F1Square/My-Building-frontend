@@ -75,9 +75,9 @@ export default function ChooseLanguageScreen() {
       </View>
 
       <View style={styles.footer}>
-        <TouchableOpacity 
-          style={[styles.continueBtn, isLoading && styles.continueBtnDisabled]} 
-          onPress={handleContinue} 
+        <TouchableOpacity
+          style={[styles.continueBtn, isLoading && styles.continueBtnDisabled]}
+          onPress={handleContinue}
           activeOpacity={0.9}
           disabled={isLoading}
         >
@@ -116,14 +116,14 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
     justifyContent: 'center', alignItems: 'center',
   },
-  footer: { 
-    paddingHorizontal: 24, 
+  footer: {
+    paddingHorizontal: 24,
     paddingBottom: 32,
     paddingTop: 16,
   },
   continueBtn: {
     backgroundColor: '#7B1F4E',
-    borderRadius: 14, 
+    borderRadius: 14,
     paddingVertical: 18,
     alignItems: 'center',
     minHeight: 56,

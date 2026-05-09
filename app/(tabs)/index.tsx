@@ -3,6 +3,7 @@ import { Colors } from '../../constants/colors';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   RefreshControl, Alert, Modal, TextInput, Dimensions, Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from 'expo-router';
@@ -47,9 +48,11 @@ const MODULE_PALETTE: Record<string, { bg: string; icon: string }> = {
   expenses: { bg: '#EDE9FE', icon: '#7C3AED' },
   joinRequests: { bg: '#DCFCE7', icon: '#16A34A' },
   bankDetails: { bg: '#EDE9FE', icon: '#7C3AED' },
-  adminPanel: { bg: '#E8EEF9', icon: '#3B5FC0' },
+  buildings: { bg: '#E8EEF9', icon: '#3B5FC0' },
   users: { bg: '#E0F7F4', icon: '#0D9488' },
   inquiries: { bg: '#E0F2FE', icon: '#0EA5E9' },
+  webInquiries: { bg: '#FFF3E0', icon: '#F59E0B' },
+  grantSub: { bg: '#FCE7F3', icon: '#EC4899' },
   subscriptions: { bg: '#FEF9C3', icon: '#CA8A04' },
   promoCodes: { bg: '#FDE8E8', icon: '#EF4444' },
   activityLogs: { bg: '#F1F5F9', icon: '#475569' },
@@ -65,8 +68,9 @@ const MODULE_ICONS: Record<string, string> = {
   groupChat: 'chatbubble-ellipses-outline', helpline: 'call-outline',
   subscription: 'card-outline', announcements: 'megaphone-outline',
   expenses: 'wallet-outline', joinRequests: 'person-add-outline',
-  bankDetails: 'business-outline', adminPanel: 'shield-checkmark-outline',
+  bankDetails: 'business-outline', buildings: 'business',
   users: 'people-circle-outline', inquiries: 'mail-open-outline',
+  webInquiries: 'globe-outline', grantSub: 'gift-outline',
   subscriptions: 'card-outline', promoCodes: 'pricetag-outline',
   activityLogs: 'list-circle-outline',
   referAndEarn: 'gift-outline',
@@ -90,6 +94,7 @@ export default function HomeScreen() {
   const [badgeCounts, setBadgeCounts] = useState<Record<string, number>>({});
   const [totalUnread, setTotalUnread] = useState(0);
   const [notifications, setNotifications] = useState<any[]>([]);
+  const [notifLoading, setNotifLoading] = useState(false);
   const [showUrgentModal, setShowUrgentModal] = useState(false);
   const [search, setSearch] = useState('');
   const [buildingLogo, setBuildingLogo] = useState<string | null>(null);
@@ -144,9 +149,11 @@ export default function HomeScreen() {
     { titleKey: 'helpline', route: '/helpline', hideForAdmin: true },
     { titleKey: 'subscription', route: '/subscribe', hideForAdmin: true },
     { titleKey: 'bankDetails', route: '/bank-details', adminOnly: true },
-    { titleKey: 'adminPanel', route: '/admin', adminOnly: true },
+    { titleKey: 'buildings', route: '/buildings', adminOnly: true },
     { titleKey: 'users', route: '/users', adminOnly: true },
     { titleKey: 'inquiries', route: '/inquiries', adminOnly: true },
+    { titleKey: 'webInquiries', route: '/website-contacts', adminOnly: true },
+    { titleKey: 'grantSub', route: '/grant-sub', adminOnly: true },
     { titleKey: 'complaints', route: '/complaints-admin', adminOnly: true },
     { titleKey: 'helpline', route: '/helpline', adminOnly: true },
     { titleKey: 'subscriptions', route: '/subscriptions-admin', adminOnly: true },
@@ -192,29 +199,71 @@ export default function HomeScreen() {
   };
 
   const openUrgentInbox = async () => {
-    api.patch('/notifications/read-all').catch(() => { });
-    api.delete('/notifications/dismiss-types', { data: { types: ['announcement_urgent'] } }).catch(() => { });
-    setTotalUnread(0);
-    try {
-      const res = await api.get('/notifications');
-      setNotifications(res.data as any[]);
-    } catch { setNotifications([]); }
+    // Show the sheet immediately; load in parallel. Do NOT call read-all before
+    // GET — the API default is unread-only, so marking read first yielded an
+    // empty list every time.
     setShowUrgentModal(true);
+    setNotifLoading(true);
+    setNotifications([]);
+    try {
+      const res = await api.get('/notifications', { params: { recent: '1' } });
+      const rows = Array.isArray(res.data) ? res.data : [];
+      setNotifications(rows);
+    } catch {
+      setNotifications([]);
+    } finally {
+      setNotifLoading(false);
+    }
   };
 
-  const dismissUrgentInbox = () => { setShowUrgentModal(false); setNotifications([]); };
+  const dismissUrgentInbox = async () => {
+    setShowUrgentModal(false);
+    setNotifications([]);
+    setNotifLoading(false);
+    try {
+      await Promise.all([
+        api.patch('/notifications/read-all'),
+        api.delete('/notifications/dismiss-types', { data: { types: ['announcement_urgent'] } }),
+      ]);
+    } catch {
+      /* still refresh badges below */
+    }
+    await fetchBadges();
+  };
 
   const fetchBadges = useCallback(async () => {
     if (!user?.building_id && user?.role !== 'admin') return;
     try {
       const res = await api.get('/notifications/unread-counts');
+      const payload = res.data as {
+        counts?: Record<string, number>;
+        bell_unread?: number;
+      } & Record<string, number>;
+
+      const byType: Record<string, number> =
+        payload.counts && typeof payload.bell_unread === 'number'
+          ? payload.counts
+          : Object.fromEntries(
+              Object.entries(payload).filter(
+                ([k, v]) => typeof v === 'number' && k !== 'bell_unread' && k !== 'counts',
+              ),
+            ) as Record<string, number>;
+
       const routeCounts: Record<string, number> = {};
-      for (const [type, count] of Object.entries(res.data as Record<string, number>)) {
+      for (const [type, count] of Object.entries(byType)) {
+        if (typeof count !== 'number') continue;
         const route = TYPE_TO_ROUTE[type];
         if (route) routeCounts[route] = (routeCounts[route] || 0) + count;
       }
-      const total = Object.values(routeCounts).reduce((sum, n) => sum + n, 0);
-      setTotalUnread(total);
+
+      let bell = 0;
+      if (typeof payload.bell_unread === 'number') {
+        bell = payload.bell_unread;
+      } else {
+        bell = Object.values(byType).reduce((sum, n) => (typeof n === 'number' ? sum + n : sum), 0);
+      }
+
+      setTotalUnread(bell);
       setBadgeCounts(routeCounts);
     } catch { }
   }, [user]);
@@ -370,12 +419,17 @@ export default function HomeScreen() {
           <TouchableOpacity activeOpacity={1} style={styles.modalSheet}>
             <View style={styles.modalHandle} />
             <View style={styles.modalTitleRow}>
-              <Text style={styles.modalTitle}>� {t('notifications')}</Text>
+              <Text style={styles.modalTitle}>{t('notifications')}</Text>
               <TouchableOpacity onPress={dismissUrgentInbox}>
                 <Ionicons name="close-circle" size={26} color={Colors.border} />
               </TouchableOpacity>
             </View>
-            {notifications.length === 0 ? (
+            {notifLoading ? (
+              <View style={styles.modalEmpty}>
+                <ActivityIndicator size="large" color={Colors.primary} />
+                <Text style={styles.modalEmptyText}>Loading…</Text>
+              </View>
+            ) : notifications.length === 0 ? (
               <View style={styles.modalEmpty}>
                 <Ionicons name="checkmark-circle-outline" size={44} color={Colors.success} />
                 <Text style={styles.modalEmptyText}>{t('noNotifications')}</Text>

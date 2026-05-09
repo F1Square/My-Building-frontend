@@ -1,16 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert,
   ActivityIndicator, ScrollView, Linking, TextInput, Switch,
 } from 'react-native';
-import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
-import { API_BASE } from '../constants/api';
+import { addBreadcrumb, clearBreadcrumbs } from '../utils/crashBreadcrumbs';
+import * as WebBrowser from 'expo-web-browser';
 
 // Plan rank — higher = better. User can only subscribe to a plan strictly higher than current.
 const PLAN_RANK: Record<string, number> = { monthly: 1, yearly: 2, lifetime: 3 };
@@ -60,65 +60,145 @@ export default function SubscribeScreen() {
   const [promoLoading, setPromoLoading] = useState(false);
   const [includeNewspaper, setIncludeNewspaper] = useState(false);
   const [newspaperAddonLoading, setNewspaperAddonLoading] = useState(false);
+  const processGuardRef = useRef(0);
 
-  // Handle deep link return from Razorpay
+  const pollSubscriptionAfterPayment = useCallback(async () => {
+    for (let i = 0; i < 6; i++) {
+      await refreshSubscription();
+      await new Promise((r) => setTimeout(r, 650));
+    }
+  }, [refreshSubscription]);
+
+  const processSubscriptionUrl = useCallback(
+    async (url: string) => {
+      if (!url.startsWith('mybuilding://subscription')) return;
+      const now = Date.now();
+      if (now - processGuardRef.current < 2500) return;
+      processGuardRef.current = now;
+
+      await addBreadcrumb('subscription', 'deep_link_received', { url });
+      const queryPart = url.includes('?') ? url.split('?')[1] : '';
+      const params = new URLSearchParams(queryPart);
+      const status = params.get('status');
+      await refreshSubscription();
+      if (status === 'success') {
+        await addBreadcrumb('subscription', 'deep_link_success_refresh_done');
+        setTab('my-plan');
+        Alert.alert(
+          'Purchase successful',
+          'Your subscription is active. All modules are now unlocked.',
+        );
+      } else if (status === 'failed') {
+        Alert.alert(
+          'Payment not completed',
+          'The payment did not finish. You can try again from Explore Plans.',
+        );
+      }
+    },
+    [refreshSubscription],
+  );
+
+  // Handle deep link return from payment gateway (cold start / background)
   useEffect(() => {
     const handleUrl = async (event: { url: string }) => {
-      if (!event.url.startsWith('mybuilding://subscription')) return;
-      const params = new URLSearchParams(event.url.split('?')[1]);
-      if (params.get('status') === 'success') {
-        await refreshSubscription();
-        setTab('my-plan');
-      }
+      await processSubscriptionUrl(event.url);
     };
+
+    Linking.getInitialURL()
+      .then((initialUrl) => {
+        if (initialUrl) return processSubscriptionUrl(initialUrl);
+      })
+      .catch(() => null);
+
     const sub = Linking.addEventListener('url', handleUrl);
     return () => sub.remove();
-  }, []);
+  }, [processSubscriptionUrl]);
+
+  // Refresh when returning to this screen (e.g. user left in-app browser manually)
+  useFocusEffect(
+    useCallback(() => {
+      void refreshSubscription();
+    }, [refreshSubscription]),
+  );
+
+  /**
+   * Opens Easebuzz in an in-app auth session (SFAuthenticationSession / Chrome Custom Tabs).
+   * `Linking.openURL` sends iOS Safari to the gateway; Safari cannot hand `mybuilding://`
+   * back to the app, which caused “Safari cannot open this page” and a stale subscription UI.
+   */
+  const openCheckoutSafely = async (checkoutUrl?: string) => {
+    if (!checkoutUrl || typeof checkoutUrl !== 'string') {
+      await addBreadcrumb('subscription', 'checkout_url_invalid', { checkoutUrl });
+      throw new Error('Payment link is unavailable. Please try again.');
+    }
+    await addBreadcrumb('subscription', 'checkout_open_start');
+    try {
+      const result = await WebBrowser.openAuthSessionAsync(
+        checkoutUrl,
+        'mybuilding://subscription',
+      );
+      await addBreadcrumb('subscription', 'auth_session_result', { type: result.type });
+
+      if (result.type === 'success' && 'url' in result && result.url) {
+        await processSubscriptionUrl(result.url);
+        return { type: 'completed' as const };
+      }
+
+      // User cancelled or redirect was not captured — payment may still have succeeded server-side
+      await pollSubscriptionAfterPayment();
+      return { type: 'dismissed' as const };
+    } finally {
+      await WebBrowser.coolDownAsync().catch(() => {});
+    }
+  };
 
   const subscribe = async (plan: string) => {
     setLoading(plan);
     try {
+      await clearBreadcrumbs();
+      await addBreadcrumb('subscription', 'subscribe_plan_start', { plan });
       const orderRes = await api.post('/subscriptions/order', {
         plan,
         promo_id: promoResult?.promo_id || undefined,
         include_newspaper: plan === 'lifetime' ? false : includeNewspaper,
       });
-      const { checkout_url } = orderRes.data;
+      await addBreadcrumb('subscription', 'subscribe_order_success', { hasCheckoutUrl: !!orderRes?.data?.checkout_url });
+      const checkoutUrl = orderRes?.data?.checkout_url;
+      const result = await openCheckoutSafely(checkoutUrl);
 
-      const result = await WebBrowser.openAuthSessionAsync(checkout_url, 'mybuilding://subscription');
-
-      if (result.type === 'success') {
-        setTimeout(async () => {
-          await refreshSubscription();
-          setTab('my-plan');
-        }, 1000);
+      if (result.type === 'completed') {
+        await addBreadcrumb('subscription', 'checkout_completed_via_redirect');
       } else {
-        await refreshSubscription();
+        await addBreadcrumb('subscription', 'checkout_session_dismissed_poll_done');
       }
       setPromoCode('');
       setPromoResult(null);
+      await addBreadcrumb('subscription', 'subscribe_plan_flow_done', { plan, resultType: result?.type });
     } catch (e: any) {
+      await addBreadcrumb('subscription', 'subscribe_plan_error', { message: e?.message, data: e?.response?.data });
       Alert.alert('Error', e.response?.data?.error || 'Failed to initiate payment');
     } finally {
       setLoading(null);
     }
   };
 
-  // Enable newspaper add-on for existing subscriber (₹3 Razorpay payment)
+  // Enable newspaper add-on for existing subscriber (gateway payment)
   const enableNewspaperAddon = async (plan?: string) => {
     setNewspaperAddonLoading(true);
     try {
+      await clearBreadcrumbs();
+      await addBreadcrumb('subscription', 'newspaper_addon_start', { plan });
       const orderRes = await api.post('/subscriptions/newspaper-addon/order', { plan });
-      const { checkout_url } = orderRes.data;
+      await addBreadcrumb('subscription', 'newspaper_addon_order_success', { hasCheckoutUrl: !!orderRes?.data?.checkout_url });
+      const checkoutUrl = orderRes?.data?.checkout_url;
+      const result = await openCheckoutSafely(checkoutUrl);
 
-      const result = await WebBrowser.openAuthSessionAsync(checkout_url, 'mybuilding://subscription');
-
-      if (result.type === 'success') {
-        setTimeout(refreshSubscription, 1000);
-      } else {
-        await refreshSubscription();
+      if (result.type === 'completed') {
+        await addBreadcrumb('subscription', 'newspaper_addon_completed_via_redirect');
       }
+      await addBreadcrumb('subscription', 'newspaper_addon_flow_done', { resultType: result?.type });
     } catch (e: any) {
+      await addBreadcrumb('subscription', 'newspaper_addon_error', { message: e?.message, data: e?.response?.data });
       Alert.alert('Error', e.response?.data?.error || 'Failed to initiate payment');
     } finally {
       setNewspaperAddonLoading(false);

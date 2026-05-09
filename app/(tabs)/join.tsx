@@ -14,22 +14,19 @@ export default function JoinBuildingScreen() {
   const { user, refreshUser } = useAuth();
   const router = useRouter();
   const { t } = useLanguage();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [selectedBuilding, setSelectedBuilding] = useState<any>(null);
-
+  const [codeInput, setCodeInput] = useState('');
+  const [verifying, setVerifying] = useState(false);
+  const [verifiedBuilding, setVerifiedBuilding] = useState<any>(null);
+  const [codeError, setCodeError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Poll for approval every 5 seconds after request is sent
+  // Poll for Pramukh approval every 5 seconds after request is sent
   useEffect(() => {
     if (submitted) {
-      pollRef.current = setInterval(async () => {
-        await refreshUser();
-      }, 5000);
+      pollRef.current = setInterval(async () => { await refreshUser(); }, 5000);
     }
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [submitted]);
@@ -42,32 +39,33 @@ export default function JoinBuildingScreen() {
     }
   }, [user?.building_id]);
 
+  // Auto-verify building code after user stops typing (≥4 chars)
   useEffect(() => {
-    if (searchQuery.trim().length >= 2 && !selectedBuilding) {
-      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-      setSearching(true);
-      searchTimeoutRef.current = setTimeout(async () => {
-        try {
-          const res = await api.get(`/buildings/search?query=${encodeURIComponent(searchQuery)}`);
-          setSearchResults(res.data);
-        } catch (e) {
-          console.error(e);
-        } finally {
-          setSearching(false);
-        }
-      }, 500);
-    } else {
-      setSearchResults([]);
-      setSearching(false);
-    }
-  }, [searchQuery, selectedBuilding]);
+    const trimmed = codeInput.trim();
+    setVerifiedBuilding(null);
+    setCodeError('');
+    if (trimmed.length < 4) return;
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      setVerifying(true);
+      try {
+        const res = await api.get(`/buildings/verify-code?code=${encodeURIComponent(trimmed)}`);
+        setVerifiedBuilding(res.data);
+      } catch (e: any) {
+        // Use the backend's specific error message so the user knows exactly what went wrong
+        setCodeError(e.response?.data?.error || 'Could not verify code. Please try again.');
+      } finally {
+        setVerifying(false);
+      }
+    }, 500);
+  }, [codeInput]);
 
   const handleJoin = async () => {
-    if (!selectedBuilding) return Alert.alert('Error', 'Please select a building to join');
-
+    if (!verifiedBuilding) return;
     setSubmitting(true);
     try {
-      await api.post('/buildings/join', { building_id: selectedBuilding.id });
+      await api.post('/buildings/join', { building_code: verifiedBuilding.building_code });
       setSubmitted(true);
     } catch (e: any) {
       Alert.alert('Error', e.response?.data?.error || 'Failed to send request');
@@ -91,7 +89,7 @@ export default function JoinBuildingScreen() {
           </View>
           <Text style={styles.successTitle}>Request Sent!</Text>
           <Text style={styles.successSubtitle}>
-            Your request has been sent to the Pramukh of {selectedBuilding?.name}. You'll be notified once they approve you.
+            Your request has been sent to the Pramukh of {verifiedBuilding?.name}. You'll be notified once they approve you.
           </Text>
           <View style={styles.waitingCard}>
             <Ionicons name="time-outline" size={20} color={Colors.warning} />
@@ -116,66 +114,59 @@ export default function JoinBuildingScreen() {
 
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.infoCard}>
-          <Ionicons name="search-outline" size={22} color={Colors.primary} />
+          <Ionicons name="key-outline" size={22} color={Colors.primary} />
           <Text style={styles.infoText}>
-            Search for your society by name. Once you find it, select it to send a join request to the Pramukh.
+            Enter the Building Code shared by your Pramukh. It is a short code (4–12 characters) that uniquely identifies your society.
           </Text>
         </View>
 
-        <Text style={styles.label}>Society Name</Text>
-        <TextInput
-          style={styles.input}
-          value={searchQuery}
-          onChangeText={(v) => { setSearchQuery(v); setSelectedBuilding(null); }}
-          placeholder="e.g., Maheta Nagar"
-          placeholderTextColor={Colors.textMuted}
-          autoCapitalize="words"
-        />
+        <Text style={styles.label}>Building Code</Text>
+        <View style={styles.codeRow}>
+          <TextInput
+            style={[styles.input, styles.codeInput]}
+            value={codeInput}
+            onChangeText={(v) => setCodeInput(v.toUpperCase())}
+            placeholder="e.g., ABC123"
+            placeholderTextColor={Colors.textMuted}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            maxLength={12}
+          />
+          {verifying && (
+            <ActivityIndicator style={styles.codeSpinner} color={Colors.primary} />
+          )}
+          {!verifying && verifiedBuilding && (
+            <Ionicons name="checkmark-circle" size={24} color={Colors.success} style={styles.codeSpinner} />
+          )}
+          {!verifying && codeError !== '' && (
+            <Ionicons name="close-circle" size={24} color={Colors.danger} style={styles.codeSpinner} />
+          )}
+        </View>
 
-        {searching && <ActivityIndicator style={{ marginTop: 16 }} color={Colors.primary} />}
-
-        {!searching && searchQuery.length >= 2 && searchResults.length === 0 && !selectedBuilding && (
-          <Text style={styles.noResultsText}>No societies found matching "{searchQuery}"</Text>
+        {codeError !== '' && (
+          <Text style={styles.codeErrorText}>{codeError}</Text>
         )}
 
-        {!selectedBuilding && searchResults.length > 0 && (
-          <View style={styles.resultsContainer}>
-            {searchResults.map((b) => (
-              <TouchableOpacity
-                key={b.id}
-                style={styles.resultItem}
-                onPress={() => {
-                  setSelectedBuilding(b);
-                  setSearchQuery(b.name);
-                  setSearchResults([]);
-                  Keyboard.dismiss();
-                }}
-              >
-                <Ionicons name="business-outline" size={20} color={Colors.primary} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.resultName}>{b.name}</Text>
-                  {b.address && <Text style={styles.resultAddress}>{b.address}</Text>}
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
-        {selectedBuilding && (
+        {verifiedBuilding && (
           <View style={styles.previewBox}>
-            <Text style={styles.previewLabel}>Selected Society:</Text>
-            <Text style={styles.previewId}>{selectedBuilding.name}</Text>
-            {selectedBuilding.address && <Text style={styles.previewAddress}>{selectedBuilding.address}</Text>}
-            <TouchableOpacity style={styles.clearBtn} onPress={() => { setSelectedBuilding(null); setSearchQuery(''); }}>
-              <Text style={styles.clearBtnText}>Change</Text>
-            </TouchableOpacity>
+            <View style={styles.previewHeader}>
+              <Ionicons name="business-outline" size={20} color={Colors.primary} />
+              <Text style={styles.previewLabel}>Building Found</Text>
+            </View>
+            <Text style={styles.previewName}>{verifiedBuilding.name}</Text>
+            {verifiedBuilding.address ? (
+              <Text style={styles.previewAddress}>{verifiedBuilding.address}</Text>
+            ) : null}
+            <View style={styles.previewCodeBadge}>
+              <Text style={styles.previewCodeText}>Code: {verifiedBuilding.building_code}</Text>
+            </View>
           </View>
         )}
 
         <TouchableOpacity
-          style={[styles.submitBtn, !selectedBuilding && { opacity: 0.5 }]}
+          style={[styles.submitBtn, !verifiedBuilding && { opacity: 0.45 }]}
           onPress={handleJoin}
-          disabled={submitting || !selectedBuilding}
+          disabled={submitting || !verifiedBuilding}
         >
           {submitting
             ? <ActivityIndicator color={Colors.white} />
@@ -213,29 +204,32 @@ const styles = StyleSheet.create({
   label: { fontSize: 13, fontWeight: '700', color: Colors.text, marginBottom: 8 },
   input: {
     borderWidth: 1.5, borderColor: Colors.border, borderRadius: 12,
-    padding: 14, fontSize: 14, color: Colors.text, backgroundColor: Colors.white,
+    padding: 14, fontSize: 15, color: Colors.text, backgroundColor: Colors.white,
   },
-  resultsContainer: { backgroundColor: Colors.white, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, marginTop: 8, maxHeight: 250 },
-  resultItem: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  resultName: { fontSize: 15, fontWeight: '700', color: Colors.text },
-  resultAddress: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
-  noResultsText: { textAlign: 'center', color: Colors.textMuted, marginTop: 16, fontSize: 13 },
+  codeRow: { flexDirection: 'row', alignItems: 'center' },
+  codeInput: { flex: 1, letterSpacing: 2, fontWeight: '700' },
+  codeSpinner: { marginLeft: 10 },
+  codeErrorText: { fontSize: 12, color: Colors.danger, marginTop: 6 },
   previewBox: {
-    backgroundColor: Colors.white, borderRadius: 12, padding: 16,
-    marginTop: 16, borderWidth: 1.5, borderColor: Colors.primary,
+    backgroundColor: Colors.white, borderRadius: 14, padding: 16,
+    marginTop: 16, borderWidth: 1.5, borderColor: Colors.success,
   },
-  previewLabel: { fontSize: 12, color: Colors.textMuted, marginBottom: 4 },
-  previewId: { fontSize: 16, color: Colors.text, fontWeight: '800' },
-  previewAddress: { fontSize: 13, color: Colors.textMuted, marginTop: 4 },
-  clearBtn: { alignSelf: 'flex-start', marginTop: 12, paddingHorizontal: 12, paddingVertical: 6, backgroundColor: Colors.bg, borderRadius: 6 },
-  clearBtnText: { color: Colors.primary, fontSize: 12, fontWeight: '700' },
+  previewHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  previewLabel: { fontSize: 12, color: Colors.primary, fontWeight: '700' },
+  previewName: { fontSize: 17, color: Colors.text, fontWeight: '800', marginBottom: 4 },
+  previewAddress: { fontSize: 13, color: Colors.textMuted, lineHeight: 18 },
+  previewCodeBadge: {
+    alignSelf: 'flex-start', marginTop: 10,
+    backgroundColor: Colors.primary + '15', borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 4,
+  },
+  previewCodeText: { fontSize: 12, color: Colors.primary, fontWeight: '700' },
   submitBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     backgroundColor: Colors.primary, borderRadius: 14, padding: 16, marginTop: 24,
   },
   submitBtnText: { color: Colors.white, fontSize: 16, fontWeight: '700' },
   note: { fontSize: 13, color: Colors.textMuted, textAlign: 'center', marginTop: 16, lineHeight: 20 },
-  // Success state
   successContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
   successIcon: { marginBottom: 16 },
   successTitle: { fontSize: 24, fontWeight: '800', color: Colors.text, marginBottom: 10 },

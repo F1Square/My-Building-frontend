@@ -1,24 +1,35 @@
 import { useEffect, useState } from 'react';
-import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
+import { Platform } from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
+import { computeIsOnline } from '../utils/networkState';
 
 export function useNetworkStatus() {
-  const [isConnected, setIsConnected] = useState<boolean>(true);
-  const [isChecking, setIsChecking] = useState<boolean>(true);
+  const [isOnline, setIsOnline] = useState(() => Platform.OS === 'web');
+  const [isChecking, setIsChecking] = useState(() => Platform.OS !== 'web');
 
   useEffect(() => {
-    // Get initial state
-    NetInfo.fetch().then((state: NetInfoState) => {
-      setIsConnected(state.isConnected ?? true);
+    if (Platform.OS === 'web') {
+      setIsOnline(true);
+      setIsChecking(false);
+      return;
+    }
+
+    let mounted = true;
+    NetInfo.fetch().then((state) => {
+      if (!mounted) return;
+      setIsOnline(computeIsOnline(state));
       setIsChecking(false);
     });
 
-    // Subscribe to changes
-    const unsubscribe = NetInfo.addEventListener((state: NetInfoState) => {
-      setIsConnected(state.isConnected ?? true);
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      setIsOnline(computeIsOnline(state));
     });
 
-    return unsubscribe;
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
   }, []);
 
-  return { isConnected, isChecking };
+  return { isOnline, isChecking };
 }

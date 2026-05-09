@@ -119,14 +119,16 @@ export default function ActivityLogsScreen() {
   const [selected, setSelected] = useState<any>(null);
   const [selectedDate, setSelectedDate] = useState('');
   const [showCal, setShowCal] = useState(false);
+  const [levelFilter, setLevelFilter] = useState<'all' | 'error' | 'info'>('all');
   const LIMIT = 100;
 
-  useFocusEffect(useCallback(() => { load(0); }, [selectedDate]));
+  useFocusEffect(useCallback(() => { load(0); }, [selectedDate, levelFilter]));
 
   const load = async (off: number) => {
     try {
       let url = `/activity-logs?limit=${LIMIT}&offset=${off}`;
       if (selectedDate) url += `&date=${selectedDate}`;
+      if (levelFilter !== 'all') url += `&level=${levelFilter}`;
       const res = await api.get(url);
       const incoming = res.data.logs ?? [];
       setLogs(off === 0 ? incoming : prev => [...prev, ...incoming]);
@@ -135,6 +137,10 @@ export default function ActivityLogsScreen() {
     } catch {}
     finally { setLoading(false); setRefreshing(false); }
   };
+
+  // A log is treated as an error if the backend marked it that way in detail.
+  const isErrorLog = (item: any) =>
+    item?.detail?.level === 'error' || (item?.detail?.status_code >= 500);
 
   const pickDate = (d: string) => {
     setSelectedDate(d);
@@ -162,14 +168,22 @@ export default function ActivityLogsScreen() {
     : '';
 
   const renderItem = ({ item }: { item: any }) => {
+    const isError = isErrorLog(item);
     const modColor = MODULE_COLORS[item.module] ?? Colors.primary;
+    const stripColor = isError ? Colors.danger : modColor;
     const roleColor = ROLE_COLORS[item.user_role] ?? Colors.textMuted;
+    const statusCode = item?.detail?.status_code;
     return (
-      <TouchableOpacity style={styles.card} onPress={() => setSelected(item)} activeOpacity={0.82}>
-        <View style={[styles.strip, { backgroundColor: modColor }]} />
+      <TouchableOpacity style={[styles.card, isError && styles.cardError]} onPress={() => setSelected(item)} activeOpacity={0.82}>
+        <View style={[styles.strip, { backgroundColor: stripColor }]} />
         <View style={styles.cardInner}>
           <View style={styles.cardTop}>
-            <Text style={styles.cardAction} numberOfLines={1}>{formatAction(item.action)}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, marginRight: 8 }}>
+              {isError && <Ionicons name="warning" size={14} color={Colors.danger} />}
+              <Text style={[styles.cardAction, isError && { color: Colors.danger }]} numberOfLines={1}>
+                {formatAction(item.action)}
+              </Text>
+            </View>
             <Text style={styles.cardTime}>{formatShort(item.created_at)}</Text>
           </View>
           <View style={styles.cardBottom}>
@@ -178,10 +192,19 @@ export default function ActivityLogsScreen() {
             </View>
             <Text style={styles.cardUser} numberOfLines={1}>{item.user_name ?? '—'}</Text>
             <View style={{ flex: 1 }} />
-            <View style={[styles.modPill, { backgroundColor: modColor + '18' }]}>
-              <Text style={[styles.modPillText, { color: modColor }]}>{item.module}</Text>
-            </View>
+            {isError ? (
+              <View style={styles.errPill}>
+                <Text style={styles.errPillText}>ERROR{statusCode ? ` · ${statusCode}` : ''}</Text>
+              </View>
+            ) : (
+              <View style={[styles.modPill, { backgroundColor: modColor + '18' }]}>
+                <Text style={[styles.modPillText, { color: modColor }]}>{item.module}</Text>
+              </View>
+            )}
           </View>
+          {isError && item?.detail?.error_message ? (
+            <Text style={styles.cardErrMsg} numberOfLines={2}>{String(item.detail.error_message)}</Text>
+          ) : null}
         </View>
         <Ionicons name="chevron-forward" size={14} color={Colors.border} style={{ alignSelf: 'center', marginRight: 12 }} />
       </TouchableOpacity>
@@ -190,24 +213,36 @@ export default function ActivityLogsScreen() {
 
   const DetailModal = () => {
     if (!selected) return null;
+    const isError = isErrorLog(selected);
     const modColor = MODULE_COLORS[selected.module] ?? Colors.primary;
+    const headerColor = isError ? Colors.danger : modColor;
     const roleColor = ROLE_COLORS[selected.user_role] ?? Colors.textMuted;
+
+    // Pull error fields up top, then list the rest as generic key/values.
+    const detailObj = (selected.detail && typeof selected.detail === 'object') ? selected.detail : {};
+    const errorMessage = isError ? detailObj.error_message : null;
+    const errorPath = detailObj.path;
+    const errorMethod = detailObj.method;
+    const errorStatus = detailObj.status_code;
+    const errorKind = detailObj.kind; // 'network' | 'server' (client-reported only)
+    const HIDE_KEYS = new Set(['level', 'error_message', 'path', 'method', 'status_code', 'kind', 'source']);
+
     const detailRows: { label: string; value: string }[] = [];
-    if (selected.detail && typeof selected.detail === 'object') {
-      for (const [k, v] of Object.entries(selected.detail)) {
-        if (v === null || v === undefined || v === '') continue;
-        detailRows.push({
-          label: k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-          value: typeof v === 'object' ? JSON.stringify(v, null, 2) : String(v),
-        });
-      }
+    for (const [k, v] of Object.entries(detailObj)) {
+      if (v === null || v === undefined || v === '') continue;
+      if (HIDE_KEYS.has(k)) continue;
+      detailRows.push({
+        label: k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+        value: typeof v === 'object' ? JSON.stringify(v, null, 2) : String(v),
+      });
     }
     return (
       <Modal visible animationType="slide" transparent>
         <View style={styles.overlay}>
           <View style={styles.sheet}>
             <View style={styles.sheetHandle} />
-            <View style={[styles.sheetHeaderStrip, { backgroundColor: modColor }]}>
+            <View style={[styles.sheetHeaderStrip, { backgroundColor: headerColor }]}>
+              {isError && <Ionicons name="warning" size={18} color={Colors.white} style={{ marginRight: 6 }} />}
               <Text style={styles.sheetAction}>{formatAction(selected.action)}</Text>
               <TouchableOpacity onPress={() => setSelected(null)} style={styles.closeBtn}>
                 <Ionicons name="close" size={18} color={Colors.white} />
@@ -246,9 +281,29 @@ export default function ActivityLogsScreen() {
                   </View>
                 ) : null}
               </View>
+              {isError ? (
+                <View style={styles.errorBox}>
+                  <View style={styles.errorBoxHeader}>
+                    <Ionicons name="bug" size={16} color={Colors.danger} />
+                    <Text style={styles.errorBoxTitle}>
+                      {errorKind === 'network' ? 'Network Failure' : 'Technical Error'}
+                      {errorStatus ? ` · HTTP ${errorStatus}` : ''}
+                    </Text>
+                  </View>
+                  {errorMessage ? (
+                    <Text style={styles.errorBoxMsg} selectable>{String(errorMessage)}</Text>
+                  ) : null}
+                  {(errorMethod || errorPath) ? (
+                    <Text style={styles.errorBoxPath} selectable>
+                      {(errorMethod || '') + (errorMethod && errorPath ? ' ' : '') + (errorPath || '')}
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
+
               {detailRows.length > 0 ? (
                 <View style={styles.detailSection}>
-                  <Text style={styles.detailSectionLabel}>Action Details</Text>
+                  <Text style={styles.detailSectionLabel}>{isError ? 'Request Context' : 'Action Details'}</Text>
                   {detailRows.map(({ label, value }) => (
                     <View key={label} style={styles.kvRow}>
                       <Text style={styles.kvKey}>{label}</Text>
@@ -256,11 +311,11 @@ export default function ActivityLogsScreen() {
                     </View>
                   ))}
                 </View>
-              ) : (
+              ) : !isError ? (
                 <View style={styles.noDetail}>
                   <Text style={styles.noDetailText}>No additional details recorded</Text>
                 </View>
-              )}
+              ) : null}
             </ScrollView>
           </View>
         </View>
@@ -278,8 +333,38 @@ export default function ActivityLogsScreen() {
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>{t('activityLogsTitle')}</Text>
-          <Text style={styles.headerSub}>{total} records · clears after 7 days</Text>
+          <Text style={styles.headerSub}>{total} records · clears after 6 days</Text>
         </View>
+      </View>
+
+      {/* Level filter — lets admin focus on technical errors instantly */}
+      <View style={styles.levelRow}>
+        {(['all', 'error', 'info'] as const).map((lv) => {
+          const active = levelFilter === lv;
+          const isErr = lv === 'error';
+          return (
+            <TouchableOpacity
+              key={lv}
+              style={[
+                styles.levelPill,
+                active && (isErr ? styles.levelPillActiveErr : styles.levelPillActive),
+              ]}
+              onPress={() => { setLevelFilter(lv); setLoading(true); }}
+              activeOpacity={0.85}
+            >
+              {isErr && <Ionicons name="warning-outline" size={13} color={active ? Colors.white : Colors.danger} />}
+              <Text
+                style={[
+                  styles.levelPillText,
+                  active && { color: Colors.white },
+                  isErr && !active && { color: Colors.danger },
+                ]}
+              >
+                {lv === 'all' ? 'All' : lv === 'error' ? 'Errors' : 'Activity'}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       {/* Search + Date button */}
@@ -382,7 +467,20 @@ const styles = StyleSheet.create({
 
   calDropdown: { marginHorizontal: 16, marginBottom: 8, backgroundColor: Colors.white, borderRadius: 16, borderWidth: 1.5, borderColor: Colors.border, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 10, elevation: 5, overflow: 'hidden' },
 
+  levelRow: { flexDirection: 'row', gap: 8, marginHorizontal: 16, marginTop: 12 },
+  levelPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 14, paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1.5, borderColor: Colors.border,
+    backgroundColor: Colors.white,
+  },
+  levelPillActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  levelPillActiveErr: { backgroundColor: Colors.danger, borderColor: Colors.danger },
+  levelPillText: { fontSize: 12, fontWeight: '700', color: Colors.text },
+
   card: { flexDirection: 'row', alignItems: 'stretch', backgroundColor: Colors.white, borderRadius: 12, overflow: 'hidden', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5, elevation: 2 },
+  cardError: { backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FCA5A5' },
   strip: { width: 4 },
   cardInner: { flex: 1, padding: 13 },
   cardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 },
@@ -394,6 +492,9 @@ const styles = StyleSheet.create({
   rolePillText: { fontSize: 10, fontWeight: '800' },
   modPill: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2 },
   modPillText: { fontSize: 11, fontWeight: '700' },
+  errPill: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, backgroundColor: Colors.danger },
+  errPillText: { fontSize: 10, fontWeight: '800', color: Colors.white, letterSpacing: 0.4 },
+  cardErrMsg: { marginTop: 8, fontSize: 12, color: '#991B1B', fontStyle: 'italic', lineHeight: 17 },
 
   empty: { alignItems: 'center', paddingTop: 60, gap: 10 },
   emptyIconBox: { width: 80, height: 80, borderRadius: 40, backgroundColor: Colors.primary + '10', justifyContent: 'center', alignItems: 'center' },
@@ -421,6 +522,12 @@ const styles = StyleSheet.create({
   kvValue: { fontSize: 14, color: Colors.text, lineHeight: 20 },
   noDetail: { backgroundColor: Colors.bg, borderRadius: 10, padding: 16, alignItems: 'center' },
   noDetailText: { fontSize: 13, color: Colors.textMuted },
+
+  errorBox: { backgroundColor: '#FEF2F2', borderRadius: 12, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: '#FCA5A5' },
+  errorBoxHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  errorBoxTitle: { fontSize: 13, fontWeight: '800', color: Colors.danger, letterSpacing: 0.3 },
+  errorBoxMsg: { fontSize: 14, color: '#7F1D1D', lineHeight: 20, fontWeight: '500' },
+  errorBoxPath: { fontSize: 11, fontFamily: 'monospace', color: '#991B1B', marginTop: 8, opacity: 0.85 },
 });
 
 const calStyles = StyleSheet.create({

@@ -27,7 +27,7 @@ export default function NotFoundScreen() {
         <View style={styles.iconContainer}>
           <Ionicons name="alert-circle-outline" size={80} color={Colors.primary} />
         </View>
-        
+
         <Text style={styles.title}>Page Not Found</Text>
         <Text style={styles.subtitle}>
           The page you're looking for doesn't exist or has been moved.

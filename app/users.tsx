@@ -1,5 +1,4 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput,
@@ -11,6 +10,8 @@ import api from '../utils/api';
 import BuildingDropdown from '../components/BuildingDropdown';
 import { useBuildings } from '../hooks/useBuildings';
 import type { Building } from '../hooks/useBuildings';
+import MemberDetailModal, { type Member } from '../components/MemberDetailModal';
+import { useMemberActions } from '../hooks/useMemberActions';
 
 const ROLES = ['user', 'pramukh'];
 
@@ -20,8 +21,7 @@ export default function UsersScreen() {
   };
   const { buildings, loading: buildingsLoading } = useBuildings(true);
   const router = useRouter();
-  const { t } = useLanguage();
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
@@ -35,6 +35,21 @@ export default function UsersScreen() {
   });
   const [formBuilding, setFormBuilding] = useState<Building | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+
+  const [selectedMember, setSelectedMember] = useState<Member | null>(null);
+  const [detailVisible, setDetailVisible] = useState(false);
+
+  const memberActions = useMemberActions({
+    onChange: (id, patch) => {
+      setUsers(prev => prev.map(u => (u.id === id ? { ...u, ...patch } : u)));
+      setSelectedMember(prev => (prev && prev.id === id ? { ...prev, ...patch } : prev));
+    },
+    onDeleted: (id) => {
+      setUsers(prev => prev.filter(u => u.id !== id));
+      setSelectedMember(null);
+      setDetailVisible(false);
+    },
+  });
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -75,36 +90,27 @@ export default function UsersScreen() {
     }
   };
 
-  const deleteUser = (item: any) => {
-    Alert.alert(
-      'Delete User',
-      `Are you sure you want to delete "${item.name}"? This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete', style: 'destructive',
-          onPress: async () => {
-            try {
-              await api.delete(`/buildings/admin/users/${item.id}`);
-              setUsers((prev) => prev.filter((u) => u.id !== item.id));
-            } catch (e: any) {
-              Alert.alert('Error', e.response?.data?.error || 'Failed to delete');
-            }
-          },
-        },
-      ]
-    );
+  const openDetail = (m: Member) => {
+    setSelectedMember(m);
+    setDetailVisible(true);
   };
 
-  const renderItem = ({ item }: { item: any }) => (
-    <View style={styles.card}>
+  const closeDetail = () => {
+    setDetailVisible(false);
+    setSelectedMember(null);
+  };
+
+  const renderItem = ({ item }: { item: Member }) => (
+    <TouchableOpacity style={styles.card} onPress={() => openDetail(item)} activeOpacity={0.7}>
       <View style={styles.cardLeft}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{item.name?.[0]?.toUpperCase()}</Text>
+        <View style={[styles.avatar, { backgroundColor: (ROLE_COLORS[item.role] || Colors.primary) + '20' }]}>
+          <Text style={[styles.avatarText, { color: ROLE_COLORS[item.role] || Colors.primary }]}>
+            {item.name?.[0]?.toUpperCase()}
+          </Text>
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.cardName}>{item.name}</Text>
-          <Text style={styles.cardEmail}>{item.email}</Text>
+          <Text style={styles.cardEmail} numberOfLines={1}>{item.email}</Text>
           <View style={styles.cardMeta}>
             {item.flat_no ? (
               <View style={styles.metaChip}>
@@ -115,7 +121,15 @@ export default function UsersScreen() {
             {item.buildings?.name ? (
               <View style={styles.metaChip}>
                 <Ionicons name="business-outline" size={11} color={Colors.textMuted} />
-                <Text style={styles.metaChipText}>{item.buildings.name}</Text>
+                <Text style={styles.metaChipText} numberOfLines={1}>{item.buildings.name}</Text>
+              </View>
+            ) : null}
+            {item.referral_code ? (
+              <View style={[styles.metaChip, { backgroundColor: '#F5F3FF' }]}>
+                <Ionicons name="gift-outline" size={11} color="#7C3AED" />
+                <Text style={[styles.metaChipText, { color: '#7C3AED', fontWeight: '700' }]}>
+                  {item.referral_code}
+                </Text>
               </View>
             ) : null}
           </View>
@@ -127,11 +141,9 @@ export default function UsersScreen() {
             {item.role}
           </Text>
         </View>
-        <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteUser(item)}>
-          <Ionicons name="trash-outline" size={18} color={Colors.danger} />
-        </TouchableOpacity>
+        <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
       </View>
-    </View>
+    </TouchableOpacity>
   );
 
   
@@ -142,10 +154,13 @@ export default function UsersScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={Colors.white} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Users</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle}>Users</Text>
+          <Text style={styles.headerSub}>{users.length} {users.length === 1 ? 'account' : 'accounts'}</Text>
+        </View>
         <TouchableOpacity style={styles.addBtn} onPress={() => setShowAdd(true)}>
-          <Ionicons name="person-add" size={20} color={Colors.white} />
-          <Text style={styles.addBtnText}>Add User</Text>
+          <Ionicons name="person-add" size={18} color={Colors.white} />
+          <Text style={styles.addBtnText}>Add</Text>
         </TouchableOpacity>
       </View>
 
@@ -256,20 +271,39 @@ export default function UsersScreen() {
             <TextInput style={styles.input} value={form.flat_no} onChangeText={(v) => setForm({ ...form, flat_no: v })} placeholder="e.g. A-101" placeholderTextColor={Colors.textMuted} />
 
             <TouchableOpacity style={styles.submitBtn} onPress={createUser} disabled={submitting}>
-              {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>Create User</Text>}
+              {submitting ? <ActivityIndicator color="#fff" /> : (
+                <Text style={styles.submitBtnText}>
+                  Create {form.role === 'pramukh' ? 'Pramukh' : 'User'}
+                </Text>
+              )}
             </TouchableOpacity>
             <View style={{ height: 32 }} />
           </ScrollView>
         </View>
       </Modal>
+
+      <MemberDetailModal
+        visible={detailVisible}
+        member={selectedMember}
+        subtitle={selectedMember?.buildings?.name || (selectedMember ? 'No building assigned' : undefined)}
+        actionLoading={memberActions.actionLoading}
+        codeLoading={memberActions.codeLoading}
+        onClose={closeDetail}
+        onPromote={memberActions.promote}
+        onDemote={memberActions.demote}
+        onDelete={memberActions.remove}
+        onEnsureCode={memberActions.ensureCode}
+        onCopyCode={memberActions.copyCode}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
-  header: { backgroundColor: '#3B5FC0', paddingTop: 56, paddingBottom: 16, paddingHorizontal: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  header: { backgroundColor: '#3B5FC0', paddingTop: 56, paddingBottom: 16, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: 8 },
   headerTitle: { color: Colors.white, fontSize: 22, fontWeight: '800' },
+  headerSub: { color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 2 },
   backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center', marginRight: 4 },
   addBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
   addBtnText: { color: Colors.white, fontWeight: '700', fontSize: 13 },

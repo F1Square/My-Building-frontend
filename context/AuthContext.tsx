@@ -1,11 +1,10 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../utils/api';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
-import { API_BASE } from '../constants/api';
-import { registerAuthFailureHandler } from '../utils/api';
+import { registerAuthFailureHandler, setAuthToken } from '../utils/api';
 import { cacheManager } from '../utils/CacheManager';
 
 type User = {
@@ -47,17 +46,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [subscription, setSubscription] = useState<Subscription>(null);
 
+  const safeParse = <T,>(value: string | null, fallback: T): T => {
+    if (!value) return fallback;
+    try {
+      return JSON.parse(value) as T;
+    } catch (error) {
+      console.warn('[AuthContext] Invalid cached JSON ignored:', error);
+      return fallback;
+    }
+  };
+
   const isSubActive = (sub: Subscription) => {
     if (!sub || sub.status !== 'active') return false;
     if (sub.plan === 'lifetime') return true;
     return !sub.expires_at || new Date(sub.expires_at) > new Date();
   };
 
-  const fetchSubscription = async (t: string) => {
+  const fetchSubscription = useCallback(async () => {
     try {
-      // Use the api instance which now handles the base URL and auth header automatically
-      // if the token is already in AsyncStorage. For the very first call after login,
-      // we can still pass the header manually or just rely on the interceptor if we await storage.
       const res = await api.get('/subscriptions/me');
       const sub = res.data as Subscription;
       setSubscription(sub);
@@ -65,47 +71,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       console.error('[AuthContext] Fetch subscription failed:', err);
     }
-  };
-
-  useEffect(() => {
-    AsyncStorage.multiGet(['token', 'user', 'subscription']).then(([t, u, s]) => {
-      if (t[1] && u[1]) {
-        setToken(t[1]);
-        setUser(JSON.parse(u[1]));
-        // Load cached subscription instantly — no flicker
-        if (s[1]) setSubscription(JSON.parse(s[1]));
-        // Then refresh in background
-        fetchSubscription(t[1]);
-      }
-      setLoading(false);
-    });
   }, []);
 
-  const login = async (t: string, u: User, sub?: Subscription) => {
-    // If subscription came with the login response, cache it immediately — no extra round trip
-    const resolvedSub = sub !== undefined ? sub : null;
-    await AsyncStorage.multiSet([
-      ['token', t],
-      ['user', JSON.stringify(u)],
-      ['subscription', JSON.stringify(resolvedSub)],
-    ]);
-    setToken(t);
-    setUser(u);
-    setSubscription(resolvedSub);
+  useEffect(() => {
+    AsyncStorage.multiGet(['token', 'user', 'subscription'])
+      .then(([t, u, s]) => {
+        const restoredToken = t[1];
+        const restoredUser = safeParse<User | null>(u[1], null);
+        const restoredSubscription = safeParse<Subscription>(s[1], null);
 
-    // Refresh subscription in background only if it wasn't provided
-    if (sub === undefined) fetchSubscription(t);
+        if (restoredToken && restoredUser) {
+          setAuthToken(restoredToken);
+          setToken(restoredToken);
+          setUser(restoredUser);
+          // Load cached subscription instantly — no flicker
+          setSubscription(restoredSubscription);
+          // Then refresh in background
+          fetchSubscription();
+        } else if (restoredToken || u[1] || s[1]) {
+          // Partial/corrupt auth state can create boot loops after upgrades.
+          AsyncStorage.multiRemove(['token', 'user', 'subscription']);
+          setAuthToken(null);
+          setToken(null);
+          setUser(null);
+          setSubscription(null);
+        }
+      })
+      .catch((error) => {
+        console.error('[AuthContext] Failed to restore session:', error);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, [fetchSubscription]);
 
-    registerPushToken(t);
-
-    // Warm cache with critical data in background (non-blocking)
-    const userKey = cacheManager.generateKey('auth', '/auth/me', {}, u.role, u.building_id);
-    cacheManager.warmCache([
-      { key: userKey, fetcher: async () => u },
-    ]);
-  };
-
-  const registerPushToken = async (t: string) => {
+  const registerPushToken = useCallback(async () => {
     try {
       if (!Device.isDevice) return;
       const { status: existing } = await Notifications.getPermissionsAsync();
@@ -125,21 +125,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       console.log('[AuthContext] Push token registration failed:', err);
     }
-  };
+  }, []);
 
-  const logout = async () => {
+  const login = useCallback(async (t: string, u: User, sub?: Subscription) => {
+    // If subscription came with the login response, cache it immediately — no extra round trip
+    const resolvedSub = sub !== undefined ? sub : null;
+    await AsyncStorage.multiSet([
+      ['token', t],
+      ['user', JSON.stringify(u)],
+      ['subscription', JSON.stringify(resolvedSub)],
+    ]);
+    setAuthToken(t);
+    setToken(t);
+    setUser(u);
+    setSubscription(resolvedSub);
+
+    // Refresh subscription in background only if it wasn't provided
+    if (sub === undefined) fetchSubscription();
+
+    registerPushToken();
+
+    // Warm cache with critical data in background (non-blocking)
+    const userKey = cacheManager.generateKey('auth', '/auth/me', {}, u.role, u.building_id);
+    cacheManager.warmCache([
+      { key: userKey, fetcher: async () => u },
+    ]);
+  }, [fetchSubscription, registerPushToken]);
+
+  const logout = useCallback(async () => {
     await AsyncStorage.multiRemove(['token', 'user', 'subscription']);
     // Clear all cached data on logout for security
     await cacheManager.clear();
+    setAuthToken(null);
     setToken(null);
     setUser(null);
     setSubscription(null);
-  };
+  }, []);
 
   // Wire up the API interceptor so 401/403 auto-triggers logout
   useEffect(() => {
     registerAuthFailureHandler(() => {
-      cacheManager.clear();
+      cacheManager.clear().catch(() => null);
+      setAuthToken(null);
       setToken(null);
       setUser(null);
       setSubscription(null);
@@ -155,12 +182,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     prevRoleRef.current = user?.role;
   }, [user?.role]);
 
-  const refreshSubscription = async () => {
+  const refreshSubscription = useCallback(async () => {
     const t = token || (await AsyncStorage.getItem('token'));
-    if (t) await fetchSubscription(t);
-  };
+    if (t) await fetchSubscription();
+  }, [fetchSubscription, token]);
 
-  const refreshUser = async () => {
+  const refreshUser = useCallback(async () => {
     try {
       const res = await api.get('/auth/me');
       const updated = res.data.user as User;
@@ -169,14 +196,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       console.error('[AuthContext] Refresh user failed:', err);
     }
-  };
+  }, []);
+
+  const contextValue = useMemo(() => ({
+    user, token, subscription,
+    hasActiveSubscription: user?.role === 'admin' || isSubActive(subscription),
+    login, logout, refreshUser, refreshSubscription, loading,
+  }), [user, token, subscription, login, logout, refreshUser, refreshSubscription, loading]);
 
   return (
-    <AuthContext.Provider value={{
-      user, token, subscription,
-      hasActiveSubscription: user?.role === 'admin' || isSubActive(subscription),
-      login, logout, refreshUser, refreshSubscription, loading,
-    }}>
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );

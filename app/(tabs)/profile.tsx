@@ -8,6 +8,8 @@ import { LANGUAGES } from '../../constants/translations';
 import { useRouter } from 'expo-router';
 import api from '../../utils/api';
 
+const getBuildingCode = (buildingId: string) => String(buildingId || '').split('-')[0]?.toUpperCase() || '';
+
 export default function ProfileScreen() {
   const { user, logout } = useAuth();
   const { t, language, setLanguage } = useLanguage();
@@ -64,7 +66,7 @@ export default function ProfileScreen() {
             <Ionicons name="business" size={20} color={Colors.primary} />
             <View style={{ flex: 1 }}>
               <Text style={styles.infoLabel}>{t('buildingId')}</Text>
-              <Text style={styles.infoValueMono} selectable>{user.building_id}</Text>
+              <Text style={styles.infoValueMono} selectable>{getBuildingCode(user.building_id)}</Text>
             </View>
           </View>
         </View>

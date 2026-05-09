@@ -1,28 +1,9 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import { useCache } from '../context/CacheContext';
 
+/**
+ * Full offline UX is handled by {@link NoInternetOverlay} (blocks the whole app).
+ * We no longer show a secondary banner to avoid duplicate messaging.
+ */
 export function OfflineIndicator() {
-  const { isOnline } = useCache();
-  if (isOnline) return null;
-
-  return (
-    <View style={styles.banner}>
-      <Text style={styles.text}>No internet connection — showing cached data</Text>
-    </View>
-  );
+  return null;
 }
-
-const styles = StyleSheet.create({
-  banner: {
-    backgroundColor: '#F59E0B',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-  },
-  text: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-});

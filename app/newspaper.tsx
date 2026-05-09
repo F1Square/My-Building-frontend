@@ -1,10 +1,11 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
-  Alert, ScrollView, Modal, FlatList,
+  Alert, Modal, FlatList, Platform,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as DocumentPicker from 'expo-document-picker';
+import * as ScreenCapture from 'expo-screen-capture';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Colors } from '../constants/colors';
@@ -30,6 +31,99 @@ function formatDate(d: Date) {
 
 function todayStr() { return formatDate(new Date()); }
 
+// Escape values that get injected into the WebView HTML / JS strings, so a
+// malicious file URL or watermark string can't break out of the script.
+function escapeForJs(s: string) {
+  return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/</g, '\\u003c');
+}
+
+/**
+ * Build a self-contained HTML page that renders the given PDF using PDF.js,
+ * burns a watermark into each page, and locks down user gestures (no
+ * selection, no long-press menu, no right-click).
+ *
+ * Rendering pages as canvas pixels (instead of the platform's PDF viewer)
+ * means there's no underlying PDF the user can save through the WebView UI
+ * and no selectable/copyable text. Combined with FLAG_SECURE on Android via
+ * expo-screen-capture, this materially raises the bar for content leakage.
+ */
+function buildPdfHtml(pdfUrl: string, watermark: string) {
+  const safeUrl = escapeForJs(pdfUrl);
+  const safeMark = escapeForJs(watermark);
+  return `<!DOCTYPE html><html><head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, maximum-scale=4.0">
+<style>
+  * { -webkit-user-select: none !important; user-select: none !important; -webkit-touch-callout: none !important; }
+  html, body { margin:0; padding:0; background:#1f2937; min-height:100%; font-family:-apple-system,Segoe UI,Roboto,sans-serif; }
+  #viewer { padding: 8px 0 24px; }
+  .page { display:block; max-width: 100%; margin: 0 auto 10px; box-shadow: 0 4px 14px rgba(0,0,0,0.5); border-radius: 4px; }
+  #loading { color:#fff; text-align:center; padding:40px 24px; }
+  .lbar { width:60%; max-width:280px; height:6px; background:rgba(255,255,255,0.15); border-radius:3px; margin:14px auto 0; overflow:hidden; }
+  .lfill { height:100%; background:#3B5FC0; transition:width 0.25s ease; width:0%; }
+  #err { display:none; color:#FCA5A5; padding:24px; text-align:center; }
+  #err small { display:block; color:#9CA3AF; margin-top:6px; font-size:11px; word-break:break-word; }
+</style></head>
+<body oncontextmenu="return false" ondragstart="return false" onselectstart="return false">
+  <div id="loading">Loading newspaper...<div class="lbar"><div id="bar" class="lfill"></div></div></div>
+  <div id="viewer"></div>
+  <div id="err"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    (function(){
+      var post=function(m){try{window.ReactNativeWebView.postMessage(JSON.stringify(m));}catch(_){} };
+      if(!window.pdfjsLib){post({type:'error',message:'pdfjs failed to load'});return;}
+      pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      var WM='${safeMark}';
+      pdfjsLib.getDocument({url:'${safeUrl}',disableRange:true,disableStream:true}).promise.then(function(pdf){
+        var viewer=document.getElementById('viewer');
+        var bar=document.getElementById('bar');
+        var dpr=Math.min(window.devicePixelRatio||1,2);
+        var maxW=Math.min(window.innerWidth,1080);
+        var i=1;
+        function next(){
+          if(i>pdf.numPages){document.getElementById('loading').style.display='none';post({type:'done',pages:pdf.numPages});return;}
+          pdf.getPage(i).then(function(page){
+            var base=page.getViewport({scale:1});
+            var scale=(maxW/base.width)*dpr;
+            var vp=page.getViewport({scale:scale});
+            var canvas=document.createElement('canvas');
+            canvas.className='page';
+            canvas.width=vp.width;canvas.height=vp.height;
+            canvas.style.width=(vp.width/dpr)+'px';
+            viewer.appendChild(canvas);
+            var ctx=canvas.getContext('2d');
+            page.render({canvasContext:ctx,viewport:vp}).promise.then(function(){
+              ctx.save();
+              ctx.translate(vp.width/2,vp.height/2);
+              ctx.rotate(-Math.PI/8);
+              ctx.font='bold '+(36*dpr)+'px sans-serif';
+              ctx.fillStyle='rgba(59,95,192,0.16)';
+              ctx.textAlign='center';
+              ctx.fillText(WM,0,0);
+              ctx.font='bold '+(20*dpr)+'px sans-serif';
+              ctx.fillText(WM,-vp.width/3,-vp.height/4);
+              ctx.fillText(WM,vp.width/3,vp.height/4);
+              ctx.restore();
+              bar.style.width=((i/pdf.numPages)*100)+'%';
+              post({type:'progress',page:i,total:pdf.numPages});
+              i++;next();
+            });
+          }).catch(function(e){fail(e);});
+        }
+        next();
+      }).catch(function(e){fail(e);});
+      function fail(err){
+        document.getElementById('loading').style.display='none';
+        var e=document.getElementById('err');
+        e.style.display='block';
+        e.innerHTML='Could not load newspaper. Please try again.<small>'+(err&&err.message?String(err.message).slice(0,200):'')+'</small>';
+        post({type:'error',message:String(err&&err.message)});
+      }
+    })();
+  </script>
+</body></html>`;
+}
+
 export default function NewspaperScreen() {
   const router = useRouter();
   const { user } = useAuth();
@@ -47,6 +141,8 @@ export default function NewspaperScreen() {
     const d = new Date(); return { year: d.getFullYear(), month: d.getMonth() };
   });
 
+  const [editionKind, setEditionKind] = useState<'pdf' | 'external' | null>(null);
+
   // Admin upload state
   const [showUpload, setShowUpload] = useState(false);
   const [uploadFile, setUploadFile] = useState<{ uri: string; name: string; mimeType: string } | null>(null);
@@ -54,6 +150,38 @@ export default function NewspaperScreen() {
   const [uploadLang, setUploadLang] = useState('english');
   const [uploading, setUploading] = useState(false);
   const [recentEditions, setRecentEditions] = useState<any[]>([]);
+  const [pdfLoadFailed, setPdfLoadFailed] = useState(false);
+
+  // Watermark text drawn on every rendered page — picks the most identifying
+  // info we have so that a leaked screenshot/photo can be traced.
+  const watermark = (user?.email || user?.phone || user?.name || 'My Building') + ' · ' + selectedDate;
+
+  // Lock down screen capture while this screen is in focus. Android gets
+  // FLAG_SECURE (true block); iOS can only listen and warn since Apple
+  // doesn't expose a way to suppress screenshots.
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    let sub: { remove?: () => void } | null = null;
+    (async () => {
+      try { await ScreenCapture.preventScreenCaptureAsync('newspaper'); } catch (_) {}
+      if (Platform.OS === 'ios') {
+        try {
+          sub = ScreenCapture.addScreenshotListener(() => {
+            if (!active) return;
+            Alert.alert(
+              'Screenshot Detected',
+              'Please do not screenshot or share newspaper content. This is for personal reading only.'
+            );
+          });
+        } catch (_) {}
+      }
+    })();
+    return () => {
+      active = false;
+      sub?.remove?.();
+      ScreenCapture.allowScreenCaptureAsync('newspaper').catch(() => {});
+    };
+  }, []));
 
   const pickPdf = async () => {
     const result = await DocumentPicker.getDocumentAsync({ type: 'application/pdf' });
@@ -70,8 +198,9 @@ export default function NewspaperScreen() {
     if (cached) setAvailableDates(cached.map((e: any) => e.date ?? e));
     try {
       const res = await api.get('/newspapers/available-dates', { params: { language } });
-      const dates = res.data.map((e: any) => e.date ?? e);
-      await cacheManager.set(cacheKey, res.data, CACHE_PRESETS.buildingWide);
+      const data = Array.isArray(res.data) ? res.data : [];
+      const dates = data.map((e: any) => e.date ?? e);
+      await cacheManager.set(cacheKey, data, CACHE_PRESETS.buildingWide);
       setAvailableDates(dates);
     } catch {}
   }, [language, user?.role]);
@@ -79,11 +208,16 @@ export default function NewspaperScreen() {
   const fetchEdition = useCallback(async () => {
     setLoading(true);
     setEditionUrl(null);
+    setEditionKind(null);
     setNotAvailable(false);
     setNoAddon(false);
+    setPdfLoadFailed(false);
     try {
       const res = await api.get('/newspapers', { params: { date: selectedDate, language } });
       setEditionUrl(res.data.url);
+      // Backend returns kind: 'pdf' for admin-uploaded files, 'external' for
+      // URL-pattern fallbacks pointing at third-party newspaper websites.
+      setEditionKind(res.data.kind === 'external' ? 'external' : 'pdf');
     } catch (e: any) {
       const errCode = e.response?.data?.error;
       if (errCode === 'newspaper_addon_required') {
@@ -104,8 +238,9 @@ export default function NewspaperScreen() {
     if (cached) setRecentEditions(cached);
     try {
       const res = await api.get('/newspapers/recent');
-      await cacheManager.set(cacheKey, res.data, CACHE_PRESETS.buildingWide);
-      setRecentEditions(res.data);
+      const data = Array.isArray(res.data) ? res.data : [];
+      await cacheManager.set(cacheKey, data, CACHE_PRESETS.buildingWide);
+      setRecentEditions(data);
     } catch {}
   }, [isAdmin, user?.role]);
 
@@ -212,8 +347,10 @@ export default function NewspaperScreen() {
     );
   };
 
-  const pdfViewerUrl = editionUrl
-    ? `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(editionUrl)}`
+  // Memo the rendered HTML so the WebView doesn't re-mount on unrelated
+  // re-renders (the WM/url combo is what should drive a reload).
+  const viewerHtml = editionUrl && editionKind === 'pdf'
+    ? buildPdfHtml(editionUrl, watermark)
     : null;
 
   return (
@@ -307,16 +444,71 @@ export default function NewspaperScreen() {
             The newspaper for this date hasn't been uploaded yet. Check back later or try a different date.
           </Text>
         </View>
-      ) : pdfViewerUrl ? (
+      ) : viewerHtml ? (
+        <View style={{ flex: 1 }}>
+          <WebView
+            originWhitelist={['*']}
+            source={{ html: viewerHtml }}
+            style={{ flex: 1, backgroundColor: '#1f2937' }}
+            startInLoadingState
+            renderLoading={() => (
+              <View style={styles.viewerLoading}>
+                <ActivityIndicator size="large" color={Colors.primary} />
+              </View>
+            )}
+            javaScriptEnabled
+            domStorageEnabled
+            setSupportMultipleWindows={false}
+            allowFileAccess={false}
+            allowFileAccessFromFileURLs={false}
+            allowUniversalAccessFromFileURLs={false}
+            allowsLinkPreview={false}
+            sharedCookiesEnabled={false}
+            thirdPartyCookiesEnabled={false}
+            mixedContentMode="always"
+            // Block any download attempt the WebView might surface.
+            onShouldStartLoadWithRequest={(req) => req.url.startsWith('data:') || req.url.startsWith('about:') || req.url === 'about:blank'}
+            onError={() => setPdfLoadFailed(true)}
+            onHttpError={() => setPdfLoadFailed(true)}
+            onMessage={(e) => {
+              try {
+                const msg = JSON.parse(e.nativeEvent.data);
+                if (msg.type === 'error') setPdfLoadFailed(true);
+              } catch (_) {}
+            }}
+          />
+          {/* Diagonal RN-side watermark as a second layer of deterrent —
+              even if a tampered build bypasses the canvas-baked one, this
+              floats above the WebView and is captured by any photo. */}
+          <View pointerEvents="none" style={styles.watermarkOverlay}>
+            <Text style={styles.watermarkText} numberOfLines={1}>{watermark}</Text>
+          </View>
+        </View>
+      ) : editionUrl && editionKind === 'external' ? (
+        // Third-party newspaper website (URL pattern) — render in a sandboxed
+        // WebView. We can't burn watermarks into someone else's HTML, but
+        // we still keep capture protection on.
         <WebView
-          source={{ uri: pdfViewerUrl }}
+          originWhitelist={['*']}
+          source={{ uri: editionUrl }}
           style={{ flex: 1 }}
           startInLoadingState
           renderLoading={() => <ActivityIndicator style={{ marginTop: 60 }} size="large" color={Colors.primary} />}
-          allowsInlineMediaPlayback
-          mediaPlaybackRequiresUserAction={false}
+          setSupportMultipleWindows={false}
+          allowFileAccess={false}
+          allowsLinkPreview={false}
+          onError={() => setPdfLoadFailed(true)}
+          onHttpError={() => setPdfLoadFailed(true)}
         />
       ) : null}
+
+      {pdfLoadFailed && !!editionUrl && (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorBannerText}>
+            Could not load newspaper. Pull down to retry or check back shortly.
+          </Text>
+        </View>
+      )}
 
       {/* Calendar Modal */}
       <Modal visible={showCalendar} transparent animationType="slide">
@@ -408,6 +600,43 @@ const styles = StyleSheet.create({
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 10 },
   emptyTitle: { fontSize: 17, fontWeight: '700', color: Colors.text },
   emptyText: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', lineHeight: 20 },
+  errorBanner: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 16,
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FDBA74',
+    borderRadius: 10,
+    padding: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  errorBannerText: { color: '#9A3412', fontSize: 12, fontWeight: '600', flex: 1 },
+  viewerLoading: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#1f2937',
+  },
+  watermarkOverlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
+    paddingTop: 6,
+    alignItems: 'center',
+    pointerEvents: 'none' as any,
+  },
+  watermarkText: {
+    color: 'rgba(255,255,255,0.18)',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    textShadowColor: 'rgba(0,0,0,0.35)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
   upgradeBtn: { backgroundColor: Colors.primary, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12, marginTop: 8 },
   upgradeBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 

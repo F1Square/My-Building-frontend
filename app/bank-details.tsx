@@ -103,8 +103,8 @@ export default function BankDetailsScreen() {
     }
   };
 
-  const openRazorpayDashboard = () => {
-    Linking.openURL('https://dashboard.razorpay.com/');
+  const openEasebuzzDashboard = () => {
+    Linking.openURL('https://testpay.easebuzz.in/');
   };
 
   
@@ -162,31 +162,31 @@ export default function BankDetailsScreen() {
             </View>
           )}
 
-          {/* Razorpay Account Status */}
+          {/* Easebuzz Merchant Status */}
           {details.razorpay_account_id ? (
             <View style={styles.statusCard}>
               <View style={styles.statusHeader}>
                 <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
-                <Text style={styles.statusTitle}>Razorpay Account Connected</Text>
+                <Text style={styles.statusTitle}>Easebuzz Merchant Connected</Text>
               </View>
-              <Text style={styles.accountId}>Account ID: {details.razorpay_account_id}</Text>
-              <TouchableOpacity style={styles.dashboardBtn} onPress={openRazorpayDashboard}>
+              <Text style={styles.accountId}>Merchant ID: {details.razorpay_account_id}</Text>
+              <TouchableOpacity style={styles.dashboardBtn} onPress={openEasebuzzDashboard}>
                 <Ionicons name="open-outline" size={16} color={Colors.primary} />
-                <Text style={styles.dashboardBtnText}>View Transactions on Razorpay</Text>
+                <Text style={styles.dashboardBtnText}>Open Easebuzz Dashboard</Text>
               </TouchableOpacity>
             </View>
           ) : (
             <View style={styles.statusCard}>
               <View style={styles.statusHeader}>
                 <Ionicons name="alert-circle-outline" size={20} color={Colors.warning} />
-                <Text style={[styles.statusTitle, { color: Colors.warning }]}>No Razorpay Account</Text>
+                <Text style={[styles.statusTitle, { color: Colors.warning }]}>No Easebuzz Merchant</Text>
               </View>
               <Text style={styles.statusDesc}>
-                Create a Razorpay account manually and submit the Account ID below to enable payment collection.
+                Add Easebuzz merchant/sub-merchant ID below to enable direct collection.
               </Text>
-              <TouchableOpacity style={styles.dashboardBtn} onPress={openRazorpayDashboard}>
+              <TouchableOpacity style={styles.dashboardBtn} onPress={openEasebuzzDashboard}>
                 <Ionicons name="open-outline" size={16} color={Colors.primary} />
-                <Text style={styles.dashboardBtnText}>Create Razorpay Account</Text>
+                <Text style={styles.dashboardBtnText}>Open Easebuzz Portal</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -234,15 +234,15 @@ export default function BankDetailsScreen() {
                   placeholderTextColor={Colors.textMuted} 
                 />
 
-                <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Razorpay Integration</Text>
-                <Text style={styles.sectionSub}>Submit your Razorpay Account ID to enable payment collection</Text>
+                <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Easebuzz Integration</Text>
+                <Text style={styles.sectionSub}>Submit your Easebuzz Merchant ID to enable payment collection</Text>
                 
-                <Text style={styles.inputLabel}>Razorpay Account ID</Text>
+                <Text style={styles.inputLabel}>Easebuzz Merchant ID</Text>
                 <TextInput 
                   style={styles.input} 
                   value={details.razorpay_account_id} 
                   onChangeText={(v) => setDetails({ ...details, razorpay_account_id: v })} 
-                  placeholder="e.g. acc_xxxxxxxxxx" 
+                  placeholder="e.g. SBMxxxxxx / merchant id" 
                   placeholderTextColor={Colors.textMuted} 
                 />
 
@@ -259,7 +259,7 @@ export default function BankDetailsScreen() {
                 <Row icon="barcode-outline" label="IFSC Code" value={details.bank_ifsc} mono />
                 <Row icon="person-outline" label="Beneficiary Name" value={details.beneficiary_name} />
                 {details.razorpay_account_id && (
-                  <Row icon="shield-checkmark-outline" label="Razorpay Account ID" value={details.razorpay_account_id} mono />
+                  <Row icon="shield-checkmark-outline" label="Easebuzz Merchant ID" value={details.razorpay_account_id} mono />
                 )}
               </View>
             )}
@@ -268,9 +268,8 @@ export default function BankDetailsScreen() {
           <View style={styles.hint}>
             <Ionicons name="information-circle-outline" size={16} color={Colors.textMuted} />
             <Text style={styles.hintText}>
-              Simplified Payment System: Create your Razorpay account manually and submit the Account ID. 
-              All maintenance payments will be transferred directly to your bank account. 
-              View all transactions in your Razorpay dashboard.
+              Easebuzz Collection Setup: add merchant/sub-merchant ID for society-level collections.
+              Maintenance payments are tagged for society settlement, while subscriptions are tagged for admin settlement.
             </Text>
           </View>
         </ScrollView>

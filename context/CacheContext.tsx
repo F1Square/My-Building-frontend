@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import NetInfo from '@react-native-community/netinfo';
 import { cacheManager, CacheMetrics } from '../utils/CacheManager';
+import { computeIsOnline } from '../utils/networkState';
 
 interface CacheContextValue {
   isOnline: boolean;
@@ -16,12 +17,22 @@ export function CacheProvider({ children }: { children: React.ReactNode }) {
   const [cacheMetrics, setCacheMetrics] = useState<CacheMetrics | null>(null);
 
   useEffect(() => {
-    const unsubscribe = NetInfo.addEventListener(state => {
-      const online = state.isConnected === true && state.isInternetReachable !== false;
+    let cancelled = false;
+    NetInfo.fetch().then((state) => {
+      if (cancelled) return;
+      const online = computeIsOnline(state);
       setIsOnline(online);
       cacheManager.setNetworkStatus(online);
     });
-    return unsubscribe;
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      const online = computeIsOnline(state);
+      setIsOnline(online);
+      cacheManager.setNetworkStatus(online);
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, []);
 
   const clearCache = useCallback(async (namespace?: string) => {

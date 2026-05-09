@@ -124,7 +124,7 @@ export default function ComplaintsScreen() {
 
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       base64: true, quality: 0.6,
     });
     if (!result.canceled && result.assets[0]) {

@@ -42,6 +42,11 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
+.env.production
+
+# Android Play signing (never commit)
+keystore.properties
+
 app-example
 
 # generated native folders

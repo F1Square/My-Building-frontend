@@ -1,10 +1,13 @@
-// Values come from .env — copy .env.example to .env and fill in your values
-// EXPO_PUBLIC_ prefix makes them available in the app bundle (Expo SDK 49+)
-const FALLBACK_URL = __DEV__ ? 'http://localhost:5000' : 'https://my-building-backend.vercel.app';
+// Values come from .env / .env.production (see metro.config.js + npm run android:bundle:release).
+// EXPO_PUBLIC_ prefix is inlined at bundle time (Expo SDK 49+).
+/** Production API origin (no /api suffix) — must be HTTPS for Play Store builds. */
+const PRODUCTION_ORIGIN = 'https://my-building-backend.vercel.app';
 
-export const API_BASE   = (process.env.EXPO_PUBLIC_API_BASE   || `${FALLBACK_URL}/api`).trim();
-export const ENTRY_BASE = (process.env.EXPO_PUBLIC_ENTRY_BASE || `${FALLBACK_URL}/entry`).trim();
+const FALLBACK_ORIGIN = __DEV__ ? 'http://localhost:5000' : PRODUCTION_ORIGIN;
 
-if (!process.env.EXPO_PUBLIC_API_BASE && !__DEV__) {
-  console.warn('[API] EXPO_PUBLIC_API_BASE is not defined in production! Falling back to Vercel.');
-}
+export const API_BASE = (
+  process.env.EXPO_PUBLIC_API_BASE || `${FALLBACK_ORIGIN}/api`
+).trim();
+export const ENTRY_BASE = (
+  process.env.EXPO_PUBLIC_ENTRY_BASE || `${FALLBACK_ORIGIN}/entry`
+).trim();

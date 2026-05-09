@@ -91,8 +91,9 @@ api.interceptors.response.use(
 
     // Token missing, invalid or expired — force logout (but not on auth endpoints)
     if (!isAuthEndpoint && (status === 401 || (status === 403 && !error.response?.data?.error))) {
-      await AsyncStorage.multiRemove(['token', 'user', 'subscription']);
-      setAuthToken(null);
+      // Let AuthContext's registered handler do all cleanup — it awaits storage
+      // operations in the correct order. Doing cleanup here too causes a
+      // double-clear race that can corrupt the auth state.
       _onAuthFailure?.();
       return Promise.reject({ _authError: true });
     }

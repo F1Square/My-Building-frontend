@@ -28,7 +28,10 @@ export default function LoginScreen() {
     try {
       const res = await api.post('/auth/login/unified', { email: email.trim(), password });
       await login(res.data.token, res.data.user, res.data.subscription ?? null);
-      router.replace('/');
+      // Navigation is handled automatically by _layout.tsx when user state changes.
+      // Do NOT call router.replace('/') here — it races with the layout routing
+      // effect and causes a native crash in production (two concurrent REPLACE
+      // actions on a navigator that's being re-mounted).
     } catch (e: any) {
       let msg = 'An unexpected error occurred';
 

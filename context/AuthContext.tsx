@@ -4,6 +4,7 @@ import api from '../utils/api';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import { registerAuthFailureHandler, setAuthToken } from '../utils/api';
 import { cacheManager } from '../utils/CacheManager';
 
@@ -108,6 +109,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const registerPushToken = useCallback(async () => {
     try {
       if (!Device.isDevice) return;
+      if (Platform.OS === 'web') return;
       const { status: existing } = await Notifications.getPermissionsAsync();
       let finalStatus = existing;
       if (existing !== 'granted') {
@@ -120,9 +122,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           name: 'default', importance: Notifications.AndroidImportance.MAX,
         });
       }
-      const tokenData = await Notifications.getExpoPushTokenAsync();
+      // Explicit projectId prevents native crash when EAS config is missing
+      const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+      if (!projectId) {
+        console.warn('[AuthContext] No EAS projectId — skipping push token');
+        return;
+      }
+      const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
       await api.post('/auth/push-token', { expo_push_token: tokenData.data });
     } catch (err) {
+      // Swallow — push registration must never crash the app
       console.log('[AuthContext] Push token registration failed:', err);
     }
   }, []);
@@ -143,7 +152,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Refresh subscription in background only if it wasn't provided
     if (sub === undefined) fetchSubscription();
 
-    registerPushToken();
+    // Defer push token registration by 2s.
+    // In New Architecture, calling native Notifications APIs synchronously
+    // during the login state-change cascade can trigger a native thread crash
+    // before the UI has fully re-rendered and navigated.
+    setTimeout(() => { registerPushToken(); }, 2000);
 
     // Warm cache with critical data in background (non-blocking)
     const userKey = cacheManager.generateKey('auth', '/auth/me', {}, u.role, u.building_id);
@@ -164,8 +177,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Wire up the API interceptor so 401/403 auto-triggers logout
   useEffect(() => {
-    registerAuthFailureHandler(() => {
-      cacheManager.clear().catch(() => null);
+    registerAuthFailureHandler(async () => {
+      try {
+        // Clear storage first, then update React state.
+        // Awaiting prevents race conditions where the app might still
+        // see a valid token during the transition.
+        const currentToken = await AsyncStorage.getItem('token');
+        if (!currentToken) return; // already logged out
+        await AsyncStorage.multiRemove(['token', 'user', 'subscription']);
+        await cacheManager.clear().catch(() => null);
+      } catch {
+        // Must never throw — we're inside an axios interceptor.
+      }
       setAuthToken(null);
       setToken(null);
       setUser(null);

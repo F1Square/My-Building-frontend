@@ -315,7 +315,7 @@ export class CacheManager {
         await this.invalidate(`${namespace}:*`);
       } else {
         const allKeys = await AsyncStorage.getAllKeys();
-        const preserveKeys = ['token', 'user', 'subscription', 'app_language', '__cache_version__'];
+        const preserveKeys = ['token', 'user', 'subscription', 'app_language', '__cache_version__', 'debug_crash_breadcrumbs_v1', 'building_data'];
         const keysToRemove = allKeys.filter(k => !preserveKeys.includes(k) && !k.startsWith('app_language_user_'));
         if (keysToRemove.length > 0) {
           await AsyncStorage.multiRemove(keysToRemove);

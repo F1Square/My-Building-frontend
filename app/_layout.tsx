@@ -3,7 +3,7 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { LanguageProvider, useLanguage } from '../context/LanguageContext';
 import { CacheProvider } from '../context/CacheContext';
-import { ActivityIndicator, Image, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Colors } from '../constants/colors';
 import NoInternetOverlay from '../components/NoInternetOverlay';
 import { OfflineIndicator } from '../components/OfflineIndicator';
@@ -49,9 +49,10 @@ function RootNavigator() {
   const [isMaintenance, setIsMaintenance] = useState(false);
   const [maintenanceMessage, setMaintenanceMessage] = useState('');
   const [configLoading, setConfigLoading] = useState(true);
-  const inAuth = (segments[0] as string) === '(auth)';
-  const inLangPicker = (segments[0] as string) === 'choose-language';
-  const inMaintenance = (segments[0] as string) === 'maintenance-mode';
+  const seg0 = segments.length > 0 ? (segments[0] as string) : '';
+  const inAuth = seg0 === '(auth)';
+  const inLangPicker = seg0 === 'choose-language';
+  const inMaintenance = seg0 === 'maintenance-mode';
 
   useEffect(() => {
     // Log persisted breadcrumbs on startup so the last pre-crash steps are visible in JS logs.
@@ -247,6 +248,70 @@ const loadingStyles = StyleSheet.create({
   },
 });
 
+// ── Error Boundary for production crash resilience ─────────────────────────
+// In dev mode, React's own error overlay handles exceptions. In production,
+// an unhandled render error kills the process instantly. This boundary catches
+// those and shows a friendly recovery screen instead.
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    void addBreadcrumb('error_boundary', 'caught', {
+      message: error?.message,
+      stack: error?.stack?.slice(0, 500),
+      componentStack: info?.componentStack?.slice(0, 500),
+    });
+    console.error('[ErrorBoundary] Caught:', error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={errorStyles.container}>
+          <Text style={errorStyles.emoji}>😔</Text>
+          <Text style={errorStyles.title}>Something went wrong</Text>
+          <Text style={errorStyles.subtitle}>
+            The app ran into an unexpected error. Please restart to continue.
+          </Text>
+          {__DEV__ && this.state.error && (
+            <Text style={errorStyles.devError}>{this.state.error.message}</Text>
+          )}
+          <TouchableOpacity
+            style={errorStyles.btn}
+            onPress={() => this.setState({ hasError: false, error: null })}
+          >
+            <Text style={errorStyles.btnText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const errorStyles = StyleSheet.create({
+  container: {
+    flex: 1, backgroundColor: Colors.primary,
+    justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32,
+  },
+  emoji: { fontSize: 56, marginBottom: 16 },
+  title: { fontSize: 24, fontWeight: '800', color: Colors.white, marginBottom: 10, textAlign: 'center' },
+  subtitle: { fontSize: 15, color: 'rgba(255,255,255,0.8)', textAlign: 'center', lineHeight: 22, marginBottom: 24 },
+  devError: { fontSize: 12, color: '#FCA5A5', textAlign: 'center', marginBottom: 20, fontFamily: 'monospace' },
+  btn: { backgroundColor: Colors.white, borderRadius: 14, paddingHorizontal: 32, paddingVertical: 14 },
+  btnText: { fontSize: 16, fontWeight: '700', color: Colors.primary },
+});
+
 export default function RootLayout() {
   useEffect(() => {
     const g = global as any;
@@ -267,15 +332,17 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <CacheProvider>
-      <LanguageProvider>
-        <AuthProvider>
-          <OfflineIndicator />
-          <RootNavigator />
-          <NoInternetOverlay />
-          {/* We'll handle the modal inside RootNavigator or here */}
-        </AuthProvider>
-      </LanguageProvider>
-    </CacheProvider>
+    <ErrorBoundary>
+      <CacheProvider>
+        <LanguageProvider>
+          <AuthProvider>
+            <OfflineIndicator />
+            <RootNavigator />
+            <NoInternetOverlay />
+            {/* We'll handle the modal inside RootNavigator or here */}
+          </AuthProvider>
+        </LanguageProvider>
+      </CacheProvider>
+    </ErrorBoundary>
   );
 }

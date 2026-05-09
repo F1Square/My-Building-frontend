@@ -17,6 +17,7 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 /**
  * Full-screen blocker when offline. Dismisses automatically when the network returns;
@@ -39,7 +40,16 @@ export default function NoInternetOverlay() {
 
     const wasOffline = prevOnlineRef.current === false;
     if (wasOffline && isOnline) {
-      router.replace('/' as any);
+      // Only navigate home if user is logged in.
+      // If we navigate during the login flow itself (token not yet set) it
+      // creates a second concurrent REPLACE that races with _layout.tsx and
+      // can crash the New Architecture navigator.
+      AsyncStorage.getItem('token').then((token) => {
+        if (token) {
+          // Small delay so _layout.tsx routing effect settles first
+          setTimeout(() => router.replace('/' as any), 300);
+        }
+      }).catch(() => {});
     }
     prevOnlineRef.current = isOnline;
   }, [isOnline, isChecking, router]);

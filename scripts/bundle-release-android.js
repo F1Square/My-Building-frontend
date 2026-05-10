@@ -20,8 +20,8 @@ function fail(msg) {
 if (!fs.existsSync(keystoreProps)) {
   fail(
     'Missing android/keystore.properties.\n' +
-      '  1. Copy android/keystore.properties.example → android/keystore.properties\n' +
-      '  2. Add your Play keystore path, alias, and passwords (do not commit this file).'
+      '  1. Copy scripts/keystore.properties.example → android/keystore.properties\n' +
+      '  2. Fill in storeFile (path relative to android/app/), passwords, keyAlias (never commit secrets).'
   );
 }
 

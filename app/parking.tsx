@@ -186,8 +186,6 @@ export default function ParkingScreen() {
     if (isAdmin && !reportBuilding) return Alert.alert('Error', 'Please select a building');
     const desc = reportForm.description.trim();
     if (!desc) return Alert.alert('Error', 'Description is required');
-    const wordCount = desc.split(/\s+/).filter(Boolean).length;
-    if (wordCount < 5) return Alert.alert('Error', 'Description must be at least 5 words');
     setSubmitting(true);
     try {
       await api.post('/vehicles/report', {
@@ -491,9 +489,8 @@ export default function ParkingScreen() {
               </>
             )}
 
-            {/* Description with word count */}
             <Text style={styles.label}>Description <Text style={{ color: Colors.danger }}>*</Text></Text>
-            <Text style={styles.labelHint}>Minimum 5 words — describe the issue clearly</Text>
+            <Text style={styles.labelHint}>Describe the issue clearly</Text>
             <TextInput
               style={[styles.input, styles.textArea]}
               value={reportForm.description}
@@ -503,14 +500,6 @@ export default function ParkingScreen() {
               numberOfLines={4}
               placeholderTextColor={Colors.textMuted}
             />
-            <Text style={[
-              styles.wordCount,
-              reportForm.description.trim().split(/\s+/).filter(Boolean).length >= 5
-                ? { color: Colors.success }
-                : { color: Colors.textMuted }
-            ]}>
-              {reportForm.description.trim().split(/\s+/).filter(Boolean).length} / 5 words minimum
-            </Text>
 
             {/* Vehicle number dropdown */}
             <Text style={styles.label}>Vehicle Number</Text>
@@ -607,5 +596,4 @@ const styles = StyleSheet.create({
   submitBtnText: { color: Colors.white, fontSize: 16, fontWeight: '700' },
   textArea: { height: 100, textAlignVertical: 'top' },
   labelHint: { fontSize: 12, color: Colors.textMuted, marginBottom: 6, marginTop: -4 },
-  wordCount: { fontSize: 12, fontWeight: '600', marginTop: 4, marginBottom: 12, textAlign: 'right' },
 });

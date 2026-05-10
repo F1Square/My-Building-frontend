@@ -108,7 +108,10 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     }
   }, [currentUserId]);
 
-  const t = useCallback((key: string): string => T[language][key] ?? T['en'][key] ?? key, [language]);
+  const t = useCallback((key: string): string => {
+    const bundle = T[language] ?? T.en;
+    return bundle[key] ?? T.en[key] ?? key;
+  }, [language]);
   const contextValue = useMemo(() => ({ language, hasChosen, loading, setLanguage, initForUser, t }), [language, hasChosen, loading, setLanguage, initForUser, t]);
 
   return (

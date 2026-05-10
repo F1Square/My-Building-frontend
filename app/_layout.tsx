@@ -13,6 +13,7 @@ import appJson from '../app.json';
 import { addBreadcrumb, getBreadcrumbs } from '../utils/crashBreadcrumbs';
 
 import Constants from 'expo-constants';
+import * as SplashScreen from 'expo-splash-screen';
 
 const CURRENT_VERSION = Constants.expoConfig?.version || appJson.expo.version;
 
@@ -356,6 +357,10 @@ const errorStyles = StyleSheet.create({
 });
 
 export default function RootLayout() {
+  useEffect(() => {
+    void SplashScreen.hideAsync();
+  }, []);
+
   useEffect(() => {
     const g = global as any;
     const errorUtils = g?.ErrorUtils;

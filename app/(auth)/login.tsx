@@ -27,7 +27,13 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       const res = await api.post('/auth/login/unified', { email: email.trim(), password });
-      await login(res.data.token, res.data.user, res.data.subscription ?? null);
+      const token = res.data?.token;
+      const userPayload = res.data?.user;
+      if (typeof token !== 'string' || !token || !userPayload?.id) {
+        Alert.alert('Login Failed', 'Invalid response from server. Please try again.');
+        return;
+      }
+      await login(token, userPayload, res.data.subscription ?? null);
       // Navigation is handled automatically by _layout.tsx when user state changes.
       // Do NOT call router.replace('/') here — it races with the layout routing
       // effect and causes a native crash in production (two concurrent REPLACE

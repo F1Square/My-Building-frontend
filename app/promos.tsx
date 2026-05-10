@@ -4,8 +4,8 @@ import {
   Modal, Alert, ActivityIndicator, RefreshControl, ScrollView, Share,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { useFocusEffect } from 'expo-router';
+import { useRouter , useFocusEffect } from 'expo-router';
+
 import { Colors } from '../constants/colors';
 import api from '../utils/api';
 

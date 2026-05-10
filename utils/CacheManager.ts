@@ -121,7 +121,7 @@ export class CacheManager {
   private isOnlineStatus = true;
   private appVersion = '1.0.0';
   private readonly maxCacheSize = 50 * 1024 * 1024; // 50 MB
-  private revalidationCallbacks = new Map<string, Array<(data: any) => void>>();
+  private revalidationCallbacks = new Map<string, ((data: any) => void)[]>();
 
   private metrics: CacheMetrics = {
     hits: 0, misses: 0, totalRequests: 0,
@@ -334,7 +334,7 @@ export class CacheManager {
   async evictLRU(): Promise<void> {
     try {
       const allKeys = await AsyncStorage.getAllKeys();
-      const entries: Array<{ key: string; entry: StoredCacheEntry }> = [];
+      const entries: { key: string; entry: StoredCacheEntry }[] = [];
 
       for (const k of allKeys) {
         const e = await this.readEntry(k, false);
@@ -389,7 +389,7 @@ export class CacheManager {
   // Task 15.1 — Cache warming
   // --------------------------------------------------------------------------
 
-  async warmCache(items: Array<{ key: string; fetcher: () => Promise<any>; config?: Partial<CacheConfig> }>): Promise<void> {
+  async warmCache(items: { key: string; fetcher: () => Promise<any>; config?: Partial<CacheConfig> }[]): Promise<void> {
     // Fire-and-forget — does not block UI
     Promise.resolve().then(async () => {
       for (const item of items) {

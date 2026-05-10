@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
@@ -12,45 +12,70 @@ import api from '../utils/api';
 import { addBreadcrumb, clearBreadcrumbs } from '../utils/crashBreadcrumbs';
 import * as WebBrowser from 'expo-web-browser';
 
-// Plan rank — higher = better. User can only subscribe to a plan strictly higher than current.
-const PLAN_RANK: Record<string, number> = { monthly: 1, yearly: 2, lifetime: 3 };
+const ICONS = ['calendar-outline', 'star-outline', 'infinite-outline', 'ribbon-outline', 'trophy-outline'] as const;
+const COL_CYCLE = [Colors.primary, '#F59E0B', Colors.success, '#8B5CF6', '#EC4899'];
+
+type CatalogPlan = {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  amount_paise: number;
+  months: number | null;
+  allow_newspaper_addon: boolean;
+  newspaper_addon_paise: number | null;
+  sort_order: number;
+  features: string[];
+};
 
 export default function SubscribeScreen() {
-  const PLANS = [
-    {
-      key: 'monthly',
-      title: 'Monthly Plan',
-      price: '₹15',
-      period: '/ month',
-      desc: 'Billed every month. Cancel anytime.',
-      icon: 'calendar-outline' as const,
-      color: Colors.primary,
-      features: ['Full access to all modules', 'Maintenance billing & payments', 'Visitor management', 'Complaints & announcements'],
-    },
-    {
-      key: 'yearly',
-      title: 'Yearly Plan',
-      price: '₹180',
-      period: '/ year',
-      desc: 'Billed annually. No monthly hassle.',
-      icon: 'star-outline' as const,
-      color: '#F59E0B',
-      highlight: false,
-      features: ['Everything in Monthly', 'No monthly hassle', 'All modules included'],
-    },
-    {
-      key: 'lifetime',
-      title: 'Lifetime Plan',
-      price: '₹1,500',
-      period: 'one-time',
-      desc: 'Pay once, use forever. Best value.',
-      icon: 'infinite-outline' as const,
-      color: Colors.success,
-      highlight: true,
-      features: ['Everything in Yearly', 'No recurring charges', 'Priority support', 'All future features included'],
-    },
-  ];
-  const { user, subscription, hasActiveSubscription, refreshSubscription } = useAuth();
+  const [catalogPlans, setCatalogPlans] = useState<CatalogPlan[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/subscriptions/plans')
+      .then((r) => {
+        if (!cancelled) setCatalogPlans(Array.isArray(r.data) ? r.data : []);
+      })
+      .catch(() => {
+        if (!cancelled) setCatalogPlans([]);
+      })
+      .finally(() => {
+        if (!cancelled) setCatalogLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const planRank = useMemo(() => {
+    const m: Record<string, number> = {};
+    [...catalogPlans].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)).forEach((p, i) => {
+      m[p.slug] = i + 1;
+    });
+    return m;
+  }, [catalogPlans]);
+
+  const displayPlans = useMemo(() => {
+    return catalogPlans.map((p, i) => {
+      const addP = p.newspaper_addon_paise;
+      const addRupee = addP != null ? Math.round(addP / 100) : (p.months === 12 ? 36 : 3);
+      return {
+        key: p.slug,
+        title: p.title,
+        price: `₹${(p.amount_paise / 100).toLocaleString('en-IN')}`,
+        period: p.months == null ? 'one-time' : p.months === 12 ? '/ year' : '/ month',
+        desc: p.description || '',
+        icon: ICONS[i % ICONS.length],
+        color: COL_CYCLE[i % COL_CYCLE.length],
+        highlight: i === catalogPlans.length - 1 && catalogPlans.length > 0,
+        features: p.features?.length ? p.features : ['Full access to all modules'],
+        months: p.months,
+        allowNewspaper: !!p.allow_newspaper_addon && p.months != null,
+        newspaperAddonRupees: addRupee,
+      };
+    });
+  }, [catalogPlans]);
+  const { subscription, hasActiveSubscription, refreshSubscription } = useAuth();
   const router = useRouter();
   const { t } = useLanguage();
   const [tab, setTab] = useState<'my-plan' | 'explore'>(hasActiveSubscription ? 'my-plan' : 'explore');
@@ -152,15 +177,17 @@ export default function SubscribeScreen() {
     }
   };
 
-  const subscribe = async (plan: string) => {
-    setLoading(plan);
+  const subscribe = async (planSlug: string) => {
+    setLoading(planSlug);
     try {
+      const row = catalogPlans.find((p) => p.slug === planSlug);
+      const isLifetimeCheckout = row ? row.months == null : planSlug === 'lifetime';
       await clearBreadcrumbs();
-      await addBreadcrumb('subscription', 'subscribe_plan_start', { plan });
+      await addBreadcrumb('subscription', 'subscribe_plan_start', { plan: planSlug });
       const orderRes = await api.post('/subscriptions/order', {
-        plan,
+        plan: planSlug,
         promo_id: promoResult?.promo_id || undefined,
-        include_newspaper: plan === 'lifetime' ? false : includeNewspaper,
+        include_newspaper: isLifetimeCheckout ? false : includeNewspaper,
       });
       await addBreadcrumb('subscription', 'subscribe_order_success', { hasCheckoutUrl: !!orderRes?.data?.checkout_url });
       const checkoutUrl = orderRes?.data?.checkout_url;
@@ -173,7 +200,7 @@ export default function SubscribeScreen() {
       }
       setPromoCode('');
       setPromoResult(null);
-      await addBreadcrumb('subscription', 'subscribe_plan_flow_done', { plan, resultType: result?.type });
+      await addBreadcrumb('subscription', 'subscribe_plan_flow_done', { plan: planSlug, resultType: result?.type });
     } catch (e: any) {
       await addBreadcrumb('subscription', 'subscribe_plan_error', { message: e?.message, data: e?.response?.data });
       Alert.alert('Error', e.response?.data?.error || 'Failed to initiate payment');
@@ -225,11 +252,12 @@ export default function SubscribeScreen() {
     ]);
   };
 
-  const applyPromo = async (plan: string) => {
+  const applyPromo = async () => {
     if (!promoCode.trim()) return;
+    const planForPromo = catalogPlans[0]?.slug || 'monthly';
     setPromoLoading(true);
     try {
-      const res = await api.post('/promos/validate', { code: promoCode.trim(), plan });
+      const res = await api.post('/promos/validate', { code: promoCode.trim(), plan: planForPromo });
       setPromoResult(res.data);
     } catch (e: any) {
       Alert.alert('Invalid Code', e.response?.data?.error || 'Promo code not valid');
@@ -238,15 +266,28 @@ export default function SubscribeScreen() {
   };
 
   const isExpired = subscription?.status === 'expired';
-  const isLifetime = subscription?.plan === 'lifetime';
-  const isYearly = subscription?.plan === 'yearly';
+  const currentCat = catalogPlans.find((c) => c.slug === subscription?.plan);
+  const isLifetime = currentCat ? currentCat.months == null : subscription?.plan === 'lifetime';
+  const isYearly = currentCat ? currentCat.months === 12 : subscription?.plan === 'yearly';
   const expiresAt = subscription?.expires_at ? new Date(subscription.expires_at) : null;
   const daysLeft = expiresAt ? Math.ceil((expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null;
 
-  const planLabel = isLifetime ? 'Lifetime Plan' : isYearly ? 'Yearly Plan' : 'Monthly Plan';
-  const planPrice = isLifetime ? '₹1,500' : isYearly ? '₹180/yr' : '₹15/mo';
+  const planLabel = currentCat?.title || (isLifetime ? 'Lifetime Plan' : isYearly ? 'Yearly Plan' : subscription?.plan ? subscription.plan : 'Plan');
+  const planPrice = currentCat
+    ? `₹${(currentCat.amount_paise / 100).toLocaleString('en-IN')}${isLifetime ? '' : isYearly ? '/yr' : '/mo'}`
+    : isLifetime ? '₹1,500' : isYearly ? '₹180/yr' : '₹15/mo';
   const planIcon = isLifetime ? 'infinite-outline' : isYearly ? 'star-outline' : 'calendar-outline';
   const planColor = isLifetime ? Colors.success : isYearly ? '#F59E0B' : Colors.primary;
+
+  const minNewsRupee = useMemo(() => {
+    const vals = catalogPlans
+      .filter((p) => p.months != null && p.allow_newspaper_addon)
+      .map((p) => {
+        const addP = p.newspaper_addon_paise;
+        return addP != null ? Math.round(addP / 100) : (p.months === 12 ? 36 : 3);
+      });
+    return vals.length ? Math.min(...vals) : 3;
+  }, [catalogPlans]);
 
 
 
@@ -298,7 +339,7 @@ export default function SubscribeScreen() {
                   {isLifetime ? (
                     <View style={styles.infoRow}>
                       <Ionicons name="infinite" size={16} color={Colors.success} />
-                      <Text style={styles.infoText}>Never expires — you're set for life</Text>
+                      <Text style={styles.infoText}>{"Never expires — you're set for life"}</Text>
                     </View>
                   ) : (
                     <View style={styles.infoRow}>
@@ -419,7 +460,7 @@ export default function SubscribeScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.addonTitle}>📰 Newspaper</Text>
                   <Text style={styles.addonDesc}>Daily English, Hindi & Gujarati newspapers</Text>
-                  <Text style={styles.addonPrice}>From +₹3 / month</Text>
+                  <Text style={styles.addonPrice}>From +₹{minNewsRupee} / month tier</Text>
                 </View>
               </View>
               <Switch
@@ -443,7 +484,7 @@ export default function SubscribeScreen() {
               />
               <TouchableOpacity
                 style={[styles.promoApplyBtn, !promoCode.trim() && { opacity: 0.4 }]}
-                onPress={() => applyPromo('monthly')}
+                onPress={() => applyPromo()}
                 disabled={!promoCode.trim() || promoLoading}
               >
                 {promoLoading
@@ -466,12 +507,21 @@ export default function SubscribeScreen() {
               </View>
             )}
 
-            {PLANS.map(plan => {
+            {catalogLoading && displayPlans.length === 0 ? (
+              <ActivityIndicator style={{ marginVertical: 24 }} color={Colors.primary} />
+            ) : null}
+            {!catalogLoading && displayPlans.length === 0 ? (
+              <Text style={{ textAlign: 'center', color: Colors.textMuted, marginTop: 24 }}>
+                Plans are not available. Please try again later.
+              </Text>
+            ) : null}
+
+            {displayPlans.map(plan => {
               const isCurrent = subscription?.plan === plan.key && hasActiveSubscription;
               const currentRank = hasActiveSubscription && subscription?.plan
-                ? (PLAN_RANK[subscription.plan] ?? 0)
+                ? (planRank[subscription.plan] ?? 0)
                 : 0;
-              const isLowerOrEqual = hasActiveSubscription && PLAN_RANK[plan.key] <= currentRank && !isCurrent;
+              const isLowerOrEqual = hasActiveSubscription && (planRank[plan.key] ?? 0) <= currentRank && !isCurrent;
               const isDisabled = !!loading || isLowerOrEqual;
 
               return (
@@ -481,7 +531,7 @@ export default function SubscribeScreen() {
                   )}
                   <View style={styles.planTop}>
                     <View style={[styles.planIconBox, { backgroundColor: plan.color + '20' }]}>
-                      <Ionicons name={plan.icon} size={26} color={plan.color} />
+                      <Ionicons name={plan.icon as any} size={26} color={plan.color} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.planTitle}>{plan.title}</Text>
@@ -522,7 +572,7 @@ export default function SubscribeScreen() {
                         ? <ActivityIndicator color={Colors.white} />
                         : <Text style={styles.subscribeBtnText}>
                           {hasActiveSubscription ? `Upgrade — ${plan.price}` : `Subscribe — ${plan.price}`}
-                          {includeNewspaper && plan.key !== 'lifetime' ? ` + ${plan.key === 'yearly' ? '₹36' : '₹3'} newspaper` : ''}
+                          {includeNewspaper && plan.allowNewspaper ? ` + ₹${plan.newspaperAddonRupees} newspaper` : ''}
                           {promoResult && promoResult.final_amount !== undefined
                             ? ` → ₹${promoResult.final_amount}` : ''}
                         </Text>}

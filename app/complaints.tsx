@@ -4,6 +4,7 @@ import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput,
   Modal, Alert, ActivityIndicator, RefreshControl, ScrollView, Image, Pressable,
+  InteractionManager,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -11,6 +12,8 @@ import { useActivityLog } from '../hooks/useActivityLog';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const CATEGORIES = ['General', 'Water', 'Electricity', 'Cleanliness', 'Security', 'Parking', 'Noise', 'Other'];
 
@@ -40,6 +43,7 @@ export default function ComplaintsScreen() {
   const router = useRouter();
   const { t } = useLanguage();
   const { logEvent } = useActivityLog();
+  const insets = useSafeAreaInsets();
   const { mine, view } = useLocalSearchParams<{ mine?: string; view?: string }>();
 
   // Routing logic:
@@ -78,7 +82,24 @@ export default function ComplaintsScreen() {
   const [updating, setUpdating] = useState(false);
 
   useFocusEffect(useCallback(() => {
-    fetchComplaints();
+    // Load cached data first for instant display
+    const cacheKey = isMyView ? 'complaints_my_cache' : 'complaints_building_cache';
+    AsyncStorage.getItem(cacheKey).then(cached => {
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setComplaints(parsed);
+            setLoading(false);
+          }
+        } catch { /* ignore invalid cache */ }
+      }
+    }).catch(() => {});
+
+    // Then fetch fresh data after navigation animation completes
+    InteractionManager.runAfterInteractions(() => {
+      fetchComplaints();
+    });
     logEvent(isMyView ? 'open_my_complaints' : 'open_society_complaints', 'complaints');
   }, []));
 
@@ -105,7 +126,11 @@ export default function ComplaintsScreen() {
     }
     try {
       const res = await api.get(getEndpoint());
-      setComplaints(Array.isArray(res.data) ? res.data : []);
+      const data = Array.isArray(res.data) ? res.data : [];
+      setComplaints(data);
+      // Cache the result for instant display on next visit
+      const cacheKey = isMyView ? 'complaints_my_cache' : 'complaints_building_cache';
+      AsyncStorage.setItem(cacheKey, JSON.stringify(data)).catch(() => {});
     } catch (e: any) {
       Alert.alert('Error', e.response?.data?.error || e.message || 'Failed to load');
     } finally { setLoading(false); setRefreshing(false); }
@@ -347,11 +372,11 @@ export default function ComplaintsScreen() {
       {/* FAB — only shown when not locked */}
       {!isLocked && (
         <TouchableOpacity
-          style={styles.fab}
+          style={[styles.fab, { bottom: Math.max(insets.bottom, 16) + 16 }]}
           onPress={() => setShowAdd(true)}
           activeOpacity={0.85}
         >
-          <Ionicons name="add" size={26} color={Colors.white} />
+          <Ionicons name="add" size={22} color={Colors.white} />
           <Text style={styles.fabText}>New Complaint</Text>
         </TouchableOpacity>
       )}
@@ -690,15 +715,15 @@ const styles = StyleSheet.create({
 
   // FAB
   fab: {
-    position: 'absolute', bottom: 24, alignSelf: 'center',
+    position: 'absolute', right: 20,
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: Colors.primary,
-    paddingHorizontal: 24, paddingVertical: 14,
-    borderRadius: 30,
+    paddingHorizontal: 20, paddingVertical: 14,
+    borderRadius: 28,
     shadowColor: Colors.primary, shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 4 },
     elevation: 8,
   },
-  fabText: { fontSize: 15, fontWeight: '800', color: Colors.white },
+  fabText: { fontSize: 14, fontWeight: '800', color: Colors.white },
   tapToExpand: { fontSize: 11, color: Colors.textMuted, textAlign: 'center', marginTop: 4, marginBottom: 8 },
 
   // Locked / paywall state

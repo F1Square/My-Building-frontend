@@ -1,11 +1,11 @@
 import React, { createContext, useCallback, useContext, useMemo, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import api from '../utils/api';
+import api, { registerAuthFailureHandler, setAuthToken } from '../utils/api';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import { Platform } from 'react-native';
+import { InteractionManager, Platform } from 'react-native';
 import Constants from 'expo-constants';
-import { registerAuthFailureHandler, setAuthToken } from '../utils/api';
+
 import { cacheManager } from '../utils/CacheManager';
 
 type User = {
@@ -21,7 +21,7 @@ type User = {
 };
 
 type Subscription = {
-  plan: 'monthly' | 'yearly' | 'lifetime';
+  plan: string;
   status: 'active' | 'expired' | 'cancelled';
   expires_at: string | null;
   newspaper_addon?: boolean;
@@ -137,13 +137,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = useCallback(async (t: string, u: User, sub?: Subscription) => {
+    if (!t || !u?.id) {
+      console.warn('[AuthContext] login ignored — missing token or user id');
+      return;
+    }
     // If subscription came with the login response, cache it immediately — no extra round trip
     const resolvedSub = sub !== undefined ? sub : null;
-    await AsyncStorage.multiSet([
-      ['token', t],
-      ['user', JSON.stringify(u)],
-      ['subscription', JSON.stringify(resolvedSub)],
-    ]);
+    let userJson: string;
+    let subJson: string;
+    try {
+      userJson = JSON.stringify(u);
+      subJson = JSON.stringify(resolvedSub);
+    } catch (e) {
+      console.error('[AuthContext] Cannot serialize user/subscription for storage:', e);
+      return;
+    }
+
+    try {
+      await AsyncStorage.multiSet([
+        ['token', t],
+        ['user', userJson],
+        ['subscription', subJson],
+      ]);
+    } catch (e) {
+      console.error('[AuthContext] Failed to persist session:', e);
+      return;
+    }
+
     setAuthToken(t);
     setToken(t);
     setUser(u);
@@ -152,11 +172,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Refresh subscription in background only if it wasn't provided
     if (sub === undefined) fetchSubscription();
 
-    // Defer push token registration by 2s.
-    // In New Architecture, calling native Notifications APIs synchronously
-    // during the login state-change cascade can trigger a native thread crash
-    // before the UI has fully re-rendered and navigated.
-    setTimeout(() => { registerPushToken(); }, 2000);
+    // Defer push: after interactions + delay so native stack and router finish mounting.
+    InteractionManager.runAfterInteractions(() => {
+      setTimeout(() => { registerPushToken(); }, 2000);
+    });
 
     // Warm cache with critical data in background (non-blocking)
     const userKey = cacheManager.generateKey('auth', '/auth/me', {}, u.role, u.building_id);

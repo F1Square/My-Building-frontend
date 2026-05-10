@@ -4,7 +4,7 @@ import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   TextInput, KeyboardAvoidingView, Platform, ActivityIndicator,
-  RefreshControl, Animated, AppState,
+  RefreshControl, Animated, AppState, Keyboard,
   type NativeSyntheticEvent, type NativeScrollEvent,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -113,6 +113,7 @@ export default function ChatScreen() {
   const [sending, setSending] = useState(false);
   const [noBuildingError, setNoBuildingError] = useState(false);
   const [memberCount, setMemberCount] = useState<number | null>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   const flatListRef = useRef<FlatList<ChatMessage>>(null);
   const lastMsgIdRef = useRef<string | null>(null);
@@ -251,6 +252,19 @@ export default function ChatScreen() {
     return () => sub.remove();
   }, [pollNewMessages, scheduleNextPoll]);
 
+  /* ── Keyboard visibility tracking (Android edge-to-edge) ────────────── */
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => setKeyboardVisible(true),
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardVisible(false),
+    );
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
+
   /* ── Focus lifecycle ─────────────────────────────────────────────────── */
   useFocusEffect(
     useCallback(() => {
@@ -327,6 +341,9 @@ export default function ChatScreen() {
   const keyboardVerticalOffset = Platform.OS === 'ios' ? Math.max(insets.top, 12) + 8 : 0;
 
   /* ─── UI ──────────────────────────────────────────────────────────────── */
+  // On Android with softwareKeyboardLayoutMode: "resize", the OS resizes
+  // the activity window automatically. KAV must NOT add its own behavior
+  // or it creates double-adjustment (the visible gap between input & keyboard).
   return (
     <KeyboardAvoidingView
       style={s.container}
@@ -347,9 +364,6 @@ export default function ChatScreen() {
             {memberCount ? `${memberCount} members · ` : ''}Group
           </Text>
         </View>
-        <TouchableOpacity style={s.headerAction}>
-          <Ionicons name="ellipsis-vertical" size={20} color="rgba(255,255,255,0.7)" />
-        </TouchableOpacity>
       </View>
 
       {/* ── Messages ────────────────────────────────────────────────────── */}
@@ -399,9 +413,8 @@ export default function ChatScreen() {
       )}
 
       {/* ── Input bar ───────────────────────────────────────────────────── */}
-      <View style={[s.inputBar, { paddingBottom: Math.max(insets.bottom, 8) + 4 }]}>
+      <View style={[s.inputBar, { paddingBottom: keyboardVisible ? 4 : Math.max(insets.bottom, 4) }]}>
         <View style={s.inputWrap}>
-          <Ionicons name="happy-outline" size={22} color={Colors.textMuted} style={{ marginLeft: 12 }} />
           <TextInput
             style={s.input}
             value={text}
@@ -510,7 +523,7 @@ const s = StyleSheet.create({
   /* Input bar */
   inputBar: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 10,
-    paddingHorizontal: 12, paddingTop: 10,
+    paddingHorizontal: 12, paddingTop: 8,
     backgroundColor: '#fff',
     borderTopWidth: 1, borderTopColor: '#E5E7EB',
   },
@@ -520,7 +533,7 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: '#E5E7EB',
   },
   input: {
-    flex: 1, paddingHorizontal: 10, paddingVertical: 10,
+    flex: 1, paddingHorizontal: 14, paddingVertical: 10,
     fontSize: 15, color: Colors.text, maxHeight: 120,
   },
   sendBtn: {

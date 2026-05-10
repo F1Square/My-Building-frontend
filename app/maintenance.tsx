@@ -18,14 +18,14 @@ import { cacheManager, CACHE_PRESETS } from '../utils/CacheManager';
 
 type BillingCategory = 'maintenance' | 'water_meter' | 'special';
 
-const CATEGORIES: Array<{
+const CATEGORIES: {
   category: BillingCategory;
   title: string;
   subtitle: string;
   icon: string;
   color: string;
   bg: string;
-}> = [
+}[] = [
   {
     category: 'maintenance',
     title: 'Maintenance Bill',

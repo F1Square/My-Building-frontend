@@ -3,10 +3,9 @@ import { Colors } from '../../constants/colors';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   RefreshControl, Alert, Modal, TextInput, Dimensions, Image,
-  ActivityIndicator,
+  ActivityIndicator, FlatList,
 } from 'react-native';
-import { useRouter } from 'expo-router';
-import { useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAuth } from '../../context/AuthContext';
@@ -77,13 +76,6 @@ const MODULE_ICONS: Record<string, string> = {
   newspaper: 'newspaper-outline',
   societyRules: 'book-outline',
 };
-
-function getGreeting() {
-  const h = new Date().getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 17) return 'Good afternoon';
-  return 'Good evening';
-}
 
 export default function HomeScreen() {
   const { t } = useLanguage();
@@ -220,6 +212,9 @@ export default function HomeScreen() {
     setShowUrgentModal(false);
     setNotifications([]);
     setNotifLoading(false);
+    // Optimistic update: clear badges immediately so user sees them go away
+    setTotalUnread(0);
+    setBadgeCounts({});
     try {
       await Promise.all([
         api.patch('/notifications/read-all'),
@@ -435,8 +430,12 @@ export default function HomeScreen() {
                 <Text style={styles.modalEmptyText}>{t('noNotifications')}</Text>
               </View>
             ) : (
-              <ScrollView showsVerticalScrollIndicator={false}>
-                {notifications.map((n) => (
+              <FlatList
+                data={notifications}
+                keyExtractor={(n) => n.id}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: 20 }}
+                renderItem={({ item: n }) => (
                   <View key={n.id} style={styles.urgentCard}>
                     <View style={styles.urgentCardTop}>
                       <Text style={styles.urgentCardTitle}>{n.title}</Text>
@@ -449,9 +448,8 @@ export default function HomeScreen() {
                       {new Date(n.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                     </Text>
                   </View>
-                ))}
-                <View style={{ height: 20 }} />
-              </ScrollView>
+                )}
+              />
             )}
           </TouchableOpacity>
         </TouchableOpacity>

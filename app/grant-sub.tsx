@@ -9,41 +9,59 @@ import { Colors } from '../constants/colors';
 import api from '../utils/api';
 
 type UserOption = { id: string; name: string; email: string };
+type PlanOpt = { id: string; slug: string; title: string; months: number | null };
 
 export default function GrantSubScreen() {
   const router = useRouter();
   const [users, setUsers] = useState<UserOption[]>([]);
+  const [plans, setPlans] = useState<PlanOpt[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [form, setForm] = useState({
-    user_id: '', plan: 'monthly', months: '1', remark: '',
+    user_id: '', plan: '', months: '1', remark: '',
   });
 
   useEffect(() => {
     (async () => {
       setUsersLoading(true);
       try {
-        const r = await api.get('/buildings/admin/users');
-        setUsers((r.data || []).map((u: any) => ({ id: u.id, name: u.name, email: u.email })));
+        const [ur, pr] = await Promise.all([
+          api.get('/buildings/admin/users'),
+          api.get('/subscriptions/plans/admin'),
+        ]);
+        setUsers((ur.data || []).map((u: any) => ({ id: u.id, name: u.name, email: u.email })));
+        const raw = pr.data || [];
+        setPlans(
+          raw
+            .filter((p: any) => p.is_active)
+            .map((p: any) => ({ id: p.id, slug: p.slug, title: p.title, months: p.months })),
+        );
       } catch {
-        Alert.alert('Error', 'Failed to load users');
+        Alert.alert('Error', 'Failed to load users or plans');
       } finally {
         setUsersLoading(false);
       }
     })();
   }, []);
 
+  useEffect(() => {
+    if (!plans.length) return;
+    setForm((f) => (f.plan ? f : { ...f, plan: plans[0].slug }));
+  }, [plans]);
+
   const grant = async () => {
     if (!form.user_id) return Alert.alert('Error', 'Select a user');
+    if (!form.plan) return Alert.alert('Error', 'Select a plan');
     if (!form.remark.trim()) return Alert.alert('Error', 'Remark is required — add who is handling this');
+    const selectedPlan = plans.find((p) => p.slug === form.plan);
     setSubmitting(true);
     try {
       await api.post('/subscriptions/grant', {
         user_id: form.user_id,
         plan: form.plan,
-        months: form.plan === 'monthly' ? Number(form.months) : undefined,
+        months: selectedPlan && selectedPlan.months != null ? Number(form.months) : undefined,
         remark: form.remark.trim(),
       });
       Alert.alert('Done', 'Subscription granted', [
@@ -151,28 +169,29 @@ export default function GrantSubScreen() {
         </View>
 
         <Text style={styles.label}>Plan *</Text>
-        <View style={{ flexDirection: 'row', gap: 10 }}>
-          {(['monthly', 'yearly', 'lifetime'] as const).map(p => (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+          {plans.map((p) => (
             <TouchableOpacity
-              key={p}
-              style={[styles.planToggle, form.plan === p && styles.planToggleActive]}
-              onPress={() => setForm({ ...form, plan: p })}
+              key={p.slug}
+              style={[styles.planToggle, form.plan === p.slug && styles.planToggleActive]}
+              onPress={() => setForm({ ...form, plan: p.slug })}
             >
-              <Text style={[styles.planToggleText, form.plan === p && { color: Colors.white }]}>
-                {p === 'monthly' ? '📅 Monthly' : p === 'yearly' ? '⭐ Yearly' : '♾ Lifetime'}
-              </Text>
+              <Text style={[styles.planToggleText, form.plan === p.slug && { color: Colors.white }]}>{p.title}</Text>
             </TouchableOpacity>
           ))}
         </View>
+        {plans.length === 0 && !usersLoading ? (
+          <Text style={{ color: Colors.textMuted, marginTop: 8 }}>No active plans. Create them under Subscriptions → Plans.</Text>
+        ) : null}
 
-        {form.plan === 'monthly' && (
+        {plans.find((p) => p.slug === form.plan)?.months != null && (
           <>
             <Text style={styles.label}>Months *</Text>
             <TextInput
               style={styles.input}
               value={form.months}
               onChangeText={(v) => setForm({ ...form, months: v })}
-              placeholder="e.g. 1"
+              placeholder="e.g. 1 (or match plan duration)"
               keyboardType="number-pad"
               placeholderTextColor={Colors.textMuted}
             />

@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { LanguageProvider, useLanguage } from '../context/LanguageContext';
 import { CacheProvider } from '../context/CacheContext';
-import { ActivityIndicator, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Image, InteractionManager, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Colors } from '../constants/colors';
 import NoInternetOverlay from '../components/NoInternetOverlay';
 import { OfflineIndicator } from '../components/OfflineIndicator';
@@ -43,6 +43,9 @@ function RootNavigator() {
   const { user, loading: authLoading } = useAuth();
   const { hasChosen, loading: langLoading, initForUser } = useLanguage();
   const segments = useSegments();
+  const segmentsRef = useRef(segments);
+  segmentsRef.current = segments;
+  const rootNav = useRootNavigationState();
   const router = useRouter();
   const initializedRef = useRef<string | null>(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
@@ -113,45 +116,85 @@ function RootNavigator() {
     };
   }, []);
 
-  // Routing logic — only runs once both auth and language are resolved
+  // Routing logic — only runs once both auth and language are resolved.
+  // IMPORTANT (New Architecture / production): Do not list `segments` in the
+  // dependency array — every segment change was clearing this timer and
+  // scheduling another REPLACE, which races the navigator. Read segments from
+  // a ref instead.
   useEffect(() => {
     if (authLoading || langLoading || configLoading) return;
+    // Avoid REPLACE until Expo Router's root container has a key (docs pattern).
+    if (!rootNav?.key) return;
 
-    // Defer all navigation by one tick so the Stack navigator and its (tabs)
-    // child are fully mounted before any REPLACE action is dispatched.
+    // Defer navigation until after interactions AND one tick so the Stack
+    // navigator and its (tabs) child are fully mounted before any REPLACE
+    // action is dispatched. This prevents the native crash ("UI not supported")
+    // on New Architecture where two concurrent REPLACE actions race the
+    // navigator mount.
     const timer = setTimeout(() => {
-      // 1. Maintenance Check (Priority)
-      // Only redirect if NOT an admin (admins need to be able to turn it off!)
-      if (isMaintenance && user?.role !== 'admin') {
-        if (!inMaintenance) {
-          router.replace({
-            pathname: '/maintenance-mode',
-            params: { message: maintenanceMessage }
-          } as any);
+      InteractionManager.runAfterInteractions(() => {
+        try {
+          const seg = segmentsRef.current;
+          const seg0 = seg.length > 0 ? (seg[0] as string) : '';
+          const inAuthNow = seg0 === '(auth)';
+          const inLangPickerNow = seg0 === 'choose-language';
+          const inMaintenanceNow = seg0 === 'maintenance-mode';
+
+          // 1. Maintenance Check (Priority)
+          // Only redirect if NOT an admin (admins need to be able to turn it off!)
+          if (isMaintenance && user?.role !== 'admin') {
+            if (!inMaintenanceNow) {
+              void addBreadcrumb('routing', 'replace_maintenance');
+              router.replace({
+                pathname: '/maintenance-mode',
+                params: { message: maintenanceMessage }
+              } as any);
+            }
+            return;
+          }
+
+          if (!user) {
+            if (!inAuthNow) {
+              void addBreadcrumb('routing', 'replace_login');
+              router.replace('/login' as any);
+            }
+            return;
+          }
+
+          // Logged in but hasn't chosen language yet → show picker
+          if (!hasChosen) {
+            if (!inLangPickerNow) {
+              void addBreadcrumb('routing', 'replace_lang_picker');
+              router.replace('/choose-language' as any);
+            }
+            return;
+          }
+
+          // Logged in + language chosen → only redirect if currently in auth or language picker
+          // Don't redirect on 404 or other valid routes
+          if (inAuthNow || inLangPickerNow || inMaintenanceNow) {
+            void addBreadcrumb('routing', 'replace_home');
+            router.replace('/' as any);
+          }
+        } catch (err) {
+          // Swallow navigation errors during transitions — the error boundary
+          // will catch any render-level issues. This prevents native process
+          // kills on New Architecture.
+          console.warn('[RootNavigator] Navigation error swallowed:', err);
+          void addBreadcrumb('routing', 'navigation_error', { message: (err as Error)?.message });
         }
-        return;
-      }
-
-      if (!user) {
-        if (!inAuth) router.replace('/login' as any);
-        return;
-      }
-
-      // Logged in but hasn't chosen language yet → show picker
-      if (!hasChosen) {
-        if (!inLangPicker) router.replace('/choose-language' as any);
-        return;
-      }
-
-      // Logged in + language chosen → only redirect if currently in auth or language picker
-      // Don't redirect on 404 or other valid routes
-      if (inAuth || inLangPicker || inMaintenance) {
-        router.replace('/' as any);
-      }
-    }, 0);
+      });
+    }, 50);
 
     return () => clearTimeout(timer);
-  }, [user, authLoading, hasChosen, langLoading, isMaintenance, segments, maintenanceMessage, configLoading, router]);
+  }, [user, authLoading, hasChosen, langLoading, isMaintenance, maintenanceMessage, configLoading, router, rootNav?.key, user?.role]);
+
+  // After login, LanguageContext sets langLoading=true while it reads per-user prefs.
+  // Showing the full-screen splash during that phase unmounts the root Stack and
+  // remounts it — on New Architecture release builds that races router.replace
+  // and crashes the app ("My Building keeps stopping"). Only block the UI on
+  // language bootstrap when there is no logged-in user yet (cold start / logout).
+  const showInitialSplash = authLoading || configLoading || (!user && langLoading);
 
   const waitingForRedirect =
     !authLoading &&
@@ -164,7 +207,7 @@ function RootNavigator() {
       (!!user && hasChosen && (inAuth || inLangPicker || inMaintenance))
     );
 
-  if (authLoading || langLoading || configLoading || waitingForRedirect) {
+  if (showInitialSplash || waitingForRedirect) {
     return (
       <View style={loadingStyles.container}>
         <Image

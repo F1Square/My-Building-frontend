@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import api, { registerAuthFailureHandler, setAuthToken } from '../utils/api';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import { InteractionManager, Platform } from 'react-native';
+import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
 import { cacheManager } from '../utils/CacheManager';
@@ -75,35 +75,68 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    AsyncStorage.multiGet(['token', 'user', 'subscription'])
-      .then(([t, u, s]) => {
+    let mounted = true;
+    
+    const restoreSession = async () => {
+      try {
+        const values = await AsyncStorage.multiGet(['token', 'user', 'subscription']);
+        
+        if (!mounted) return;
+        
+        const [t, u, s] = values;
         const restoredToken = t[1];
         const restoredUser = safeParse<User | null>(u[1], null);
         const restoredSubscription = safeParse<Subscription>(s[1], null);
 
-        if (restoredToken && restoredUser) {
+        // Validate restored data integrity
+        if (restoredToken && restoredUser && restoredUser.id) {
+          console.log('[AuthContext] Restoring session for user:', restoredUser.email);
           setAuthToken(restoredToken);
           setToken(restoredToken);
           setUser(restoredUser);
           // Load cached subscription instantly — no flicker
           setSubscription(restoredSubscription);
           // Then refresh in background
-          fetchSubscription();
+          fetchSubscription().catch(err => {
+            console.warn('[AuthContext] Background subscription refresh failed:', err);
+          });
         } else if (restoredToken || u[1] || s[1]) {
           // Partial/corrupt auth state can create boot loops after upgrades.
-          AsyncStorage.multiRemove(['token', 'user', 'subscription']);
+          console.warn('[AuthContext] Detected partial/corrupt auth state - clearing');
+          await AsyncStorage.multiRemove(['token', 'user', 'subscription']);
+          setAuthToken(null);
+          setToken(null);
+          setUser(null);
+          setSubscription(null);
+        } else {
+          console.log('[AuthContext] No session to restore');
+        }
+      } catch (error) {
+        console.error('[AuthContext] Failed to restore session:', error);
+        // On error, clear potentially corrupt state
+        try {
+          await AsyncStorage.multiRemove(['token', 'user', 'subscription']);
+        } catch (clearError) {
+          console.error('[AuthContext] Failed to clear corrupt state:', clearError);
+        }
+        if (mounted) {
           setAuthToken(null);
           setToken(null);
           setUser(null);
           setSubscription(null);
         }
-      })
-      .catch((error) => {
-        console.error('[AuthContext] Failed to restore session:', error);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    restoreSession();
+    
+    return () => {
+      mounted = false;
+    };
   }, [fetchSubscription]);
 
   const registerPushToken = useCallback(async () => {
@@ -141,10 +174,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.warn('[AuthContext] login ignored — missing token or user id');
       return;
     }
+    
     // If subscription came with the login response, cache it immediately — no extra round trip
     const resolvedSub = sub !== undefined ? sub : null;
     let userJson: string;
     let subJson: string;
+    
     try {
       userJson = JSON.stringify(u);
       subJson = JSON.stringify(resolvedSub);
@@ -154,34 +189,59 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
+      // Use multiSet for atomic operation - all or nothing
       await AsyncStorage.multiSet([
         ['token', t],
         ['user', userJson],
         ['subscription', subJson],
       ]);
+      
+      console.log('[AuthContext] Session persisted successfully');
     } catch (e) {
       console.error('[AuthContext] Failed to persist session:', e);
-      return;
+      // Even if storage fails, update in-memory state so user can continue
+      // They'll need to login again on next app restart
+      console.warn('[AuthContext] Continuing with in-memory session only');
     }
 
+    // Update in-memory state AFTER successful storage (or on storage failure as fallback)
     setAuthToken(t);
     setToken(t);
     setUser(u);
     setSubscription(resolvedSub);
 
     // Refresh subscription in background only if it wasn't provided
-    if (sub === undefined) fetchSubscription();
+    if (sub === undefined) {
+      // Delay subscription fetch to avoid race with navigation
+      setTimeout(() => {
+        fetchSubscription().catch(err => {
+          console.warn('[AuthContext] Background subscription fetch failed:', err);
+        });
+      }, 1000);
+    }
 
-    // Defer push: after interactions + delay so native stack and router finish mounting.
-    InteractionManager.runAfterInteractions(() => {
-      setTimeout(() => { registerPushToken(); }, 2000);
-    });
+    // Defer push: Simple timeout, no InteractionManager complexity
+    // INCREASED DELAY: 5000ms to ensure everything is stable
+    setTimeout(() => { 
+      registerPushToken().catch(err => {
+        console.log('[AuthContext] Push token registration failed (non-critical):', err);
+      });
+    }, 5000);
 
     // Warm cache with critical data in background (non-blocking)
-    const userKey = cacheManager.generateKey('auth', '/auth/me', {}, u.role, u.building_id);
-    cacheManager.warmCache([
-      { key: userKey, fetcher: async () => u },
-    ]);
+    // Delay to avoid interfering with navigation
+    setTimeout(() => {
+      try {
+        const userKey = cacheManager.generateKey('auth', '/auth/me', {}, u.role, u.building_id);
+        cacheManager.warmCache([
+          { key: userKey, fetcher: async () => u },
+        ]).catch(err => {
+          console.warn('[AuthContext] Cache warming failed (non-critical):', err);
+        });
+      } catch (err) {
+        console.warn('[AuthContext] Cache warming setup failed:', err);
+      }
+    }, 2000);
   }, [fetchSubscription, registerPushToken]);
 
   const logout = useCallback(async () => {

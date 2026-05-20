@@ -26,14 +26,19 @@ export default function LoginScreen() {
     if (!EMAIL_RE.test(email.trim())) return Alert.alert('Error', 'Please enter a valid email address');
     setLoading(true);
     try {
+      api.post('/auth/client-log', { action: 'frontend_login_started', userEmail: email.trim(), detail: { step: '1_clicked_button' } }).catch(()=>{});
       const res = await api.post('/auth/login/unified', { email: email.trim(), password });
+      api.post('/auth/client-log', { action: 'frontend_login_api_done', userEmail: email.trim(), detail: { step: '2_api_returned_success' } }).catch(()=>{});
       const token = res.data?.token;
       const userPayload = res.data?.user;
       if (typeof token !== 'string' || !token || !userPayload?.id) {
+        api.post('/auth/client-log', { action: 'frontend_login_invalid_payload', userEmail: email.trim(), detail: { step: 'error_no_token' } }).catch(()=>{});
         Alert.alert('Login Failed', 'Invalid response from server. Please try again.');
         return;
       }
+      api.post('/auth/client-log', { action: 'frontend_login_context_start', userEmail: email.trim(), detail: { step: '3_calling_auth_context_login' } }).catch(()=>{});
       await login(token, userPayload, res.data.subscription ?? null);
+      api.post('/auth/client-log', { action: 'frontend_login_context_done', userEmail: email.trim(), detail: { step: '4_auth_context_login_finished' } }).catch(()=>{});
       // Navigation is handled automatically by _layout.tsx when user state changes.
       // Do NOT call router.replace('/') here — it races with the layout routing
       // effect and causes a native crash in production (two concurrent REPLACE

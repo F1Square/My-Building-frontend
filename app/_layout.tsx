@@ -3,7 +3,7 @@ import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-rout
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { LanguageProvider, useLanguage } from '../context/LanguageContext';
 import { CacheProvider } from '../context/CacheContext';
-import { ActivityIndicator, Image, InteractionManager, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Colors } from '../constants/colors';
 import NoInternetOverlay from '../components/NoInternetOverlay';
 import { OfflineIndicator } from '../components/OfflineIndicator';
@@ -49,6 +49,7 @@ function RootNavigator() {
   const rootNav = useRootNavigationState();
   const router = useRouter();
   const initializedRef = useRef<string | null>(null);
+  const navigationLockRef = useRef(false); // Prevent concurrent navigation
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [isMaintenance, setIsMaintenance] = useState(false);
   const [maintenanceMessage, setMaintenanceMessage] = useState('');
@@ -118,76 +119,73 @@ function RootNavigator() {
   }, []);
 
   // Routing logic — only runs once both auth and language are resolved.
-  // IMPORTANT (New Architecture / production): Do not list `segments` in the
-  // dependency array — every segment change was clearing this timer and
-  // scheduling another REPLACE, which races the navigator. Read segments from
-  // a ref instead.
   useEffect(() => {
     if (authLoading || langLoading || configLoading) return;
-    // Avoid REPLACE until Expo Router's root container has a key (docs pattern).
     if (!rootNav?.key) return;
+    if (navigationLockRef.current) return;
 
-    // Defer navigation until after interactions AND one tick so the Stack
-    // navigator and its (tabs) child are fully mounted before any REPLACE
-    // action is dispatched. This prevents the native crash ("UI not supported")
-    // on New Architecture where two concurrent REPLACE actions race the
-    // navigator mount.
+    // Simple, reliable delay - no InteractionManager complexity
     const timer = setTimeout(() => {
-      InteractionManager.runAfterInteractions(() => {
-        try {
-          const seg = segmentsRef.current;
-          const seg0 = seg.length > 0 ? (seg[0] as string) : '';
-          const inAuthNow = seg0 === '(auth)';
-          const inLangPickerNow = seg0 === 'choose-language';
-          const inMaintenanceNow = seg0 === 'maintenance-mode';
+      try {
+        if (navigationLockRef.current) return;
+        navigationLockRef.current = true;
 
-          // 1. Maintenance Check (Priority)
-          // Only redirect if NOT an admin (admins need to be able to turn it off!)
-          if (isMaintenance && user?.role !== 'admin') {
-            if (!inMaintenanceNow) {
-              void addBreadcrumb('routing', 'replace_maintenance');
-              router.replace({
-                pathname: '/maintenance-mode',
-                params: { message: maintenanceMessage }
-              } as any);
-            }
-            return;
-          }
+        const seg = segmentsRef.current;
+        const seg0 = seg.length > 0 ? (seg[0] as string) : '';
+        const inAuthNow = seg0 === '(auth)';
+        const inLangPickerNow = seg0 === 'choose-language';
+        const inMaintenanceNow = seg0 === 'maintenance-mode';
 
-          if (!user) {
-            if (!inAuthNow) {
-              void addBreadcrumb('routing', 'replace_login');
-              router.replace('/login' as any);
-            }
-            return;
+        // 1. Maintenance Check
+        if (isMaintenance && user?.role !== 'admin') {
+          if (!inMaintenanceNow) {
+            void addBreadcrumb('routing', 'replace_maintenance');
+            router.replace({
+              pathname: '/maintenance-mode',
+              params: { message: maintenanceMessage }
+            } as any);
           }
-
-          // Logged in but hasn't chosen language yet → show picker
-          if (!hasChosen) {
-            if (!inLangPickerNow) {
-              void addBreadcrumb('routing', 'replace_lang_picker');
-              router.replace('/choose-language' as any);
-            }
-            return;
-          }
-
-          // Logged in + language chosen → only redirect if currently in auth or language picker
-          // Don't redirect on 404 or other valid routes
-          if (inAuthNow || inLangPickerNow || inMaintenanceNow) {
-            void addBreadcrumb('routing', 'replace_home');
-            router.replace('/' as any);
-          }
-        } catch (err) {
-          // Swallow navigation errors during transitions — the error boundary
-          // will catch any render-level issues. This prevents native process
-          // kills on New Architecture.
-          console.warn('[RootNavigator] Navigation error swallowed:', err);
-          void addBreadcrumb('routing', 'navigation_error', { message: (err as Error)?.message });
+          setTimeout(() => { navigationLockRef.current = false; }, 1000);
+          return;
         }
-      });
-    }, 50);
 
-    return () => clearTimeout(timer);
+        // 2. No user - go to login
+        if (!user) {
+          if (!inAuthNow) {
+            void addBreadcrumb('routing', 'replace_login');
+            router.replace('/login' as any);
+          }
+          setTimeout(() => { navigationLockRef.current = false; }, 1000);
+          return;
+        }
+
+        // 3. User logged in but no language chosen
+        if (!hasChosen) {
+          if (!inLangPickerNow) {
+            void addBreadcrumb('routing', 'replace_lang_picker');
+            router.replace('/choose-language' as any);
+          }
+          setTimeout(() => { navigationLockRef.current = false; }, 1000);
+          return;
+        }
+
+        // 4. User logged in + language chosen - go to home if in auth/lang/maintenance
+        if (inAuthNow || inLangPickerNow || inMaintenanceNow) {
+          void addBreadcrumb('routing', 'replace_home');
+          router.replace('/' as any);
+        }
+        
+        setTimeout(() => { navigationLockRef.current = false; }, 1000);
+      } catch (err) {
+        console.warn('[RootNavigator] Navigation error:', err);
+        void addBreadcrumb('routing', 'navigation_error', { message: (err as Error)?.message });
+        navigationLockRef.current = false;
+      }
+    }, 300); // Increased to 300ms for maximum reliability
+
+    return () => {
+      clearTimeout(timer);
+    };
   }, [user, authLoading, hasChosen, langLoading, isMaintenance, maintenanceMessage, configLoading, router, rootNav?.key, user?.role]);
 
   // After login, LanguageContext sets langLoading=true while it reads per-user prefs.

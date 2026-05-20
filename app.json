@@ -2,7 +2,7 @@
   "expo": {
     "name": "My Building",
     "slug": "My_Building",
-    "version": "1.16.3",
+    "version": "1.16.7",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "splash": {
@@ -12,7 +12,7 @@
     },
     "scheme": "mybuilding",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true
     },
@@ -25,7 +25,7 @@
       "predictiveBackGestureEnabled": false,
       "softwareKeyboardLayoutMode": "resize",
       "package": "com.f1square.mybuilding",
-      "versionCode": 21,
+      "versionCode": 25,
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_MEDIA_IMAGES",

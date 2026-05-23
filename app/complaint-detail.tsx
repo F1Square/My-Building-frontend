@@ -1,13 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Image, TextInput, ActivityIndicator, Alert, Pressable } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/colors';
 import { useLanguage } from '../context/LanguageContext';
-import { useAuth } from '../context/AuthContext';
+import { useActivityLog } from '../hooks/useActivityLog';
 import * as ImagePicker from 'expo-image-picker';
 import api from '../utils/api';
-import { useActivityLog } from '../hooks/useActivityLog';
 
 const CATEGORIES = ['General', 'Water', 'Electricity', 'Cleanliness', 'Security', 'Parking', 'Noise', 'Other'];
 const CAT_ICONS: Record<string, string> = {
@@ -23,36 +22,72 @@ const STATUS_META: Record<string, { label: string; color: string; bg: string; ic
 };
 
 export default function ComplaintDetailScreen() {
-  const { data, isAdminStr, isSocietyViewStr, showUpdateBtnStr } = useLocalSearchParams();
+  const { id, isAdminStr, isSocietyViewStr, showUpdateBtnStr } = useLocalSearchParams<{
+    id?: string;
+    isAdminStr?: string;
+    isSocietyViewStr?: string;
+    showUpdateBtnStr?: string;
+  }>();
   const router = useRouter();
   const { t } = useLanguage();
-  const { user } = useAuth();
   const { logEvent } = useActivityLog();
 
-  const [detailItem, setDetailItem] = useState<any>(data ? JSON.parse(data as string) : null);
   const isAdmin = isAdminStr === 'true';
   const isSocietyView = isSocietyViewStr === 'true';
   const showUpdateButton = showUpdateBtnStr === 'true';
 
+  const [detailItem, setDetailItem] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [imageViewerUri, setImageViewerUri] = useState<string | null>(null);
 
-  // User/Pramukh update state
   const [showUpdate, setShowUpdate] = useState(false);
-  const [updateForm, setUpdateForm] = useState({ status: detailItem?.status || 'open', remark: detailItem?.remark || '' });
+  const [updateForm, setUpdateForm] = useState({ status: 'open', remark: '' });
   const [updating, setUpdating] = useState(false);
 
-  // Admin edit state
   const [showEdit, setShowEdit] = useState(false);
   const [editForm, setEditForm] = useState({
-    title: detailItem?.title || '', description: detailItem?.description || '',
-    category: detailItem?.category || 'General', status: detailItem?.status || 'open',
-    remark: detailItem?.remark || '', photo_url: detailItem?.photo_url || ''
+    title: '', description: '', category: 'General', status: 'open', remark: '', photo_url: '',
   });
-  const [editImageUri, setEditImageUri] = useState<string | null>(detailItem?.photo_url || null);
+  const [editImageUri, setEditImageUri] = useState<string | null>(null);
 
-  if (!detailItem) return <View style={styles.container}><Text>No data</Text></View>;
+  useEffect(() => {
+    if (!id) {
+      setLoading(false);
+      setLoadError('Complaint not found');
+      return;
+    }
 
-  const meta = STATUS_META[detailItem.status] || STATUS_META.open;
+    let cancelled = false;
+    setLoading(true);
+    setLoadError(null);
+
+    api.get(`/complaints/${id}`)
+      .then((res) => {
+        if (cancelled) return;
+        const item = res.data;
+        setDetailItem(item);
+        setUpdateForm({ status: item.status || 'open', remark: item.remark || '' });
+        setEditForm({
+          title: item.title || '',
+          description: item.description || '',
+          category: item.category || 'General',
+          status: item.status || 'open',
+          remark: item.remark || '',
+          photo_url: item.photo_url || '',
+        });
+        setEditImageUri(item.photo_url || null);
+      })
+      .catch((e: any) => {
+        if (cancelled) return;
+        setLoadError(e.response?.data?.error || 'Failed to load complaint');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [id]);
 
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], base64: true, quality: 0.6 });
@@ -63,6 +98,7 @@ export default function ComplaintDetailScreen() {
   };
 
   const submitUpdate = async () => {
+    if (!detailItem) return;
     setUpdating(true);
     try {
       await api.patch(`/complaints/${detailItem.id}/status`, updateForm);
@@ -75,6 +111,7 @@ export default function ComplaintDetailScreen() {
   };
 
   const submitEdit = async () => {
+    if (!detailItem) return;
     setUpdating(true);
     try {
       await api.put(`/complaints/admin/${detailItem.id}`, editForm);
@@ -86,6 +123,7 @@ export default function ComplaintDetailScreen() {
   };
 
   const deleteComplaint = () => {
+    if (!detailItem) return;
     Alert.alert('Delete Complaint', 'This action cannot be undone.', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -99,14 +137,47 @@ export default function ComplaintDetailScreen() {
     ]);
   };
 
+  const renderHeader = () => (
+    <View style={styles.header}>
+      <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <Ionicons name="arrow-back" size={24} color={Colors.white} />
+      </TouchableOpacity>
+      <Text style={styles.headerTitle}>Complaint Detail</Text>
+    </View>
+  );
+
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        {renderHeader()}
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>Loading complaint...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (loadError || !detailItem) {
+    return (
+      <View style={styles.container}>
+        {renderHeader()}
+        <View style={styles.loadingWrap}>
+          <Ionicons name="alert-circle-outline" size={48} color={Colors.danger} />
+          <Text style={styles.errorText}>{loadError || 'Complaint not found'}</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={() => router.back()}>
+            <Text style={styles.retryBtnText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  const meta = STATUS_META[detailItem.status] || STATUS_META.open;
+
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={24} color={Colors.white} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Complaint Detail</Text>
-      </View>
+      {renderHeader()}
 
       <ScrollView style={{ flex: 1, padding: 20 }} showsVerticalScrollIndicator={false}>
         <View style={[styles.statusPill, { backgroundColor: meta.bg, borderColor: meta.color + '50' }]}>
@@ -160,11 +231,11 @@ export default function ComplaintDetailScreen() {
 
         {detailItem.photo_url ? (
           <View style={styles.detailBlock}>
-             <Text style={styles.detailBlockLabel}>Attachment</Text>
-             <Pressable onPress={() => setImageViewerUri(detailItem.photo_url)}>
-               <Image source={{ uri: detailItem.photo_url }} style={styles.detailPhoto} resizeMode="cover" />
-               <Text style={styles.tapToExpand}>Tap to expand</Text>
-             </Pressable>
+            <Text style={styles.detailBlockLabel}>Attachment</Text>
+            <Pressable onPress={() => setImageViewerUri(detailItem.photo_url)}>
+              <Image source={{ uri: detailItem.photo_url }} style={styles.detailPhoto} resizeMode="cover" />
+              <Text style={styles.tapToExpand}>Tap to expand</Text>
+            </Pressable>
           </View>
         ) : null}
 
@@ -196,7 +267,6 @@ export default function ComplaintDetailScreen() {
         <View style={{ height: 40 }} />
       </ScrollView>
 
-      {/* ── Full-screen Image Viewer ── */}
       <Modal visible={!!imageViewerUri} transparent animationType="fade" onRequestClose={() => setImageViewerUri(null)}>
         <View style={styles.imageViewerOverlay}>
           <TouchableOpacity style={styles.imageViewerClose} onPress={() => setImageViewerUri(null)}>
@@ -206,7 +276,6 @@ export default function ComplaintDetailScreen() {
         </View>
       </Modal>
 
-      {/* ── Pramukh Update Modal ── */}
       <Modal visible={showUpdate} animationType="slide" transparent>
         <View style={styles.overlay}>
           <View style={[styles.sheet, { maxHeight: '65%' }]}>
@@ -241,7 +310,6 @@ export default function ComplaintDetailScreen() {
         </View>
       </Modal>
 
-      {/* ── Admin Edit Modal ── */}
       <Modal visible={showEdit} animationType="slide" transparent>
         <View style={styles.overlay}>
           <View style={styles.sheet}>
@@ -303,6 +371,11 @@ const styles = StyleSheet.create({
   header: { backgroundColor: '#3B5FC0', paddingTop: 54, paddingBottom: 20, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: 12 },
   backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
   headerTitle: { fontSize: 22, fontWeight: '800', color: Colors.white },
+  loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32, gap: 14 },
+  loadingText: { fontSize: 15, color: Colors.textMuted, fontWeight: '600' },
+  errorText: { fontSize: 16, color: Colors.text, fontWeight: '600', textAlign: 'center' },
+  retryBtn: { marginTop: 8, backgroundColor: Colors.primary, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12 },
+  retryBtnText: { color: Colors.white, fontSize: 15, fontWeight: '700' },
   statusPill: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6, borderWidth: 1, marginBottom: 14 },
   statusPillText: { fontSize: 14, fontWeight: '700' },
   detailTitle: { fontSize: 22, fontWeight: '800', color: Colors.text, marginBottom: 12, lineHeight: 28 },

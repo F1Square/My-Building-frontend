@@ -223,10 +223,10 @@ export default function ComplaintsScreen() {
           router.push({
             pathname: '/complaint-detail',
             params: {
-              data: JSON.stringify(item),
+              id: item.id,
               isSocietyViewStr: isSocietyView ? 'true' : 'false',
-              showUpdateBtnStr: showUpdateButton ? 'true' : 'false'
-            }
+              showUpdateBtnStr: showUpdateButton ? 'true' : 'false',
+            },
           });
         }}
         activeOpacity={0.82}

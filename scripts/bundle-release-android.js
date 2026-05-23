@@ -55,4 +55,13 @@ execSync(`${gradle} bundleRelease`, {
   env: { ...process.env, EXPO_USE_PRODUCTION_ENV: '1' },
 });
 
-console.log('\n[android:bundle:release] Done. AAB: android/app/build/outputs/bundle/release/app-release.aab\n');
+const appJson = require(path.join(root, 'app.json'));
+const version = appJson.expo.version;
+const versionCode = appJson.expo.android?.versionCode;
+const keystoreText = fs.readFileSync(keystoreProps, 'utf8');
+const storeFile = keystoreText.match(/^storeFile=(.+)$/m)?.[1]?.trim() ?? 'unknown';
+
+console.log('\n[android:bundle:release] Done.');
+console.log(`  AAB: android/app/build/outputs/bundle/release/app-release.aab`);
+console.log(`  Version: ${version} (versionCode ${versionCode})`);
+console.log(`  Signed with: android/app/${storeFile}\n`);

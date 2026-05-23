@@ -3,7 +3,7 @@ import { Colors } from '../../constants/colors';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   RefreshControl, Alert, Modal, TextInput, Dimensions, Image,
-  ActivityIndicator, FlatList,
+  ActivityIndicator, FlatList, Pressable,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,7 +14,7 @@ import { useActivityLog } from '../../hooks/useActivityLog';
 import { cacheManager } from '../../utils/CacheManager';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const { width: SCREEN_W } = Dimensions.get('window');
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const CARD_SIZE = (SCREEN_W - 48) / 3;
 
 const GATED_ROUTES = [
@@ -191,14 +191,11 @@ export default function HomeScreen() {
   };
 
   const openUrgentInbox = async () => {
-    // Show the sheet immediately; load in parallel. Do NOT call read-all before
-    // GET — the API default is unread-only, so marking read first yielded an
-    // empty list every time.
     setShowUrgentModal(true);
     setNotifLoading(true);
     setNotifications([]);
     try {
-      const res = await api.get('/notifications', { params: { recent: '1' } });
+      const res = await api.get('/notifications');
       const rows = Array.isArray(res.data) ? res.data : [];
       setNotifications(rows);
     } catch {
@@ -212,14 +209,10 @@ export default function HomeScreen() {
     setShowUrgentModal(false);
     setNotifications([]);
     setNotifLoading(false);
-    // Optimistic update: clear badges immediately so user sees them go away
     setTotalUnread(0);
     setBadgeCounts({});
     try {
-      await Promise.all([
-        api.patch('/notifications/read-all'),
-        api.delete('/notifications/dismiss-types', { data: { types: ['announcement_urgent'] } }),
-      ]);
+      await api.patch('/notifications/read-all');
     } catch {
       /* still refresh badges below */
     }
@@ -312,10 +305,17 @@ export default function HomeScreen() {
         {/* Top row: avatar + bell */}
         <View style={styles.headerTop}>
           <TouchableOpacity onPress={() => router.push('/profile' as any)} style={styles.avatarCircle}>
-            {buildingLogo
-              ? <Image source={{ uri: buildingLogo }} style={styles.avatarImg} />
-              : <Text style={styles.avatarText}>{user?.name?.[0]?.toUpperCase()}</Text>
-            }
+            {buildingLogo ? (
+              <View style={styles.logoInner}>
+                <Image
+                  source={{ uri: buildingLogo }}
+                  style={styles.avatarImg}
+                  resizeMode="contain"
+                />
+              </View>
+            ) : (
+              <Text style={styles.avatarText}>{user?.name?.[0]?.toUpperCase()}</Text>
+            )}
           </TouchableOpacity>
           <TouchableOpacity onPress={openUrgentInbox} style={styles.bellBtn}>
             <Ionicons name="notifications-outline" size={22} color={Colors.white} />
@@ -410,8 +410,9 @@ export default function HomeScreen() {
 
       {/* Notifications Inbox Modal */}
       <Modal visible={showUrgentModal} transparent animationType="slide" onRequestClose={dismissUrgentInbox}>
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={dismissUrgentInbox}>
-          <TouchableOpacity activeOpacity={1} style={styles.modalSheet}>
+        <View style={styles.modalOverlay}>
+          <Pressable style={styles.modalBackdrop} onPress={dismissUrgentInbox} />
+          <View style={styles.modalSheet}>
             <View style={styles.modalHandle} />
             <View style={styles.modalTitleRow}>
               <Text style={styles.modalTitle}>{t('notifications')}</Text>
@@ -433,10 +434,13 @@ export default function HomeScreen() {
               <FlatList
                 data={notifications}
                 keyExtractor={(n) => n.id}
-                showsVerticalScrollIndicator={false}
+                style={styles.modalList}
+                showsVerticalScrollIndicator
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="handled"
                 contentContainerStyle={{ paddingBottom: 20 }}
                 renderItem={({ item: n }) => (
-                  <View key={n.id} style={styles.urgentCard}>
+                  <View style={styles.urgentCard}>
                     <View style={styles.urgentCardTop}>
                       <Text style={styles.urgentCardTitle}>{n.title}</Text>
                       <View style={[styles.urgentBadge, { backgroundColor: Colors.primary }]}>
@@ -451,8 +455,8 @@ export default function HomeScreen() {
                 )}
               />
             )}
-          </TouchableOpacity>
-        </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
     </View>
   );
@@ -475,8 +479,18 @@ const styles = StyleSheet.create({
     borderWidth: 2, borderColor: 'rgba(255,255,255,0.6)',
     overflow: 'hidden',
   },
+  logoInner: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.white,
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+    padding: 5,
+  },
   avatarText: { color: Colors.white, fontSize: 20, fontWeight: '800' },
-  avatarImg: { width: 44, height: 44, borderRadius: 22 },
+  avatarImg: { width: '100%', height: '100%' },
   bellBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
   bellBadge: { position: 'absolute', top: -2, right: -2, backgroundColor: Colors.danger, borderRadius: 9, minWidth: 18, height: 18, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 3, borderWidth: 2, borderColor: '#6366F1' },
   bellBadgeText: { color: Colors.white, fontSize: 9, fontWeight: '800' },
@@ -544,8 +558,10 @@ const styles = StyleSheet.create({
   registerBtnText: { color: Colors.primary, fontSize: 16, fontWeight: '700' },
 
   // ── Urgent modal ─────────────────────────────────────────────────────────
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
-  modalSheet: { backgroundColor: Colors.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 36, maxHeight: '75%' },
+  modalOverlay: { flex: 1, justifyContent: 'flex-end' },
+  modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
+  modalSheet: { backgroundColor: Colors.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 36, maxHeight: SCREEN_H * 0.75 },
+  modalList: { maxHeight: SCREEN_H * 0.55 },
   modalHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.border, alignSelf: 'center', marginBottom: 16 },
   modalTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   modalTitle: { fontSize: 17, fontWeight: '800', color: Colors.text },

@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet, SafeAreaView, StatusBar, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, Dimensions } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { Colors } from '../constants/colors';
 import { useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,7 +12,7 @@ export default function MaintenanceModeScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar style="light" />
       <View style={styles.content}>
         <View style={styles.imageContainer}>
           <View style={styles.badgeContainer}>

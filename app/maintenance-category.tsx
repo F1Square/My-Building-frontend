@@ -464,11 +464,6 @@ function ChequeUploadModal({ record, visible, onClose, onSuccess }: ChequeUpload
   if (!record) return null;
 
   const pickFromLibrary = async () => {
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permissionResult.granted) {
-      Alert.alert('Permission required', 'Allow photo library access to upload your cheque.');
-      return;
-    }
     const pickerResult = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: false,

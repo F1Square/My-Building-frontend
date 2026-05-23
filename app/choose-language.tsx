@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  SafeAreaView, StatusBar, ActivityIndicator,
+  SafeAreaView, ActivityIndicator,
 } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/colors';
 import { useLanguage } from '../context/LanguageContext';
@@ -36,7 +37,7 @@ export default function ChooseLanguageScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+      <StatusBar style="dark" />
 
       <View style={styles.content}>
         <Text style={styles.welcome}>{t('welcomeGreeting')}</Text>

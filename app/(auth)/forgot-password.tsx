@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/colors';
@@ -20,6 +21,7 @@ type Step = 'email' | 'otp' | 'password';
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
+  const scrollRef = useRef<ScrollView>(null);
   const [step, setStep] = useState<Step>('email');
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
@@ -27,6 +29,10 @@ export default function ForgotPasswordScreen() {
   const [newPassword, setNewPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const scrollToInput = () => {
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150);
+  };
 
   const passwordStrength = PASSWORD_RULES.filter((r) => r.test(newPassword)).length;
   const strengthColor = passwordStrength <= 2 ? Colors.danger : passwordStrength <= 3 ? Colors.warning : Colors.success;
@@ -79,8 +85,19 @@ export default function ForgotPasswordScreen() {
   const stepIndex = step === 'email' ? 0 : step === 'otp' ? 1 : 2;
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
+          showsVerticalScrollIndicator={false}
+        >
         <TouchableOpacity onPress={() => router.back()} style={styles.back}>
           <Ionicons name="arrow-back" size={20} color="rgba(255,255,255,0.8)" />
           <Text style={styles.backText}>Back</Text>
@@ -120,6 +137,7 @@ export default function ForgotPasswordScreen() {
                 placeholder="your@email.com"
                 value={email}
                 onChangeText={setEmail}
+                onFocus={scrollToInput}
                 autoCapitalize="none"
                 keyboardType="email-address"
                 placeholderTextColor={Colors.textMuted}
@@ -141,6 +159,7 @@ export default function ForgotPasswordScreen() {
                 placeholder="000000"
                 value={otp}
                 onChangeText={setOtp}
+                onFocus={scrollToInput}
                 keyboardType="number-pad"
                 maxLength={6}
                 placeholderTextColor={Colors.textMuted}
@@ -166,6 +185,7 @@ export default function ForgotPasswordScreen() {
                   placeholder="••••••••"
                   value={newPassword}
                   onChangeText={setNewPassword}
+                  onFocus={scrollToInput}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
                   placeholderTextColor={Colors.textMuted}
@@ -203,14 +223,16 @@ export default function ForgotPasswordScreen() {
             </>
           )}
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.primary },
-  scroll: { flexGrow: 1, padding: 24 },
+  flex: { flex: 1 },
+  scroll: { flexGrow: 1, padding: 24, paddingBottom: 40 },
   back: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16 },
   backText: { color: 'rgba(255,255,255,0.8)', fontSize: 16 },
   header: { alignItems: 'center', marginBottom: 24 },

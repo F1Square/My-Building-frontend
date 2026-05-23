@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useLanguage } from '../../context/LanguageContext';
 import { Colors } from '../../constants/colors';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../utils/api';
@@ -28,8 +29,13 @@ export default function RegisterScreen() {
   const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', referral_code: '' });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
   const router = useRouter();
   const { t } = useLanguage();
+
+  const scrollToInput = () => {
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150);
+  };
 
   const set = (k: string, v: string) =>
     setForm((f) => ({ ...f, [k]: k === 'referral_code' ? v.toUpperCase().replace(/\s/g, '') : v }));
@@ -77,8 +83,19 @@ export default function RegisterScreen() {
   
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
+          showsVerticalScrollIndicator={false}
+        >
         <TouchableOpacity onPress={() => router.back()} style={styles.back}>
           <Ionicons name="arrow-back" size={20} color="rgba(255,255,255,0.8)" />
           <Text style={styles.backText}>Back</Text>
@@ -97,6 +114,7 @@ export default function RegisterScreen() {
             placeholder="Your full name"
             value={form.name}
             onChangeText={(v) => set('name', v)}
+            onFocus={scrollToInput}
             autoCapitalize="words"
             placeholderTextColor={Colors.textMuted}
           />
@@ -107,6 +125,7 @@ export default function RegisterScreen() {
             placeholder="your@email.com"
             value={form.email}
             onChangeText={(v) => set('email', v)}
+            onFocus={scrollToInput}
             autoCapitalize="none"
             keyboardType="email-address"
             placeholderTextColor={Colors.textMuted}
@@ -118,6 +137,7 @@ export default function RegisterScreen() {
             placeholder="9876543210"
             value={form.phone}
             onChangeText={(v) => set('phone', v)}
+            onFocus={scrollToInput}
             keyboardType="phone-pad"
             maxLength={10}
             placeholderTextColor={Colors.textMuted}
@@ -130,6 +150,7 @@ export default function RegisterScreen() {
               placeholder="••••••••"
               value={form.password}
               onChangeText={(v) => set('password', v)}
+              onFocus={scrollToInput}
               secureTextEntry={!showPassword}
               autoCapitalize="none"
               placeholderTextColor={Colors.textMuted}
@@ -181,6 +202,7 @@ export default function RegisterScreen() {
               placeholder="Enter friend's code"
               value={form.referral_code}
               onChangeText={(v) => set('referral_code', v)}
+              onFocus={scrollToInput}
               autoCapitalize="characters"
               autoCorrect={false}
               maxLength={12}
@@ -199,14 +221,16 @@ export default function RegisterScreen() {
             After registration, join a building and your pramukh will approve your account.
           </Text>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.primary },
-  scroll: { flexGrow: 1, padding: 24 },
+  flex: { flex: 1 },
+  scroll: { flexGrow: 1, padding: 24, paddingBottom: 40 },
   back: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16 },
   backText: { color: 'rgba(255,255,255,0.8)', fontSize: 16 },
   header: { alignItems: 'center', marginBottom: 28 },

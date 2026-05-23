@@ -13,6 +13,7 @@ import BuildingDropdown from '../components/BuildingDropdown';
 import { useBuildings, Building } from '../hooks/useBuildings';
 import { useMarkNotificationsRead } from '../hooks/useMarkNotificationsRead';
 import { cacheManager, CACHE_PRESETS } from '../utils/CacheManager';
+import AnnouncementDetailModal, { Announcement } from '../components/AnnouncementDetailModal';
 
 export default function AnnouncementsScreen() {
   const { user } = useAuth();
@@ -39,6 +40,7 @@ export default function AnnouncementsScreen() {
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ title: '', body: '', priority: 'normal' });
   const [submitting, setSubmitting] = useState(false);
+  const [selectedAnnouncement, setSelectedAnnouncement] = useState<Announcement | null>(null);
 
   
 
@@ -93,12 +95,16 @@ export default function AnnouncementsScreen() {
     }
   };
 
-  const renderItem = ({ item }: { item: any }) => (
-    <View style={[styles.card, item.priority === 'urgent' && styles.urgentCard]}>
+  const renderItem = ({ item }: { item: Announcement }) => (
+    <TouchableOpacity
+      style={[styles.card, item.priority === 'urgent' && styles.urgentCard]}
+      onPress={() => setSelectedAnnouncement(item)}
+      activeOpacity={0.75}
+    >
       <View style={styles.cardHeader}>
         <Text style={styles.cardIcon}>{item.priority === 'urgent' ? '🚨' : '📢'}</Text>
         <View style={{ flex: 1 }}>
-          <Text style={styles.cardTitle}>{item.title}</Text>
+          <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
           <Text style={styles.cardMeta}>
             {item.users?.name} • {new Date(item.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
           </Text>
@@ -106,9 +112,10 @@ export default function AnnouncementsScreen() {
         {item.priority === 'urgent' && (
           <View style={styles.urgentBadge}><Text style={styles.urgentBadgeText}>URGENT</Text></View>
         )}
+        <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} style={{ marginLeft: 6 }} />
       </View>
-      <Text style={styles.cardBody}>{item.body}</Text>
-    </View>
+      <Text style={styles.cardBody} numberOfLines={3}>{item.body}</Text>
+    </TouchableOpacity>
   );
 
   return (
@@ -182,6 +189,13 @@ export default function AnnouncementsScreen() {
           </ScrollView>
         </View>
       </Modal>
+
+      <AnnouncementDetailModal
+        visible={!!selectedAnnouncement}
+        announcement={selectedAnnouncement}
+        onClose={() => setSelectedAnnouncement(null)}
+        showBuilding={isAdmin}
+      />
     </View>
   );
 }

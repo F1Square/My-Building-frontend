@@ -13,6 +13,7 @@ import { useBuildings } from '../hooks/useBuildings';
 import BuildingDropdown from '../components/BuildingDropdown';
 import type { Building } from '../hooks/useBuildings';
 import { useActivityLog } from '../hooks/useActivityLog';
+import ParkingReportDetailModal, { ParkingReport } from '../components/ParkingReportDetailModal';
 
 type Tab = 'vehicles' | 'reports';
 
@@ -141,6 +142,7 @@ export default function ParkingScreen() {
   const [reportForm, setReportForm] = useState({ description: '', vehicle_number: '', location: '' });
   const [submitting, setSubmitting] = useState(false);
   const [search, setSearch] = useState('');
+  const [selectedReport, setSelectedReport] = useState<ParkingReport | null>(null);
 
   // For admin report modal, track selected building separately
   const [reportBuilding, setReportBuilding] = useState<Building | null>(null);
@@ -309,21 +311,26 @@ export default function ParkingScreen() {
     );
   };
 
-  const renderReport = ({ item }: { item: any }) => (
-    <View style={styles.card}>
+  const renderReport = ({ item }: { item: ParkingReport }) => (
+    <TouchableOpacity
+      style={styles.card}
+      onPress={() => setSelectedReport(item)}
+      activeOpacity={0.75}
+    >
       <View style={styles.reportHeader}>
         <Text style={styles.reportIcon}>🚨</Text>
         <View style={{ flex: 1 }}>
-          <Text style={styles.reportDesc}>{item.description}</Text>
+          <Text style={styles.reportDesc} numberOfLines={2}>{item.description}</Text>
           {item.vehicle_number && <Text style={styles.reportVehicle}>Vehicle: {item.vehicle_number}</Text>}
           {item.location && <Text style={styles.reportLocation}>📍 {item.location}</Text>}
         </View>
+        <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
       </View>
       <View style={styles.reportFooter}>
-        <Text style={styles.reportBy}>Reported by {item.reported_by}</Text>
+        <Text style={styles.reportBy}>Reported by {item.reported_by || item.users?.name || '—'}</Text>
         <Text style={styles.reportTime}>{new Date(item.created_at).toLocaleDateString('en-IN')}</Text>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 
   
@@ -541,6 +548,12 @@ export default function ParkingScreen() {
           </ScrollView>
         </View>
       </Modal>
+
+      <ParkingReportDetailModal
+        visible={!!selectedReport}
+        report={selectedReport}
+        onClose={() => setSelectedReport(null)}
+      />
     </View>
   );
 }

@@ -165,9 +165,9 @@ export default function AdminComplaintsScreen() {
           router.push({
             pathname: '/complaint-detail',
             params: {
-              data: JSON.stringify(item),
-              isAdminStr: 'true'
-            }
+              id: item.id,
+              isAdminStr: 'true',
+            },
           });
         }}
         activeOpacity={0.82}

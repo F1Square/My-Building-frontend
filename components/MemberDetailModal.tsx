@@ -1,10 +1,15 @@
 import React from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal,
-  ActivityIndicator,
+  ActivityIndicator, Dimensions, Pressable,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/colors';
+
+const { height: SCREEN_H } = Dimensions.get('window');
+const SHEET_MAX_HEIGHT = SCREEN_H * 0.88;
+const SCROLL_MAX_HEIGHT = SCREEN_H * 0.72;
 
 export type Member = {
   id: string;
@@ -58,195 +63,230 @@ export default function MemberDetailModal({
   actionLoading, codeLoading,
   onClose, onPromote, onDemote, onDelete, onEnsureCode, onCopyCode,
 }: Props) {
+  const insets = useSafeAreaInsets();
+
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={styles.modal}>
-        <View style={styles.modalHeader}>
-          <View>
-            <Text style={styles.modalTitle}>User Details</Text>
-            {subtitle ? <Text style={styles.modalSub}>{subtitle}</Text> : null}
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.overlay}>
+        <Pressable style={styles.backdrop} onPress={onClose} />
+        <View style={[styles.sheet, { maxHeight: SHEET_MAX_HEIGHT, paddingBottom: Math.max(insets.bottom, 20) }]}>
+          <View style={styles.handle} />
+          <View style={styles.modalHeader}>
+            <View style={{ flex: 1, marginRight: 12 }}>
+              <Text style={styles.modalTitle}>User Details</Text>
+              {subtitle ? <Text style={styles.modalSub} numberOfLines={1}>{subtitle}</Text> : null}
+            </View>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close-circle" size={28} color={Colors.border} />
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity onPress={onClose}>
-            <Ionicons name="close" size={24} color={Colors.text} />
-          </TouchableOpacity>
-        </View>
 
-        {member && (
-          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            {/* Hero */}
-            <View style={styles.detailHero}>
-              <View style={styles.detailAvatar}>
-                <Text style={styles.detailAvatarText}>
-                  {member.name?.[0]?.toUpperCase() || '?'}
-                </Text>
-              </View>
-              <Text style={styles.detailName}>{member.name}</Text>
-              <Text style={styles.detailEmail}>{member.email}</Text>
-              <View style={styles.detailBadgeRow}>
-                <View style={[styles.roleBadge, { backgroundColor: roleColor(member.role) + '22' }]}>
-                  <Text style={[styles.roleText, { color: roleColor(member.role) }]}>
-                    {member.role}
+          {member && (
+            <ScrollView
+              style={styles.modalScroll}
+              contentContainerStyle={styles.modalScrollContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator
+              nestedScrollEnabled
+              bounces
+            >
+              {/* Hero */}
+              <View style={styles.detailHero}>
+                <View style={styles.detailAvatar}>
+                  <Text style={styles.detailAvatarText}>
+                    {member.name?.[0]?.toUpperCase() || '?'}
                   </Text>
                 </View>
-                <View style={[
-                  styles.roleBadge,
-                  { backgroundColor: (member.status === 'approved' ? Colors.success : Colors.warning) + '22' },
-                ]}>
-                  <Text style={[
-                    styles.roleText,
-                    { color: member.status === 'approved' ? Colors.success : Colors.warning },
+                <Text style={styles.detailName}>{member.name}</Text>
+                <Text style={styles.detailEmail}>{member.email}</Text>
+                <View style={styles.detailBadgeRow}>
+                  <View style={[styles.roleBadge, { backgroundColor: roleColor(member.role) + '22' }]}>
+                    <Text style={[styles.roleText, { color: roleColor(member.role) }]}>
+                      {member.role}
+                    </Text>
+                  </View>
+                  <View style={[
+                    styles.roleBadge,
+                    { backgroundColor: (member.status === 'approved' ? Colors.success : Colors.warning) + '22' },
                   ]}>
-                    {member.status}
-                  </Text>
+                    <Text style={[
+                      styles.roleText,
+                      { color: member.status === 'approved' ? Colors.success : Colors.warning },
+                    ]}>
+                      {member.status}
+                    </Text>
+                  </View>
                 </View>
               </View>
-            </View>
 
-            {/* Details */}
-            <View style={styles.detailCard}>
-              <DetailRow icon="call-outline" label="Phone" value={member.phone || '—'} />
-              <DetailRow
-                icon="home-outline"
-                label="Flat / Wing"
-                value={
-                  member.wing || member.flat_no
-                    ? `${member.wing ? 'Wing ' + member.wing : ''}${member.wing && member.flat_no ? ' · ' : ''}${member.flat_no ? 'Flat ' + member.flat_no : ''}`
-                    : '—'
-                }
-              />
-              <DetailRow
-                icon="business-outline"
-                label="Building"
-                value={member.buildings?.name || '—'}
-              />
-              <DetailRow
-                icon="people-outline"
-                label="Total Family Members"
-                value={member.total_members != null ? String(member.total_members) : '—'}
-              />
-              <DetailRow
-                icon="calendar-outline"
-                label="Member Since"
-                value={
-                  member.created_at
-                    ? new Date(member.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-                    : '—'
-                }
-                isLast
-              />
-            </View>
+              {/* Details */}
+              <View style={styles.detailCard}>
+                <DetailRow icon="call-outline" label="Phone" value={member.phone || '—'} />
+                <DetailRow
+                  icon="home-outline"
+                  label="Flat / Wing"
+                  value={
+                    member.wing || member.flat_no
+                      ? `${member.wing ? 'Wing ' + member.wing : ''}${member.wing && member.flat_no ? ' · ' : ''}${member.flat_no ? 'Flat ' + member.flat_no : ''}`
+                      : '—'
+                  }
+                />
+                <DetailRow
+                  icon="business-outline"
+                  label="Building"
+                  value={member.buildings?.name || '—'}
+                />
+                <DetailRow
+                  icon="people-outline"
+                  label="Total Family Members"
+                  value={member.total_members != null ? String(member.total_members) : '—'}
+                />
+                <DetailRow
+                  icon="calendar-outline"
+                  label="Member Since"
+                  value={
+                    member.created_at
+                      ? new Date(member.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                      : '—'
+                  }
+                  isLast
+                />
+              </View>
 
-            {/* Referral */}
-            <View style={styles.detailSectionTitle}>
-              <Ionicons name="gift-outline" size={16} color="#7C3AED" />
-              <Text style={styles.detailSectionTitleText}>Refer & Earn</Text>
-            </View>
-            <View style={styles.referralCard}>
-              <Text style={styles.referralLabel}>Referral Code</Text>
-              {member.referral_code ? (
-                <>
-                  <Text style={styles.referralCode}>{member.referral_code}</Text>
-                  <TouchableOpacity
-                    style={styles.referralCopyBtn}
-                    onPress={() => onCopyCode(member.referral_code as string)}
-                  >
-                    <Ionicons name="copy-outline" size={16} color={Colors.primary} />
-                    <Text style={styles.referralCopyBtnText}>Copy Code</Text>
-                  </TouchableOpacity>
-                </>
-              ) : (
-                <>
-                  <Text style={styles.referralEmpty}>Not generated yet</Text>
-                  <TouchableOpacity
-                    style={styles.referralGenerateBtn}
-                    onPress={() => onEnsureCode(member)}
-                    disabled={codeLoading}
-                  >
-                    {codeLoading ? (
-                      <ActivityIndicator color={Colors.white} size="small" />
-                    ) : (
-                      <>
-                        <Ionicons name="sparkles-outline" size={16} color={Colors.white} />
-                        <Text style={styles.referralGenerateBtnText}>Generate Code</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                </>
+              {/* Referral */}
+              <View style={styles.detailSectionTitle}>
+                <Ionicons name="gift-outline" size={16} color="#7C3AED" />
+                <Text style={styles.detailSectionTitleText}>Refer & Earn</Text>
+              </View>
+              <View style={styles.referralCard}>
+                <Text style={styles.referralLabel}>Referral Code</Text>
+                {member.referral_code ? (
+                  <>
+                    <Text style={styles.referralCode}>{member.referral_code}</Text>
+                    <TouchableOpacity
+                      style={styles.referralCopyBtn}
+                      onPress={() => onCopyCode(member.referral_code as string)}
+                    >
+                      <Ionicons name="copy-outline" size={16} color={Colors.primary} />
+                      <Text style={styles.referralCopyBtnText}>Copy Code</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.referralEmpty}>Not generated yet</Text>
+                    <TouchableOpacity
+                      style={styles.referralGenerateBtn}
+                      onPress={() => onEnsureCode(member)}
+                      disabled={codeLoading}
+                    >
+                      {codeLoading ? (
+                        <ActivityIndicator color={Colors.white} size="small" />
+                      ) : (
+                        <>
+                          <Ionicons name="sparkles-outline" size={16} color={Colors.white} />
+                          <Text style={styles.referralGenerateBtnText}>Generate Code</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </>
+                )}
+              </View>
+
+              {/* Actions */}
+              <View style={styles.detailSectionTitle}>
+                <Ionicons name="settings-outline" size={16} color={Colors.textMuted} />
+                <Text style={styles.detailSectionTitleText}>Actions</Text>
+              </View>
+
+              {member.role === 'user' && (
+                <TouchableOpacity
+                  style={[styles.actionRowBtn, { backgroundColor: '#7C3AED' }]}
+                  onPress={() => onPromote(member)}
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? (
+                    <ActivityIndicator color={Colors.white} />
+                  ) : (
+                    <>
+                      <Ionicons name="arrow-up-circle" size={20} color={Colors.white} />
+                      <Text style={styles.actionRowBtnText}>Promote to Pramukh</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
               )}
-            </View>
 
-            {/* Actions */}
-            <View style={styles.detailSectionTitle}>
-              <Ionicons name="settings-outline" size={16} color={Colors.textMuted} />
-              <Text style={styles.detailSectionTitleText}>Actions</Text>
-            </View>
+              {member.role === 'pramukh' && (
+                <TouchableOpacity
+                  style={[styles.actionRowBtn, { backgroundColor: '#F59E0B' }]}
+                  onPress={() => onDemote(member)}
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? (
+                    <ActivityIndicator color={Colors.white} />
+                  ) : (
+                    <>
+                      <Ionicons name="arrow-down-circle" size={20} color={Colors.white} />
+                      <Text style={styles.actionRowBtnText}>Demote to User</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              )}
 
-            {member.role === 'user' && (
-              <TouchableOpacity
-                style={[styles.actionRowBtn, { backgroundColor: '#7C3AED' }]}
-                onPress={() => onPromote(member)}
-                disabled={actionLoading}
-              >
-                {actionLoading ? (
-                  <ActivityIndicator color={Colors.white} />
-                ) : (
-                  <>
-                    <Ionicons name="arrow-up-circle" size={20} color={Colors.white} />
-                    <Text style={styles.actionRowBtnText}>Promote to Pramukh</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            )}
-
-            {member.role === 'pramukh' && (
-              <TouchableOpacity
-                style={[styles.actionRowBtn, { backgroundColor: '#F59E0B' }]}
-                onPress={() => onDemote(member)}
-                disabled={actionLoading}
-              >
-                {actionLoading ? (
-                  <ActivityIndicator color={Colors.white} />
-                ) : (
-                  <>
-                    <Ionicons name="arrow-down-circle" size={20} color={Colors.white} />
-                    <Text style={styles.actionRowBtnText}>Demote to User</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            )}
-
-            {member.role !== 'admin' && (
-              <TouchableOpacity
-                style={[styles.actionRowBtn, { backgroundColor: Colors.danger }]}
-                onPress={() => onDelete(member)}
-                disabled={actionLoading}
-              >
-                <Ionicons name="trash-outline" size={20} color={Colors.white} />
-                <Text style={styles.actionRowBtnText}>Delete User</Text>
-              </TouchableOpacity>
-            )}
-
-            <View style={{ height: 40 }} />
-          </ScrollView>
-        )}
+              {member.role !== 'admin' && (
+                <TouchableOpacity
+                  style={[styles.actionRowBtn, { backgroundColor: Colors.danger }]}
+                  onPress={() => onDelete(member)}
+                  disabled={actionLoading}
+                >
+                  <Ionicons name="trash-outline" size={20} color={Colors.white} />
+                  <Text style={styles.actionRowBtnText}>Delete User</Text>
+                </TouchableOpacity>
+              )}
+            </ScrollView>
+          )}
+        </View>
       </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  modal: { flex: 1, backgroundColor: Colors.white, padding: 20 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, paddingTop: 8 },
-  modalTitle: { fontSize: 20, fontWeight: '800', color: Colors.text },
+  overlay: { flex: 1, justifyContent: 'flex-end' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
+  sheet: {
+    backgroundColor: Colors.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    width: '100%',
+  },
+  handle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.border,
+    alignSelf: 'center',
+    marginBottom: 12,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  modalScroll: { maxHeight: SCROLL_MAX_HEIGHT },
+  modalScrollContent: { paddingBottom: 16 },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: Colors.text },
   modalSub: { fontSize: 13, color: Colors.textMuted, marginTop: 2 },
   roleBadge: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
   roleText: { fontSize: 12, fontWeight: '700' },
-  detailHero: { alignItems: 'center', paddingVertical: 16, marginBottom: 8 },
-  detailAvatar: { width: 84, height: 84, borderRadius: 42, backgroundColor: Colors.primary + '20', justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
-  detailAvatarText: { fontSize: 32, fontWeight: '800', color: Colors.primary },
-  detailName: { fontSize: 20, fontWeight: '800', color: Colors.text },
+  detailHero: { alignItems: 'center', paddingVertical: 12, marginBottom: 4 },
+  detailAvatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: Colors.primary + '20', justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
+  detailAvatarText: { fontSize: 28, fontWeight: '800', color: Colors.primary },
+  detailName: { fontSize: 18, fontWeight: '800', color: Colors.text },
   detailEmail: { fontSize: 13, color: Colors.textMuted, marginTop: 4 },
-  detailBadgeRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  detailBadgeRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
   detailCard: { backgroundColor: Colors.bg, borderRadius: 14, paddingHorizontal: 14, marginBottom: 16, borderWidth: 1, borderColor: Colors.border },
   detailRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: Colors.border },
   detailRowIcon: { width: 32, height: 32, borderRadius: 8, backgroundColor: Colors.primary + '15', justifyContent: 'center', alignItems: 'center' },

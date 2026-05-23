@@ -1,14 +1,16 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useLanguage } from '../../context/LanguageContext';
 import { Colors } from '../../constants/colors';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator
+  KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../utils/api';
+import { formatApiError } from '../../utils/formatApiError';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -17,9 +19,14 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
   const { login } = useAuth();
   const router = useRouter();
   const { t } = useLanguage();
+
+  const scrollToInput = () => {
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150);
+  };
 
   const handleLogin = async () => {
     if (!email.trim() || !password) return Alert.alert('Error', 'Please enter email and password');
@@ -43,33 +50,13 @@ export default function LoginScreen() {
       // Do NOT call router.replace('/') here — it races with the layout routing
       // effect and causes a native crash in production (two concurrent REPLACE
       // actions on a navigator that's being re-mounted).
-    } catch (e: any) {
-      let msg = 'An unexpected error occurred';
-
-      if (e.response) {
-        // Server responded with an error
-        const status = e.response.status;
-        const errorMsg = e.response.data?.error;
-
-        if (status === 401 || status === 400 || status === 422) {
-          // Authentication or validation errors
-          msg = errorMsg || 'Invalid email or password';
-        } else {
-          // Other server errors
-          msg = errorMsg || 'Login failed. Please try again.';
-        }
-      } else if (e.code === 'ECONNREFUSED' || e.code === 'ERR_NETWORK' || e.message === 'Network Error') {
-        // Network errors
-        msg = 'Cannot connect to server. Please check your internet connection.';
-      } else if (e.request) {
-        // Request was made but no response received
-        msg = 'Cannot connect to server. Please check your internet connection.';
-      } else if (e.message) {
-        // Other errors with a message
-        msg = e.message;
-      }
-
-      Alert.alert('Login Failed', msg);
+    } catch (e: unknown) {
+      const status = (e as { response?: { status?: number } })?.response?.status;
+      const fallback =
+        status === 401 || status === 400 || status === 422
+          ? 'Invalid email or password'
+          : 'Login failed. Please try again.';
+      Alert.alert('Login Failed', formatApiError(e, fallback));
     } finally {
       setLoading(false);
     }
@@ -78,8 +65,19 @@ export default function LoginScreen() {
 
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
+          showsVerticalScrollIndicator={false}
+        >
 
         <View style={styles.header}>
           <Text style={styles.logo}>🏢</Text>
@@ -97,6 +95,7 @@ export default function LoginScreen() {
             placeholder="your@email.com"
             value={email}
             onChangeText={setEmail}
+            onFocus={scrollToInput}
             autoCapitalize="none"
             keyboardType="email-address"
             placeholderTextColor={Colors.textMuted}
@@ -109,6 +108,7 @@ export default function LoginScreen() {
               placeholder="••••••••"
               value={password}
               onChangeText={setPassword}
+              onFocus={scrollToInput}
               secureTextEntry={!showPassword}
               placeholderTextColor={Colors.textMuted}
             />
@@ -138,14 +138,16 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.primary },
-  scroll: { flexGrow: 1, justifyContent: 'center', padding: 24 },
+  flex: { flex: 1 },
+  scroll: { flexGrow: 1, padding: 24, paddingBottom: 40 },
   header: { alignItems: 'center', marginBottom: 32 },
   logo: { fontSize: 64 },
   title: { fontSize: 32, fontWeight: '800', color: Colors.white, marginTop: 8 },

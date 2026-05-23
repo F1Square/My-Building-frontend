@@ -13,7 +13,17 @@ import appJson from '../app.json';
 import { addBreadcrumb, getBreadcrumbs } from '../utils/crashBreadcrumbs';
 
 import Constants from 'expo-constants';
+import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
 
 const CURRENT_VERSION = Constants.expoConfig?.version || appJson.expo.version;
 

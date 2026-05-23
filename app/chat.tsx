@@ -4,7 +4,7 @@ import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   TextInput, KeyboardAvoidingView, Platform, ActivityIndicator,
-  RefreshControl, Animated, AppState, Keyboard,
+  RefreshControl, Animated, AppState, Keyboard, Dimensions,
   type NativeSyntheticEvent, type NativeScrollEvent,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,6 +19,7 @@ const POLL_IDLE_MS = 8000;   // 8s when no new messages
 const POLL_ACTIVE_MS = 3000; // 3s when conversation is active
 const POLL_BG_MS = 30000;    // 30s when app is backgrounded
 const NEAR_BOTTOM_PX = 100;
+const KB_LIFT_EXTRA = 50; // small nudge so input sits flush above keyboard
 const ACTIVE_WINDOW_MS = 60000; // Consider "active" if msg received in last 60s
 
 // Sender color palette for avatar backgrounds
@@ -113,7 +114,7 @@ export default function ChatScreen() {
   const [sending, setSending] = useState(false);
   const [noBuildingError, setNoBuildingError] = useState(false);
   const [memberCount, setMemberCount] = useState<number | null>(null);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [kbInset, setKbInset] = useState(0);
 
   const flatListRef = useRef<FlatList<ChatMessage>>(null);
   const lastMsgIdRef = useRef<string | null>(null);
@@ -252,18 +253,26 @@ export default function ChatScreen() {
     return () => sub.remove();
   }, [pollNewMessages, scheduleNextPoll]);
 
-  /* ── Keyboard visibility tracking (Android edge-to-edge) ────────────── */
+  /* ── Keyboard inset (Android edge-to-edge: OS resize often doesn't lift input) ─ */
   useEffect(() => {
     const showSub = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      () => setKeyboardVisible(true),
+      (e) => {
+        if (Platform.OS === 'android') {
+          const { screenY } = e.endCoordinates;
+          setKbInset(Math.max(0, Dimensions.get('window').height - screenY));
+        } else {
+          setKbInset(1);
+        }
+        scrollToBottom(true);
+      },
     );
     const hideSub = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => setKeyboardVisible(false),
+      () => setKbInset(0),
     );
     return () => { showSub.remove(); hideSub.remove(); };
-  }, []);
+  }, [scrollToBottom]);
 
   /* ── Focus lifecycle ─────────────────────────────────────────────────── */
   useFocusEffect(
@@ -338,7 +347,7 @@ export default function ChatScreen() {
   const listExtraData = messages.length
     ? `${messages.length}:${messages[messages.length - 1]?.id ?? ''}`
     : '0';
-  const keyboardVerticalOffset = Platform.OS === 'ios' ? Math.max(insets.top, 12) + 8 : 0;
+  const keyboardVerticalOffset = Platform.OS === 'ios' ? Math.max(insets.top, 12) + 18 : 0;
 
   /* ─── UI ──────────────────────────────────────────────────────────────── */
   // On Android with softwareKeyboardLayoutMode: "resize", the OS resizes
@@ -393,6 +402,9 @@ export default function ChatScreen() {
           scrollEventThrottle={32}
           onStartReached={loadOlderMessages}
           onStartReachedThreshold={0.15}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
           maintainVisibleContentPosition={hasMoreOlder ? { minIndexForVisible: 0, autoscrollToTopThreshold: 40 } : undefined}
           initialNumToRender={20}
           maxToRenderPerBatch={12}
@@ -413,7 +425,15 @@ export default function ChatScreen() {
       )}
 
       {/* ── Input bar ───────────────────────────────────────────────────── */}
-      <View style={[s.inputBar, { paddingBottom: keyboardVisible ? 4 : Math.max(insets.bottom, 4) }]}>
+      <View style={[
+        s.inputBar,
+        {
+          paddingBottom: kbInset > 0 ? 4 : Math.max(insets.bottom, 5),
+          ...(Platform.OS === 'android' && kbInset > 0 && {
+            transform: [{ translateY: -(kbInset + KB_LIFT_EXTRA) }],
+          }),
+        },
+      ]}>
         <View style={s.inputWrap}>
           <TextInput
             style={s.input}

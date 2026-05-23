@@ -38,6 +38,8 @@ yarn-error.*
 .env
 .env*.local
 .env.development
+my-building-50244-firebase-adminsdk-fbsvc-7c2cc79fa1.json
+google-services.json
 
 # typescript
 *.tsbuildinfo

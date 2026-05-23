@@ -1,12 +1,12 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, RefreshControl, Alert,
+  ActivityIndicator, RefreshControl, Alert, Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter , useFocusEffect } from 'expo-router';
+import { useRouter , useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -14,6 +14,7 @@ import api from '../utils/api';
 import { API_BASE } from '../constants/api';
 import * as WebBrowser from 'expo-web-browser';
 import * as ImagePicker from 'expo-image-picker';
+import { useAuth } from '../context/AuthContext';
 
 const MONTHS = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -40,6 +41,10 @@ function getPaymentActions(
 export default function MyPaymentsScreen() {
   const router = useRouter();
   const { t } = useLanguage();
+  const { user, hasActiveSubscription } = useAuth();
+  const isLocked = user?.role !== 'admin' && !hasActiveSubscription;
+  const processGuardRef = useRef(0);
+  const { status: linkStatus } = useLocalSearchParams<{ status?: string }>();
   const [payments, setPayments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -64,7 +69,54 @@ export default function MyPaymentsScreen() {
     finally { setLoading(false); setRefreshing(false); }
   };
 
-  useFocusEffect(useCallback(() => { fetch(); }, []));
+  useFocusEffect(useCallback(() => {
+    if (isLocked) {
+      setLoading(false);
+      return;
+    }
+    fetch();
+  }, [isLocked]));
+
+  const processPaymentUrl = useCallback(async (url: string) => {
+    const isReturn =
+      url.startsWith('mybuilding://my-payments') ||
+      url.startsWith('mybuilding://payment');
+    if (!isReturn) return;
+    const now = Date.now();
+    if (now - processGuardRef.current < 2500) return;
+    processGuardRef.current = now;
+
+    const queryPart = url.includes('?') ? url.split('?')[1] : '';
+    const status = new URLSearchParams(queryPart).get('status');
+    await fetch();
+    if (status === 'success') {
+      Alert.alert('Payment successful', 'Your payment was recorded.');
+    } else if (status === 'failed') {
+      Alert.alert(
+        'Payment not completed',
+        'The payment did not finish. If your account was debited, refresh this screen.',
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    if (linkStatus === 'success' || linkStatus === 'failed') {
+      void processPaymentUrl(`mybuilding://my-payments?status=${linkStatus}`);
+    }
+  }, [linkStatus, processPaymentUrl]);
+
+  useEffect(() => {
+    const handleUrl = async (event: { url: string }) => {
+      await processPaymentUrl(event.url);
+    };
+    Linking.getInitialURL()
+      .then((initialUrl) => {
+        if (initialUrl) return processPaymentUrl(initialUrl);
+      })
+      .catch(() => null);
+    const sub = Linking.addEventListener('url', handleUrl);
+    return () => sub.remove();
+  }, [processPaymentUrl]);
 
   const payNow = async (recordId: string) => {
     setPaying(recordId);
@@ -73,19 +125,10 @@ export default function MyPaymentsScreen() {
       const { checkout_url } = res.data;
 
       // Use openAuthSessionAsync to automatically close the browser when redirected back to mybuilding://
-      const result = await WebBrowser.openAuthSessionAsync(checkout_url, 'mybuilding://payment');
+      const result = await WebBrowser.openAuthSessionAsync(checkout_url, 'mybuilding://my-payments');
 
       if (result.type === 'success' && 'url' in result && result.url) {
-        try {
-          const q = result.url.includes('?') ? result.url.split('?')[1] : '';
-          const st = new URLSearchParams(q).get('status');
-          if (st === 'success') {
-            Alert.alert('Payment successful', 'Your payment was recorded.');
-          } else if (st === 'failed') {
-            Alert.alert('Payment not completed', 'The payment did not finish. If your account was debited, refresh this screen.');
-          }
-        } catch { /* ignore */ }
-        setTimeout(fetch, 1000);
+        await processPaymentUrl(result.url);
       } else {
         await new Promise((r) => setTimeout(r, 600));
         fetch();
@@ -170,6 +213,22 @@ export default function MyPaymentsScreen() {
         <View style={{ width: 36 }} />
       </View>
 
+      {isLocked ? (
+        <View style={styles.lockedContainer}>
+          <View style={styles.lockedIconBox}>
+            <Ionicons name="lock-closed" size={40} color={Colors.primary} />
+          </View>
+          <Text style={styles.lockedTitle}>Subscription Required</Text>
+          <Text style={styles.lockedDesc}>
+            Subscribe to view your maintenance payment history and pay bills.
+          </Text>
+          <TouchableOpacity style={styles.lockedBtn} onPress={() => router.push('/subscribe' as any)}>
+            <Ionicons name="star-outline" size={18} color={Colors.white} />
+            <Text style={styles.lockedBtnText}>View Plans</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <>
       {/* Summary */}
       {!loading && payments.length > 0 && (
         <View style={styles.summaryRow}>
@@ -351,6 +410,8 @@ export default function MyPaymentsScreen() {
           }}
         />
       )}
+        </>
+      )}
     </View>
   );
 }
@@ -395,6 +456,24 @@ const styles = StyleSheet.create({
   cashBtnText: { color: Colors.accent, fontWeight: '700', fontSize: 13 },
   uploadBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1.5, borderColor: Colors.primary, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, marginRight: 8 },
   uploadBtnText: { color: Colors.primary, fontWeight: '700', fontSize: 13 },
+  lockedContainer: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 40, gap: 16,
+  },
+  lockedIconBox: {
+    width: 88, height: 88, borderRadius: 44,
+    backgroundColor: Colors.primary + '15',
+    justifyContent: 'center', alignItems: 'center',
+    marginBottom: 4,
+  },
+  lockedTitle: { fontSize: 20, fontWeight: '800', color: Colors.text, textAlign: 'center' },
+  lockedDesc: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', lineHeight: 22 },
+  lockedBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: Colors.primary, borderRadius: 14,
+    paddingHorizontal: 28, paddingVertical: 14, marginTop: 8,
+  },
+  lockedBtnText: { fontSize: 15, fontWeight: '800', color: Colors.white },
 });
 
 // Appended styles for advance payment feature

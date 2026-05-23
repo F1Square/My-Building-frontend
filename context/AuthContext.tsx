@@ -156,7 +156,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
       }
       // Explicit projectId prevents native crash when EAS config is missing
-      const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+      const projectId = Constants.expoConfig?.extra?.eas?.projectId  ?? Constants.easConfig?.projectId;
       if (!projectId) {
         console.warn('[AuthContext] No EAS projectId — skipping push token');
         return;
@@ -220,14 +220,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }, 1000);
     }
 
-    // Defer push: Simple timeout, no InteractionManager complexity
-    // INCREASED DELAY: 5000ms to ensure everything is stable
-    setTimeout(() => { 
-      registerPushToken().catch(err => {
-        console.log('[AuthContext] Push token registration failed (non-critical):', err);
-      });
-    }, 5000);
-
     // Warm cache with critical data in background (non-blocking)
     // Delay to avoid interfering with navigation
     setTimeout(() => {
@@ -242,7 +234,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.warn('[AuthContext] Cache warming setup failed:', err);
       }
     }, 2000);
-  }, [fetchSubscription, registerPushToken]);
+  }, [fetchSubscription]);
+
+  useEffect(() => {
+    if (loading || !user?.id || !token) return;
+    const timer = setTimeout(() => {
+      registerPushToken().catch((err) => {
+        console.log('[AuthContext] Push token registration failed (non-critical):', err);
+      });
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [loading, user?.id, token, registerPushToken]);
 
   const logout = useCallback(async () => {
     await AsyncStorage.multiRemove(['token', 'user', 'subscription']);

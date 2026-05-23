@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
   RefreshControl, ScrollView, Modal, TextInput, FlatList,
@@ -1149,7 +1149,9 @@ const flatRowStyles = StyleSheet.create({
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function MaintenanceCategoryScreen() {
-  const { category, building_id, building_name } = useLocalSearchParams<{ category: BillingCategory; building_id?: string; building_name?: string }>();
+  const { category, building_id, building_name, status: linkStatus } = useLocalSearchParams<{
+    category: BillingCategory; building_id?: string; building_name?: string; status?: string;
+  }>();
   const router = useRouter();
   const { user, token } = useAuth();
   const { t } = useLanguage();
@@ -1202,6 +1204,8 @@ export default function MaintenanceCategoryScreen() {
   const [methodModalRecord, setMethodModalRecord] = useState<PaymentRecord | null>(null);
   const [chequeModalVisible, setChequeModalVisible] = useState(false);
   const [chequeModalRecord, setChequeModalRecord] = useState<PaymentRecord | null>(null);
+  const processGuardRef = useRef(0);
+  const paymentAlertShownRef = useRef(false);
 
   const cat = (category as BillingCategory) || 'maintenance';
 
@@ -1270,16 +1274,42 @@ export default function MaintenanceCategoryScreen() {
     }
   }, [cat, isPramukh]));
 
-  // Deep-link listener for payment completion
+  const processMaintenancePaymentUrl = useCallback(async (url: string) => {
+    if (!url.startsWith('mybuilding://maintenance-category')) return;
+    const now = Date.now();
+    if (now - processGuardRef.current < 2500) return;
+    processGuardRef.current = now;
+
+    const q = url.includes('?') ? url.split('?')[1] : '';
+    const st = new URLSearchParams(q).get('status');
+    if (isPramukh) {
+      setPramukhTab('my-bill');
+      await fetchPramukhData();
+    } else {
+      if (st === 'success') setActiveTab('paid');
+      await fetchUserData();
+    }
+    if (paymentAlertShownRef.current) return;
+    paymentAlertShownRef.current = true;
+    if (st === 'success') {
+      Alert.alert(t('paymentSuccessful'), t('paymentSuccessfulMsg'));
+    } else if (st === 'failed') {
+      Alert.alert(t('paymentFailed'), t('tryAgain'));
+    }
+  }, [isPramukh, t]);
+
   useEffect(() => {
-    const sub = Linking.addEventListener('url', ({ url }) => {
-      if (url.includes('mybuilding://payment')) {
-        if (isPramukh) fetchPramukhData();
-        else fetchUserData();
-      }
-    });
+    if (linkStatus === 'success' || linkStatus === 'failed') {
+      void processMaintenancePaymentUrl(`mybuilding://maintenance-category?status=${linkStatus}&category=${cat}`);
+    }
+  }, [linkStatus, cat, processMaintenancePaymentUrl]);
+
+  useEffect(() => {
+    const handleUrl = ({ url }: { url: string }) => { void processMaintenancePaymentUrl(url); };
+    Linking.getInitialURL().then((u) => { if (u) void processMaintenancePaymentUrl(u); }).catch(() => null);
+    const sub = Linking.addEventListener('url', handleUrl);
     return () => sub.remove();
-  }, [cat, isPramukh]);
+  }, [processMaintenancePaymentUrl]);
 
   // ── Payment flow ──
 
@@ -1325,37 +1355,23 @@ export default function MaintenanceCategoryScreen() {
   const processPayment = async (method: 'Online' | 'Cash' | 'Cheque', record: PaymentRecord) => {
     if (method === 'Online') {
       setPaying(record.id);
+      paymentAlertShownRef.current = false;
       try {
         const res = await api.post('/maintenance/pay/order', { payment_record_id: record.id });
         const { checkout_url } = res.data;
         if (checkout_url) {
-          /**
-           * Same as subscribe / my-payments: `openAuthSessionAsync` uses SFSafariViewController /
-           * Chrome Custom Tabs and hands `mybuilding://payment?...` back to the app.
-           * `openBrowserAsync` opens external Safari, which often shows “cannot load page” on scheme redirects.
-           */
           const result = await WebBrowser.openAuthSessionAsync(
             checkout_url,
-            'mybuilding://payment',
+            'mybuilding://maintenance-category',
           );
 
           if (result.type === 'success' && 'url' in result && result.url) {
-            try {
-              const q = result.url.includes('?') ? result.url.split('?')[1] : '';
-              const st = new URLSearchParams(q).get('status');
-              if (st === 'success') {
-                Alert.alert('Payment successful', 'Your payment was recorded. You can download the receipt when it appears under Paid.');
-              } else if (st === 'failed') {
-                Alert.alert('Payment not completed', 'The payment did not finish in the browser. If your account was debited, check Paid bills or contact your Pramukh.');
-              }
-            } catch { /* ignore parse errors */ }
+            await processMaintenancePaymentUrl(result.url);
           } else {
-            // User dismissed or session ended — refresh in case payment completed server-side
             await new Promise((r) => setTimeout(r, 600));
+            if (isPramukh) await fetchPramukhData();
+            else await fetchUserData();
           }
-
-          if (isPramukh) await fetchPramukhData();
-          else await fetchUserData();
           await WebBrowser.coolDownAsync().catch(() => {});
         }
       } catch (e: any) {

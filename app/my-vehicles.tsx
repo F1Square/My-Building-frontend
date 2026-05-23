@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter , useFocusEffect } from 'expo-router';
 
 import api from '../utils/api';
+import { useAuth } from '../context/AuthContext';
 
 const VEHICLE_RE = /^[A-Z]{2}\d{2}[A-Z]{1,3}\d{4}$/;
 
@@ -18,6 +19,8 @@ const TYPE_LABEL: Record<string, string> = { two_wheeler: 'Two Wheeler', four_wh
 export default function MyVehiclesScreen() {
   const router = useRouter();
   const { t } = useLanguage();
+  const { user, hasActiveSubscription } = useAuth();
+  const isLocked = user?.role !== 'admin' && !hasActiveSubscription;
   const [vehicles, setVehicles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -33,7 +36,13 @@ export default function MyVehiclesScreen() {
     finally { setLoading(false); setRefreshing(false); }
   };
 
-  useFocusEffect(useCallback(() => { fetch(); }, []));
+  useFocusEffect(useCallback(() => {
+    if (isLocked) {
+      setLoading(false);
+      return;
+    }
+    fetch();
+  }, [isLocked]));
 
   const addVehicle = async () => {
     const num = form.vehicle_number.toUpperCase().replace(/\s/g, '');
@@ -73,12 +82,30 @@ export default function MyVehiclesScreen() {
           <Ionicons name="arrow-back" size={22} color={Colors.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('myVehicles')}</Text>
-        <TouchableOpacity onPress={() => setShowAdd(true)} style={styles.addBtn}>
-          <Ionicons name="add" size={24} color={Colors.white} />
-        </TouchableOpacity>
+        {!isLocked ? (
+          <TouchableOpacity onPress={() => setShowAdd(true)} style={styles.addBtn}>
+            <Ionicons name="add" size={24} color={Colors.white} />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.addBtn} />
+        )}
       </View>
 
-      {loading ? (
+      {isLocked ? (
+        <View style={styles.lockedContainer}>
+          <View style={styles.lockedIconBox}>
+            <Ionicons name="lock-closed" size={40} color={Colors.primary} />
+          </View>
+          <Text style={styles.lockedTitle}>Subscription Required</Text>
+          <Text style={styles.lockedDesc}>
+            Subscribe to register and manage your vehicles in the society.
+          </Text>
+          <TouchableOpacity style={styles.lockedBtn} onPress={() => router.push('/subscribe' as any)}>
+            <Ionicons name="star-outline" size={18} color={Colors.white} />
+            <Text style={styles.lockedBtnText}>View Plans</Text>
+          </TouchableOpacity>
+        </View>
+      ) : loading ? (
         <ActivityIndicator style={{ marginTop: 48 }} size="large" color={Colors.primary} />
       ) : (
         <FlatList
@@ -181,4 +208,22 @@ const styles = StyleSheet.create({
   typeLabel: { fontSize: 14, fontWeight: '700', color: Colors.text },
   submitBtn: { backgroundColor: Colors.primary, borderRadius: 12, padding: 15, alignItems: 'center', marginTop: 28, marginBottom: 30 },
   submitBtnText: { color: Colors.white, fontSize: 16, fontWeight: '700' },
+  lockedContainer: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 40, gap: 16,
+  },
+  lockedIconBox: {
+    width: 88, height: 88, borderRadius: 44,
+    backgroundColor: Colors.primary + '15',
+    justifyContent: 'center', alignItems: 'center',
+    marginBottom: 4,
+  },
+  lockedTitle: { fontSize: 20, fontWeight: '800', color: Colors.text, textAlign: 'center' },
+  lockedDesc: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', lineHeight: 22 },
+  lockedBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: Colors.primary, borderRadius: 14,
+    paddingHorizontal: 28, paddingVertical: 14, marginTop: 8,
+  },
+  lockedBtnText: { fontSize: 15, fontWeight: '800', color: Colors.white },
 });

@@ -65,8 +65,12 @@ export default function AdvancePaymentScreen() {
       
       const result = await WebBrowser.openAuthSessionAsync(res.data.checkout_url, 'mybuilding://advance-payment');
       
-      if (result.type === 'success') {
-        setTimeout(fetchStatus, 1000);
+      if (result.type === 'success' && 'url' in result && result.url) {
+        const params = new URLSearchParams(result.url.split('?')[1] || '');
+        if (params.get('status') === 'success') {
+          fetchStatus();
+          Alert.alert('✅ Payment Successful', 'Your advance credit has been added to your account.');
+        }
       } else {
         fetchStatus();
       }

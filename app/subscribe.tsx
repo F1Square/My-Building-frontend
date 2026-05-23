@@ -6,7 +6,7 @@ import {
   ActivityIndicator, ScrollView, Linking, TextInput, Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import { addBreadcrumb, clearBreadcrumbs } from '../utils/crashBreadcrumbs';
@@ -27,6 +27,58 @@ type CatalogPlan = {
   sort_order: number;
   features: string[];
 };
+
+/** Snapshot before checkout — used to detect if *this* payment changed subscription state. */
+type SubSnapshot = {
+  status: string | null;
+  plan: string | null;
+  started_at: string | null;
+  gateway_order_id: string | null;
+  newspaper_addon: boolean;
+};
+
+const EMPTY_SUB_SNAPSHOT: SubSnapshot = {
+  status: null,
+  plan: null,
+  started_at: null,
+  gateway_order_id: null,
+  newspaper_addon: false,
+};
+
+function toSubSnapshot(data: Record<string, unknown> | null | undefined): SubSnapshot {
+  if (!data) return { ...EMPTY_SUB_SNAPSHOT };
+  return {
+    status: typeof data.status === 'string' ? data.status : null,
+    plan: typeof data.plan === 'string' ? data.plan : null,
+    started_at: typeof data.started_at === 'string' ? data.started_at : null,
+    gateway_order_id:
+      typeof data.gateway_order_id === 'string'
+        ? data.gateway_order_id
+        : typeof data.razorpay_order_id === 'string'
+          ? data.razorpay_order_id
+          : null,
+    newspaper_addon: !!data.newspaper_addon,
+  };
+}
+
+function subscriptionChangedSince(before: SubSnapshot, after: SubSnapshot): boolean {
+  if (before.status !== 'active' && after.status === 'active') return true;
+  if (after.status !== 'active') return false;
+  if (before.plan !== after.plan) return true;
+  if (before.started_at !== after.started_at) return true;
+  if (!before.newspaper_addon && after.newspaper_addon) return true;
+  if (before.gateway_order_id !== after.gateway_order_id && after.gateway_order_id) return true;
+  return false;
+}
+
+function paymentCompletedSince(
+  before: SubSnapshot,
+  after: SubSnapshot,
+  pendingOrderId?: string | null,
+): boolean {
+  if (pendingOrderId && after.gateway_order_id === pendingOrderId) return true;
+  return subscriptionChangedSince(before, after);
+}
 
 export default function SubscribeScreen() {
   const [catalogPlans, setCatalogPlans] = useState<CatalogPlan[]>([]);
@@ -86,17 +138,79 @@ export default function SubscribeScreen() {
   const [includeNewspaper, setIncludeNewspaper] = useState(false);
   const [newspaperAddonLoading, setNewspaperAddonLoading] = useState(false);
   const processGuardRef = useRef(0);
+  const checkoutActiveRef = useRef(false);
+  const lastFocusRefreshRef = useRef(0);
+  /** Prevents duplicate success/failure alerts when deep link + polling both fire. */
+  const paymentAlertShownRef = useRef(false);
+  const { status: linkStatus, reason: linkReason } = useLocalSearchParams<{ status?: string; reason?: string }>();
 
-  const pollSubscriptionAfterPayment = useCallback(async () => {
-    for (let i = 0; i < 6; i++) {
-      await refreshSubscription();
-      await new Promise((r) => setTimeout(r, 650));
+  /** Poll until this checkout actually updates subscription (not merely "user has any active plan"). */
+  const fetchSubSnapshot = useCallback(async (): Promise<SubSnapshot> => {
+    try {
+      const res = await api.get('/subscriptions/me');
+      return toSubSnapshot(res.data);
+    } catch {
+      return { ...EMPTY_SUB_SNAPSHOT };
     }
-  }, [refreshSubscription]);
+  }, []);
+
+  const waitForPaymentCompletion = useCallback(
+    async (
+      before: SubSnapshot,
+      pendingOrderId?: string | null,
+      maxAttempts = 2,
+    ): Promise<boolean> => {
+      for (let i = 0; i < maxAttempts; i++) {
+        const after = await fetchSubSnapshot();
+        if (paymentCompletedSince(before, after, pendingOrderId)) {
+          await refreshSubscription();
+          return true;
+        }
+        if (i < maxAttempts - 1) {
+          await new Promise((r) => setTimeout(r, 1500));
+        }
+      }
+      return false;
+    },
+    [fetchSubSnapshot, refreshSubscription],
+  );
+
+  // Aliases kept for Metro hot-reload (old bundle may still reference removed names)
+  const waitForActiveSubscription = useCallback(
+    (maxAttempts = 2) => waitForPaymentCompletion(EMPTY_SUB_SNAPSHOT, null, maxAttempts),
+    [waitForPaymentCompletion],
+  );
+  const pollSubscriptionAfterPayment = waitForActiveSubscription;
+  const confirmSubscriptionActivated = useCallback(
+    () => waitForPaymentCompletion(EMPTY_SUB_SNAPSHOT, null, 1),
+    [waitForPaymentCompletion],
+  );
+
+  const showPaymentSuccess = useCallback(() => {
+    if (paymentAlertShownRef.current) return;
+    paymentAlertShownRef.current = true;
+    setTab('my-plan');
+    Alert.alert(
+      'Purchase successful',
+      'Your subscription is active. All modules are now unlocked.',
+    );
+  }, []);
+
+  const showPaymentFailed = useCallback((reason?: string | null) => {
+    if (paymentAlertShownRef.current) return;
+    paymentAlertShownRef.current = true;
+    const detail = reason?.trim()
+      ? `The payment did not finish (${reason}). You can try again from Explore Plans.`
+      : 'The payment did not finish. You can try again from Explore Plans.';
+    Alert.alert('Payment not completed', detail);
+  }, []);
 
   const processSubscriptionUrl = useCallback(
     async (url: string) => {
-      if (!url.startsWith('mybuilding://subscription')) return;
+      const isReturn =
+        url.startsWith('mybuilding://subscribe') ||
+        url.startsWith('mybuilding://subscription');
+      if (!isReturn) return;
       const now = Date.now();
       if (now - processGuardRef.current < 2500) return;
       processGuardRef.current = now;
@@ -105,23 +219,27 @@ export default function SubscribeScreen() {
       const queryPart = url.includes('?') ? url.split('?')[1] : '';
       const params = new URLSearchParams(queryPart);
       const status = params.get('status');
-      await refreshSubscription();
+      const reason = params.get('reason');
       if (status === 'success') {
+        await refreshSubscription();
         await addBreadcrumb('subscription', 'deep_link_success_refresh_done');
-        setTab('my-plan');
-        Alert.alert(
-          'Purchase successful',
-          'Your subscription is active. All modules are now unlocked.',
-        );
+        showPaymentSuccess();
       } else if (status === 'failed') {
-        Alert.alert(
-          'Payment not completed',
-          'The payment did not finish. You can try again from Explore Plans.',
-        );
+        await refreshSubscription();
+        showPaymentFailed(reason ? decodeURIComponent(reason) : null);
       }
     },
-    [refreshSubscription],
+    [refreshSubscription, showPaymentSuccess, showPaymentFailed],
   );
+
+  useEffect(() => {
+    if (linkStatus === 'success' || linkStatus === 'failed') {
+      const qs = linkReason
+        ? `mybuilding://subscribe?status=${linkStatus}&reason=${encodeURIComponent(String(linkReason))}`
+        : `mybuilding://subscribe?status=${linkStatus}`;
+      void processSubscriptionUrl(qs);
+    }
+  }, [linkStatus, linkReason, processSubscriptionUrl]);
 
   // Handle deep link return from payment gateway (cold start / background)
   useEffect(() => {
@@ -142,7 +260,12 @@ export default function SubscribeScreen() {
   // Refresh when returning to this screen (e.g. user left in-app browser manually)
   useFocusEffect(
     useCallback(() => {
-      void refreshSubscription();
+      const now = Date.now();
+      // Allow refresh if: (1) checkout not active, OR (2) >5s since last refresh
+      if (!checkoutActiveRef.current || now - lastFocusRefreshRef.current > 5000) {
+        lastFocusRefreshRef.current = now;
+        void refreshSubscription();
+      }
     }, [refreshSubscription]),
   );
 
@@ -151,30 +274,56 @@ export default function SubscribeScreen() {
    * `Linking.openURL` sends iOS Safari to the gateway; Safari cannot hand `mybuilding://`
    * back to the app, which caused “Safari cannot open this page” and a stale subscription UI.
    */
-  const openCheckoutSafely = async (checkoutUrl?: string) => {
+  const openCheckoutSafely = async (
+    checkoutUrl?: string,
+    beforeCheckout: SubSnapshot = EMPTY_SUB_SNAPSHOT,
+    pendingOrderId?: string | null,
+  ) => {
     if (!checkoutUrl || typeof checkoutUrl !== 'string') {
       await addBreadcrumb('subscription', 'checkout_url_invalid', { checkoutUrl });
       throw new Error('Payment link is unavailable. Please try again.');
     }
     await addBreadcrumb('subscription', 'checkout_open_start');
+    checkoutActiveRef.current = true;
+    paymentAlertShownRef.current = false;
+    let outcome: { type: 'completed' | 'dismissed' } = { type: 'dismissed' };
     try {
       const result = await WebBrowser.openAuthSessionAsync(
         checkoutUrl,
-        'mybuilding://subscription',
+        'mybuilding://subscribe',
       );
       await addBreadcrumb('subscription', 'auth_session_result', { type: result.type });
 
       if (result.type === 'success' && 'url' in result && result.url) {
         await processSubscriptionUrl(result.url);
-        return { type: 'completed' as const };
+        outcome = { type: 'completed' };
+        return outcome;
       }
 
-      // User cancelled or redirect was not captured — payment may still have succeeded server-side
-      await pollSubscriptionAfterPayment();
-      return { type: 'dismissed' as const };
+      // Browser closed without deep link — only succeed if this order actually updated subscription
+      if (await waitForPaymentCompletion(beforeCheckout, pendingOrderId, 2)) {
+        showPaymentSuccess();
+        outcome = { type: 'completed' };
+        return outcome;
+      }
+      return outcome;
     } finally {
+      checkoutActiveRef.current = false;
       await WebBrowser.coolDownAsync().catch(() => {});
+
+      // Final fallback only when no alert was shown yet (avoids duplicate with deep link path)
+      if (!paymentAlertShownRef.current) {
+        await new Promise(r => setTimeout(r, 2000));
+        if (await waitForPaymentCompletion(beforeCheckout, pendingOrderId, 1)) {
+          await addBreadcrumb('subscription', 'fallback_polling_success');
+          showPaymentSuccess();
+          outcome = { type: 'completed' };
+        } else {
+          await addBreadcrumb('subscription', 'fallback_polling_no_active_subscription');
+        }
+      }
     }
+    return outcome;
   };
 
   const subscribe = async (planSlug: string) => {
@@ -184,6 +333,7 @@ export default function SubscribeScreen() {
       const isLifetimeCheckout = row ? row.months == null : planSlug === 'lifetime';
       await clearBreadcrumbs();
       await addBreadcrumb('subscription', 'subscribe_plan_start', { plan: planSlug });
+      const beforeCheckout = await fetchSubSnapshot();
       const orderRes = await api.post('/subscriptions/order', {
         plan: planSlug,
         promo_id: promoResult?.promo_id || undefined,
@@ -191,7 +341,8 @@ export default function SubscribeScreen() {
       });
       await addBreadcrumb('subscription', 'subscribe_order_success', { hasCheckoutUrl: !!orderRes?.data?.checkout_url });
       const checkoutUrl = orderRes?.data?.checkout_url;
-      const result = await openCheckoutSafely(checkoutUrl);
+      const pendingOrderId = orderRes?.data?.order_id ?? null;
+      const result = await openCheckoutSafely(checkoutUrl, beforeCheckout, pendingOrderId);
 
       if (result.type === 'completed') {
         await addBreadcrumb('subscription', 'checkout_completed_via_redirect');
@@ -215,10 +366,12 @@ export default function SubscribeScreen() {
     try {
       await clearBreadcrumbs();
       await addBreadcrumb('subscription', 'newspaper_addon_start', { plan });
+      const beforeCheckout = await fetchSubSnapshot();
       const orderRes = await api.post('/subscriptions/newspaper-addon/order', { plan });
       await addBreadcrumb('subscription', 'newspaper_addon_order_success', { hasCheckoutUrl: !!orderRes?.data?.checkout_url });
       const checkoutUrl = orderRes?.data?.checkout_url;
-      const result = await openCheckoutSafely(checkoutUrl);
+      const pendingOrderId = orderRes?.data?.order_id ?? null;
+      const result = await openCheckoutSafely(checkoutUrl, beforeCheckout, pendingOrderId);
 
       if (result.type === 'completed') {
         await addBreadcrumb('subscription', 'newspaper_addon_completed_via_redirect');

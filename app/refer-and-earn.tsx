@@ -2,8 +2,8 @@ import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   Alert, ActivityIndicator, RefreshControl, Share, TextInput, Modal,
-  Clipboard,
 } from 'react-native';
+import { copyToClipboard } from '../utils/clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter , useFocusEffect } from 'expo-router';
 
@@ -71,10 +71,11 @@ export default function ReferAndEarnScreen() {
 
   useFocusEffect(useCallback(() => { fetchData(); }, []));
 
-  const copyCode = () => {
+  const copyCode = async () => {
     if (!referralCode) return;
-    Clipboard.setString(referralCode);
-    Alert.alert('Copied!', 'Referral code copied to clipboard.');
+    if (await copyToClipboard(referralCode)) {
+      Alert.alert('Copied!', 'Referral code copied to clipboard.');
+    }
   };
 
   const shareCode = () => {

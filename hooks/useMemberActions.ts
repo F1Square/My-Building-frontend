@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Alert, Clipboard } from 'react-native';
+import { Alert } from 'react-native';
+import { copyToClipboard } from '../utils/clipboard';
 import api from '../utils/api';
 import type { Member } from '../components/MemberDetailModal';
 
@@ -106,9 +107,10 @@ export function useMemberActions({ onChange, onDeleted }: Options = {}) {
     }
   };
 
-  const copyCode = (code: string) => {
-    Clipboard.setString(code);
-    Alert.alert('Copied!', `Referral code copied: ${code}`);
+  const copyCode = async (code: string) => {
+    if (await copyToClipboard(code)) {
+      Alert.alert('Copied!', `Referral code copied: ${code}`);
+    }
   };
 
   return { actionLoading, codeLoading, promote, demote, remove, ensureCode, copyCode };

@@ -1,8 +1,8 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity,
+  View, Text, StyleSheet, SectionList, TouchableOpacity,
   ActivityIndicator, RefreshControl, TextInput, Modal, ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,8 +10,23 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import api from '../utils/api';
 
 const DAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
-const MONTH_NAMES = ['January','February','March','April','May','June',
-  'July','August','September','October','November','December'];
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+const LIMIT = 100;
+const SEARCH_DEBOUNCE_MS = 300;
+
+const MODULE_COLORS: Record<string, string> = {
+  auth: '#6366F1', maintenance: '#10B981', complaints: '#EF4444',
+  vehicles: '#0EA5E9', visitors: '#F59E0B', buildings: '#1E3A8A',
+  subscriptions: '#7C3AED', expenses: '#059669', chat: '#EC4899',
+  meetings: '#0891B2', funds: '#D97706', requests: '#16A34A',
+  announcements: '#F59E0B', promos: '#EC4899', inquiries: '#0891B2',
+  helpline: '#EF4444', app: Colors.primary,
+};
+const ROLE_COLORS: Record<string, string> = {
+  user: Colors.success, pramukh: Colors.accent, admin: Colors.danger,
+};
+const HIDE_DETAIL_KEYS = new Set(['level', 'error_message', 'path', 'method', 'status_code', 'kind', 'source']);
 
 function formatAction(a: string) {
   return a?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) ?? '—';
@@ -21,22 +36,57 @@ function formatFull(iso: string) {
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
     + '  ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
-function formatShort(iso: string) {
-  const d = new Date(iso);
-  const today = new Date().toDateString();
-  const yesterday = new Date(Date.now() - 86400000).toDateString();
-  if (d.toDateString() === today)
-    return 'Today ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-  if (d.toDateString() === yesterday)
-    return 'Yesterday ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
-    + ' ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+function formatTimeOnly(iso: string) {
+  return new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 function toDateStr(y: number, m: number, d: number) {
-  return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+function dayGroupLabel(iso: string) {
+  const d = new Date(iso);
+  const today = new Date();
+  const yesterday = new Date(Date.now() - 86400000);
+  if (d.toDateString() === today.toDateString()) return 'Today';
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+function isErrorLog(item: any) {
+  return item?.detail?.level === 'error' || (item?.detail?.status_code >= 500);
+}
+function filterLogs(logs: any[], query: string) {
+  if (!query) return logs;
+  const q = query.toLowerCase();
+  return logs.filter(l =>
+    l.user_name?.toLowerCase().includes(q) ||
+    l.action?.toLowerCase().includes(q) ||
+    l.module?.toLowerCase().includes(q) ||
+    l.user_role?.toLowerCase().includes(q)
+  );
+}
+function groupLogsByDay(logs: any[]) {
+  const sections: { title: string; data: any[] }[] = [];
+  let currentTitle = '';
+  for (const log of logs) {
+    const title = dayGroupLabel(log.created_at);
+    if (title !== currentTitle) {
+      sections.push({ title, data: [log] });
+      currentTitle = title;
+    } else {
+      sections[sections.length - 1].data.push(log);
+    }
+  }
+  return sections;
 }
 
-// ── Inline Calendar ───────────────────────────────────────────────────────────
+function useDebouncedValue<T>(value: T, delay: number) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return debounced;
+}
+
 function Calendar({ selected, onSelect }: { selected: string; onSelect: (d: string) => void }) {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -65,6 +115,10 @@ function Calendar({ selected, onSelect }: { selected: string; onSelect: (d: stri
           <Ionicons name="chevron-forward" size={20} color={Colors.primary} />
         </TouchableOpacity>
       </View>
+      <TouchableOpacity style={calStyles.todayBtn} onPress={() => onSelect(todayStr)}>
+        <Ionicons name="today-outline" size={14} color={Colors.primary} />
+        <Text style={calStyles.todayBtnText}>Jump to Today</Text>
+      </TouchableOpacity>
       <View style={calStyles.row}>
         {DAY_LABELS.map(d => <Text key={d} style={calStyles.dayHdr}>{d}</Text>)}
       </View>
@@ -95,24 +149,126 @@ function Calendar({ selected, onSelect }: { selected: string; onSelect: (d: stri
   );
 }
 
-// ── Main Screen ───────────────────────────────────────────────────────────────
+function DetailModal({ selected, onClose }: { selected: any; onClose: () => void }) {
+  const isError = isErrorLog(selected);
+  const modColor = MODULE_COLORS[selected.module] ?? Colors.primary;
+  const headerColor = isError ? Colors.danger : modColor;
+  const roleColor = ROLE_COLORS[selected.user_role] ?? Colors.textMuted;
+
+  const detailMeta = useMemo(() => {
+    const detailObj = (selected.detail && typeof selected.detail === 'object') ? selected.detail : {};
+    const rows: { label: string; value: string }[] = [];
+    for (const [k, v] of Object.entries(detailObj)) {
+      if (v === null || v === undefined || v === '') continue;
+      if (HIDE_DETAIL_KEYS.has(k)) continue;
+      rows.push({
+        label: k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+        value: typeof v === 'object' ? JSON.stringify(v, null, 2) : String(v),
+      });
+    }
+    return {
+      detailRows: rows,
+      errorMessage: isError ? detailObj.error_message : null,
+      errorPath: detailObj.path,
+      errorMethod: detailObj.method,
+      errorStatus: detailObj.status_code,
+      errorKind: detailObj.kind,
+    };
+  }, [selected, isError]);
+
+  return (
+    <Modal visible animationType="slide" transparent>
+      <View style={styles.overlay}>
+        <View style={styles.sheet}>
+          <View style={styles.sheetHandle} />
+          <View style={[styles.sheetHeaderStrip, { backgroundColor: headerColor }]}>
+            {isError && <Ionicons name="warning" size={18} color={Colors.white} style={{ marginRight: 6 }} />}
+            <Text style={styles.sheetAction}>{formatAction(selected.action)}</Text>
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+              <Ionicons name="close" size={18} color={Colors.white} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20 }}>
+            <View style={styles.detailCard}>
+              <View style={[styles.detailAvatar, { backgroundColor: roleColor }]}>
+                <Text style={styles.detailAvatarText}>{selected.user_name?.[0]?.toUpperCase() ?? '?'}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.detailName}>{selected.user_name ?? '—'}</Text>
+                <View style={[styles.rolePill, { backgroundColor: roleColor + '20', marginTop: 4 }]}>
+                  <Text style={[styles.rolePillText, { color: roleColor }]}>{selected.user_role?.toUpperCase()}</Text>
+                </View>
+              </View>
+              <View style={[styles.modPill, { backgroundColor: modColor + '18' }]}>
+                <Text style={[styles.modPillText, { color: modColor }]}>{selected.module}</Text>
+              </View>
+            </View>
+            <View style={styles.metaGrid}>
+              <View style={styles.metaItem}>
+                <Ionicons name="time-outline" size={15} color={Colors.textMuted} />
+                <View>
+                  <Text style={styles.metaLabel}>Timestamp</Text>
+                  <Text style={styles.metaValue}>{formatFull(selected.created_at)}</Text>
+                </View>
+              </View>
+              {selected.ip_address ? (
+                <View style={styles.metaItem}>
+                  <Ionicons name="globe-outline" size={15} color={Colors.textMuted} />
+                  <View>
+                    <Text style={styles.metaLabel}>IP Address</Text>
+                    <Text style={styles.metaValue} selectable>{selected.ip_address}</Text>
+                  </View>
+                </View>
+              ) : null}
+            </View>
+            {isError ? (
+              <View style={styles.errorBox}>
+                <View style={styles.errorBoxHeader}>
+                  <Ionicons name="bug" size={16} color={Colors.danger} />
+                  <Text style={styles.errorBoxTitle}>
+                    {detailMeta.errorKind === 'network' ? 'Network Failure' : 'Technical Error'}
+                    {detailMeta.errorStatus ? ` · HTTP ${detailMeta.errorStatus}` : ''}
+                  </Text>
+                </View>
+                {detailMeta.errorMessage ? (
+                  <Text style={styles.errorBoxMsg} selectable>{String(detailMeta.errorMessage)}</Text>
+                ) : null}
+                {(detailMeta.errorMethod || detailMeta.errorPath) ? (
+                  <Text style={styles.errorBoxPath} selectable>
+                    {(detailMeta.errorMethod || '') + (detailMeta.errorMethod && detailMeta.errorPath ? ' ' : '') + (detailMeta.errorPath || '')}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+            {detailMeta.detailRows.length > 0 ? (
+              <View style={styles.detailSection}>
+                <Text style={styles.detailSectionLabel}>{isError ? 'Request Context' : 'Action Details'}</Text>
+                {detailMeta.detailRows.map(({ label, value }) => (
+                  <View key={label} style={styles.kvRow}>
+                    <Text style={styles.kvKey}>{label}</Text>
+                    <Text style={styles.kvValue} selectable numberOfLines={4}>{value}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : !isError ? (
+              <View style={styles.noDetail}>
+                <Text style={styles.noDetailText}>No additional details recorded</Text>
+              </View>
+            ) : null}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 export default function ActivityLogsScreen() {
-  const MODULE_COLORS: Record<string, string> = {
-    auth: '#6366F1', maintenance: '#10B981', complaints: '#EF4444',
-    vehicles: '#0EA5E9', visitors: '#F59E0B', buildings: '#1E3A8A',
-    subscriptions: '#7C3AED', expenses: '#059669', chat: '#EC4899',
-    meetings: '#0891B2', funds: '#D97706', requests: '#16A34A',
-    announcements: '#F59E0B', promos: '#EC4899', inquiries: '#0891B2',
-    helpline: '#EF4444', app: Colors.primary,
-  };
-  const ROLE_COLORS: Record<string, string> = {
-    user: Colors.success, pramukh: Colors.accent, admin: Colors.danger,
-  };
   const router = useRouter();
   const { t } = useLanguage();
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState('');
   const [offset, setOffset] = useState(0);
@@ -120,12 +276,15 @@ export default function ActivityLogsScreen() {
   const [selectedDate, setSelectedDate] = useState('');
   const [showCal, setShowCal] = useState(false);
   const [levelFilter, setLevelFilter] = useState<'all' | 'error' | 'info'>('all');
-  const LIMIT = 100;
+  const [liveMode, setLiveMode] = useState<0 | 5 | 10>(0);
+  const debouncedSearch = useDebouncedValue(search.trim(), SEARCH_DEBOUNCE_MS);
+  const loadRef = useRef<(off: number, opts?: { silent?: boolean }) => Promise<void>>(async () => {});
 
-  useFocusEffect(useCallback(() => { load(0); }, [selectedDate, levelFilter]));
-
-  const load = async (off: number) => {
+  const load = useCallback(async (off: number, opts?: { silent?: boolean }) => {
+    const silent = opts?.silent;
     try {
+      if (!silent && off === 0) setLoading(true);
+      if (off > 0) setLoadingMore(true);
       let url = `/activity-logs?limit=${LIMIT}&offset=${off}`;
       if (selectedDate) url += `&date=${selectedDate}`;
       if (levelFilter !== 'all') url += `&level=${levelFilter}`;
@@ -134,40 +293,49 @@ export default function ActivityLogsScreen() {
       setLogs(off === 0 ? incoming : prev => [...prev, ...incoming]);
       setTotal(res.data.total ?? 0);
       setOffset(off);
-    } catch {}
-    finally { setLoading(false); setRefreshing(false); }
-  };
+    } catch { /* ignore */ }
+    finally {
+      if (!silent && off === 0) setLoading(false);
+      setRefreshing(false);
+      setLoadingMore(false);
+    }
+  }, [selectedDate, levelFilter]);
 
-  // A log is treated as an error if the backend marked it that way in detail.
-  const isErrorLog = (item: any) =>
-    item?.detail?.level === 'error' || (item?.detail?.status_code >= 500);
+  loadRef.current = load;
+
+  useFocusEffect(useCallback(() => { load(0); }, [load]));
+
+  useEffect(() => {
+    if (!liveMode) return;
+    const id = setInterval(() => { loadRef.current(0, { silent: true }); }, liveMode * 1000);
+    return () => clearInterval(id);
+  }, [liveMode, selectedDate, levelFilter]);
+
+  const filteredLogs = useMemo(
+    () => filterLogs(logs, debouncedSearch),
+    [logs, debouncedSearch],
+  );
+  const sections = useMemo(
+    () => groupLogsByDay(filteredLogs),
+    [filteredLogs],
+  );
 
   const pickDate = (d: string) => {
     setSelectedDate(d);
     setShowCal(false);
     setLoading(true);
   };
-
   const clearDate = () => {
     setSelectedDate('');
     setShowCal(false);
     setLoading(true);
   };
 
-  const filtered = search.trim()
-    ? logs.filter(l =>
-        l.user_name?.toLowerCase().includes(search.toLowerCase()) ||
-        l.action?.toLowerCase().includes(search.toLowerCase()) ||
-        l.module?.toLowerCase().includes(search.toLowerCase()) ||
-        l.user_role?.toLowerCase().includes(search.toLowerCase())
-      )
-    : logs;
-
   const dateLabel = selectedDate
     ? new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
     : '';
 
-  const renderItem = ({ item }: { item: any }) => {
+  const renderItem = useCallback(({ item }: { item: any }) => {
     const isError = isErrorLog(item);
     const modColor = MODULE_COLORS[item.module] ?? Colors.primary;
     const stripColor = isError ? Colors.danger : modColor;
@@ -184,7 +352,7 @@ export default function ActivityLogsScreen() {
                 {formatAction(item.action)}
               </Text>
             </View>
-            <Text style={styles.cardTime}>{formatShort(item.created_at)}</Text>
+            <Text style={styles.cardTime}>{formatTimeOnly(item.created_at)}</Text>
           </View>
           <View style={styles.cardBottom}>
             <View style={[styles.rolePill, { backgroundColor: roleColor + '20' }]}>
@@ -209,121 +377,33 @@ export default function ActivityLogsScreen() {
         <Ionicons name="chevron-forward" size={14} color={Colors.border} style={{ alignSelf: 'center', marginRight: 12 }} />
       </TouchableOpacity>
     );
-  };
+  }, []);
 
-  const DetailModal = () => {
-    if (!selected) return null;
-    const isError = isErrorLog(selected);
-    const modColor = MODULE_COLORS[selected.module] ?? Colors.primary;
-    const headerColor = isError ? Colors.danger : modColor;
-    const roleColor = ROLE_COLORS[selected.user_role] ?? Colors.textMuted;
+  const renderSectionHeader = useCallback(({ section }: { section: { title: string } }) => (
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionHeaderText}>{section.title}</Text>
+    </View>
+  ), []);
 
-    // Pull error fields up top, then list the rest as generic key/values.
-    const detailObj = (selected.detail && typeof selected.detail === 'object') ? selected.detail : {};
-    const errorMessage = isError ? detailObj.error_message : null;
-    const errorPath = detailObj.path;
-    const errorMethod = detailObj.method;
-    const errorStatus = detailObj.status_code;
-    const errorKind = detailObj.kind; // 'network' | 'server' (client-reported only)
-    const HIDE_KEYS = new Set(['level', 'error_message', 'path', 'method', 'status_code', 'kind', 'source']);
+  const handleLoadMore = useCallback(() => {
+    if (debouncedSearch || loadingMore || logs.length >= total) return;
+    load(offset + LIMIT);
+  }, [debouncedSearch, loadingMore, logs.length, total, offset, load]);
 
-    const detailRows: { label: string; value: string }[] = [];
-    for (const [k, v] of Object.entries(detailObj)) {
-      if (v === null || v === undefined || v === '') continue;
-      if (HIDE_KEYS.has(k)) continue;
-      detailRows.push({
-        label: k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-        value: typeof v === 'object' ? JSON.stringify(v, null, 2) : String(v),
-      });
-    }
-    return (
-      <Modal visible animationType="slide" transparent>
-        <View style={styles.overlay}>
-          <View style={styles.sheet}>
-            <View style={styles.sheetHandle} />
-            <View style={[styles.sheetHeaderStrip, { backgroundColor: headerColor }]}>
-              {isError && <Ionicons name="warning" size={18} color={Colors.white} style={{ marginRight: 6 }} />}
-              <Text style={styles.sheetAction}>{formatAction(selected.action)}</Text>
-              <TouchableOpacity onPress={() => setSelected(null)} style={styles.closeBtn}>
-                <Ionicons name="close" size={18} color={Colors.white} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20 }}>
-              <View style={styles.detailCard}>
-                <View style={[styles.detailAvatar, { backgroundColor: roleColor }]}>
-                  <Text style={styles.detailAvatarText}>{selected.user_name?.[0]?.toUpperCase() ?? '?'}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.detailName}>{selected.user_name ?? '—'}</Text>
-                  <View style={[styles.rolePill, { backgroundColor: roleColor + '20', marginTop: 4 }]}>
-                    <Text style={[styles.rolePillText, { color: roleColor }]}>{selected.user_role?.toUpperCase()}</Text>
-                  </View>
-                </View>
-                <View style={[styles.modPill, { backgroundColor: modColor + '18' }]}>
-                  <Text style={[styles.modPillText, { color: modColor }]}>{selected.module}</Text>
-                </View>
-              </View>
-              <View style={styles.metaGrid}>
-                <View style={styles.metaItem}>
-                  <Ionicons name="time-outline" size={15} color={Colors.textMuted} />
-                  <View>
-                    <Text style={styles.metaLabel}>Timestamp</Text>
-                    <Text style={styles.metaValue}>{formatFull(selected.created_at)}</Text>
-                  </View>
-                </View>
-                {selected.ip_address ? (
-                  <View style={styles.metaItem}>
-                    <Ionicons name="globe-outline" size={15} color={Colors.textMuted} />
-                    <View>
-                      <Text style={styles.metaLabel}>IP Address</Text>
-                      <Text style={styles.metaValue} selectable>{selected.ip_address}</Text>
-                    </View>
-                  </View>
-                ) : null}
-              </View>
-              {isError ? (
-                <View style={styles.errorBox}>
-                  <View style={styles.errorBoxHeader}>
-                    <Ionicons name="bug" size={16} color={Colors.danger} />
-                    <Text style={styles.errorBoxTitle}>
-                      {errorKind === 'network' ? 'Network Failure' : 'Technical Error'}
-                      {errorStatus ? ` · HTTP ${errorStatus}` : ''}
-                    </Text>
-                  </View>
-                  {errorMessage ? (
-                    <Text style={styles.errorBoxMsg} selectable>{String(errorMessage)}</Text>
-                  ) : null}
-                  {(errorMethod || errorPath) ? (
-                    <Text style={styles.errorBoxPath} selectable>
-                      {(errorMethod || '') + (errorMethod && errorPath ? ' ' : '') + (errorPath || '')}
-                    </Text>
-                  ) : null}
-                </View>
-              ) : null}
-
-              {detailRows.length > 0 ? (
-                <View style={styles.detailSection}>
-                  <Text style={styles.detailSectionLabel}>{isError ? 'Request Context' : 'Action Details'}</Text>
-                  {detailRows.map(({ label, value }) => (
-                    <View key={label} style={styles.kvRow}>
-                      <Text style={styles.kvKey}>{label}</Text>
-                      <Text style={styles.kvValue} selectable numberOfLines={4}>{value}</Text>
-                    </View>
-                  ))}
-                </View>
-              ) : !isError ? (
-                <View style={styles.noDetail}>
-                  <Text style={styles.noDetailText}>No additional details recorded</Text>
-                </View>
-              ) : null}
-            </ScrollView>
-          </View>
+  const listFooter = useMemo(() => {
+    if (loadingMore) {
+      return (
+        <View style={styles.footerLoader}>
+          <ActivityIndicator size="small" color={Colors.primary} />
+          <Text style={styles.footerLoaderText}>Loading more logs…</Text>
         </View>
-      </Modal>
-    );
-  };
-
-  
+      );
+    }
+    if (!debouncedSearch && logs.length > 0 && logs.length < total) {
+      return <Text style={styles.footerHint}>Scroll for more</Text>;
+    }
+    return null;
+  }, [loadingMore, debouncedSearch, logs.length, total]);
 
   return (
     <View style={styles.container}>
@@ -337,7 +417,6 @@ export default function ActivityLogsScreen() {
         </View>
       </View>
 
-      {/* Level filter — lets admin focus on technical errors instantly */}
       <View style={styles.levelRow}>
         {(['all', 'error', 'info'] as const).map((lv) => {
           const active = levelFilter === lv;
@@ -345,21 +424,12 @@ export default function ActivityLogsScreen() {
           return (
             <TouchableOpacity
               key={lv}
-              style={[
-                styles.levelPill,
-                active && (isErr ? styles.levelPillActiveErr : styles.levelPillActive),
-              ]}
+              style={[styles.levelPill, active && (isErr ? styles.levelPillActiveErr : styles.levelPillActive)]}
               onPress={() => { setLevelFilter(lv); setLoading(true); }}
               activeOpacity={0.85}
             >
               {isErr && <Ionicons name="warning-outline" size={13} color={active ? Colors.white : Colors.danger} />}
-              <Text
-                style={[
-                  styles.levelPillText,
-                  active && { color: Colors.white },
-                  isErr && !active && { color: Colors.danger },
-                ]}
-              >
+              <Text style={[styles.levelPillText, active && { color: Colors.white }, isErr && !active && { color: Colors.danger }]}>
                 {lv === 'all' ? 'All' : lv === 'error' ? 'Errors' : 'Activity'}
               </Text>
             </TouchableOpacity>
@@ -367,7 +437,26 @@ export default function ActivityLogsScreen() {
         })}
       </View>
 
-      {/* Search + Date button */}
+      <View style={styles.liveRow}>
+        <View style={styles.liveLabelRow}>
+          {liveMode > 0 && <View style={styles.liveDot} />}
+          <Text style={[styles.liveLabel, liveMode > 0 && styles.liveLabelOn]}>
+            {liveMode > 0 ? 'Live Monitoring ON' : 'Live Monitoring'}
+          </Text>
+        </View>
+        {([0, 5, 10] as const).map((sec) => (
+          <TouchableOpacity
+            key={sec}
+            style={[styles.livePill, liveMode === sec && styles.livePillActive]}
+            onPress={() => setLiveMode(sec)}
+          >
+            <Text style={[styles.livePillText, liveMode === sec && styles.livePillTextActive]}>
+              {sec === 0 ? 'Off' : `${sec}s`}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
       <View style={styles.toolRow}>
         <View style={styles.searchBox}>
           <Ionicons name="search-outline" size={15} color={Colors.textMuted} />
@@ -384,7 +473,6 @@ export default function ActivityLogsScreen() {
             </TouchableOpacity>
           ) : null}
         </View>
-
         <TouchableOpacity
           style={[styles.dateBtn, (selectedDate || showCal) && styles.dateBtnActive]}
           onPress={() => setShowCal(v => !v)}
@@ -395,7 +483,6 @@ export default function ActivityLogsScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Active date badge */}
       {selectedDate ? (
         <View style={styles.activeDateRow}>
           <Ionicons name="calendar" size={13} color={Colors.primary} />
@@ -407,7 +494,6 @@ export default function ActivityLogsScreen() {
         </View>
       ) : null}
 
-      {/* Calendar dropdown */}
       {showCal ? (
         <View style={styles.calDropdown}>
           <Calendar selected={selectedDate} onSelect={pickDate} />
@@ -417,16 +503,19 @@ export default function ActivityLogsScreen() {
       {loading ? (
         <ActivityIndicator style={{ marginTop: 60 }} size="large" color={Colors.primary} />
       ) : (
-        <FlatList
-          data={filtered}
+        <SectionList
+          sections={sections}
           keyExtractor={i => i.id}
           renderItem={renderItem}
+          renderSectionHeader={renderSectionHeader}
+          stickySectionHeadersEnabled
           contentContainerStyle={{ padding: 16, gap: 8, paddingBottom: 40 }}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(0); }} tintColor={Colors.primary} />
           }
-          onEndReached={() => { if (!search && logs.length < total) load(offset + LIMIT); }}
+          onEndReached={handleLoadMore}
           onEndReachedThreshold={0.3}
+          ListFooterComponent={listFooter}
           ListEmptyComponent={
             <View style={styles.empty}>
               <View style={styles.emptyIconBox}>
@@ -434,19 +523,18 @@ export default function ActivityLogsScreen() {
               </View>
               <Text style={styles.emptyTitle}>No Activity Found</Text>
               <Text style={styles.emptySub}>
-                {selectedDate ? `No logs on ${dateLabel}` : search ? 'No results match your search' : 'No user actions recorded yet'}
+                {selectedDate ? `No logs on ${dateLabel}` : debouncedSearch ? 'No results match your search' : 'No user actions recorded yet'}
               </Text>
             </View>
           }
         />
       )}
 
-      <DetailModal />
+      {selected ? <DetailModal selected={selected} onClose={() => setSelected(null)} /> : null}
     </View>
   );
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
   header: { backgroundColor: '#3B5FC0', paddingTop: 52, paddingBottom: 18, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -454,7 +542,17 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 20, fontWeight: '800', color: Colors.white },
   headerSub: { fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 },
 
-  toolRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 16, marginTop: 14, marginBottom: 4 },
+  liveRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginTop: 10 },
+  liveLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
+  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.danger },
+  liveLabel: { fontSize: 12, fontWeight: '700', color: Colors.textMuted },
+  liveLabelOn: { color: Colors.danger },
+  livePill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1.5, borderColor: Colors.border, backgroundColor: Colors.white },
+  livePillActive: { backgroundColor: Colors.danger, borderColor: Colors.danger },
+  livePillText: { fontSize: 11, fontWeight: '700', color: Colors.textMuted },
+  livePillTextActive: { color: Colors.white },
+
+  toolRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 16, marginTop: 10, marginBottom: 4 },
   searchBox: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.white, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1.5, borderColor: Colors.border },
   searchInput: { flex: 1, fontSize: 14, color: Colors.text },
   dateBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.white, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11, borderWidth: 1.5, borderColor: Colors.primary },
@@ -479,6 +577,9 @@ const styles = StyleSheet.create({
   levelPillActiveErr: { backgroundColor: Colors.danger, borderColor: Colors.danger },
   levelPillText: { fontSize: 12, fontWeight: '700', color: Colors.text },
 
+  sectionHeader: { paddingTop: 8, paddingBottom: 6, backgroundColor: Colors.bg },
+  sectionHeaderText: { fontSize: 13, fontWeight: '800', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
+
   card: { flexDirection: 'row', alignItems: 'stretch', backgroundColor: Colors.white, borderRadius: 12, overflow: 'hidden', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5, elevation: 2 },
   cardError: { backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FCA5A5' },
   strip: { width: 4 },
@@ -495,6 +596,10 @@ const styles = StyleSheet.create({
   errPill: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, backgroundColor: Colors.danger },
   errPillText: { fontSize: 10, fontWeight: '800', color: Colors.white, letterSpacing: 0.4 },
   cardErrMsg: { marginTop: 8, fontSize: 12, color: '#991B1B', fontStyle: 'italic', lineHeight: 17 },
+
+  footerLoader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 16 },
+  footerLoaderText: { fontSize: 13, fontWeight: '600', color: Colors.textMuted },
+  footerHint: { textAlign: 'center', fontSize: 12, color: Colors.textMuted, paddingVertical: 12 },
 
   empty: { alignItems: 'center', paddingTop: 60, gap: 10 },
   emptyIconBox: { width: 80, height: 80, borderRadius: 40, backgroundColor: Colors.primary + '10', justifyContent: 'center', alignItems: 'center' },
@@ -532,9 +637,11 @@ const styles = StyleSheet.create({
 
 const calStyles = StyleSheet.create({
   wrap: { padding: 14 },
-  nav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  nav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   navBtn: { padding: 6 },
   navLabel: { fontSize: 15, fontWeight: '800', color: Colors.text },
+  todayBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginBottom: 10, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: Colors.primary + '12' },
+  todayBtnText: { fontSize: 12, fontWeight: '700', color: Colors.primary },
   row: { flexDirection: 'row' },
   dayHdr: { flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '700', color: Colors.textMuted, paddingVertical: 4 },
   cell: { flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 8, margin: 1 },

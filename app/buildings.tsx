@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  Modal, Alert, ActivityIndicator, RefreshControl, FlatList, Clipboard,
+  Modal, Alert, ActivityIndicator, RefreshControl, FlatList,
 } from 'react-native';
+import { copyToClipboard } from '../utils/clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Colors } from '../constants/colors';
@@ -177,10 +178,11 @@ export default function BuildingsScreen() {
     setSelectedBuilding(prev => (prev?.id === b.id ? null : b));
   };
 
-  const copyBuildingCode = (buildingId: string, buildingName: string) => {
+  const copyBuildingCode = async (buildingId: string, buildingName: string) => {
     const code = getBuildingCode(buildingId);
-    Clipboard.setString(code);
-    Alert.alert('Copied!', `Building code for "${buildingName}" copied: ${code}`);
+    if (await copyToClipboard(code)) {
+      Alert.alert('Copied!', `Building code for "${buildingName}" copied: ${code}`);
+    }
   };
 
   return (

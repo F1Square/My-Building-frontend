@@ -130,6 +130,7 @@ export default function ChatScreen() {
   const lastNewMsgTimeRef = useRef(0);
   const appStateRef = useRef(AppState.currentState);
   const sendBtnScale = useRef(new Animated.Value(1)).current;
+  const keyboardOpeningRef = useRef(false);
 
   /* ── Helpers ──────────────────────────────────────────────────────────── */
 
@@ -258,18 +259,30 @@ export default function ChatScreen() {
     const showSub = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
       (e) => {
+        keyboardOpeningRef.current = true;
         if (Platform.OS === 'android') {
           const { screenY } = e.endCoordinates;
           setKbInset(Math.max(0, Dimensions.get('window').height - screenY));
         } else {
           setKbInset(1);
         }
-        scrollToBottom(true);
+        // Only scroll if we're already near bottom, with delay to let keyboard settle
+        if (stickToBottomRef.current) {
+          setTimeout(() => {
+            keyboardOpeningRef.current = false;
+            scrollToBottom(true);
+          }, 200);
+        } else {
+          keyboardOpeningRef.current = false;
+        }
       },
     );
     const hideSub = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => setKbInset(0),
+      () => {
+        keyboardOpeningRef.current = false;
+        setKbInset(0);
+      },
     );
     return () => { showSub.remove(); hideSub.remove(); };
   }, [scrollToBottom]);
@@ -281,7 +294,7 @@ export default function ChatScreen() {
       stickToBottomRef.current = true;
       logEvent('open_chat', 'chat');
       // Fetch member count for header (fire and forget)
-      api.get('/buildings/my').then(r => setMemberCount(r.data?.total_members ?? null)).catch(() => {});
+      api.get('/buildings/my').then(r => setMemberCount(r.data?.total_members ?? null)).catch(() => { });
       void fetchMessages().then(() => scheduleNextPoll());
       return () => {
         isFocusedRef.current = false;
@@ -291,11 +304,17 @@ export default function ChatScreen() {
   );
 
   useEffect(() => {
-    if (!loading && messages.length > 0 && stickToBottomRef.current) scrollToBottom(false);
+    if (!loading && messages.length > 0 && stickToBottomRef.current) {
+      // Use requestAnimationFrame to avoid scroll during keyboard animation
+      requestAnimationFrame(() => scrollToBottom(false));
+    }
   }, [loading, messages.length, scrollToBottom]);
 
   /* ── Scroll tracking ─────────────────────────────────────────────────── */
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    // Don't update stick-to-bottom during keyboard opening to prevent dismissal
+    if (keyboardOpeningRef.current) return;
+
     const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
     const distFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
     stickToBottomRef.current = distFromBottom <= NEAR_BOTTOM_PX;
@@ -350,16 +369,9 @@ export default function ChatScreen() {
   const keyboardVerticalOffset = Platform.OS === 'ios' ? Math.max(insets.top, 12) + 18 : 0;
 
   /* ─── UI ──────────────────────────────────────────────────────────────── */
-  // On Android with softwareKeyboardLayoutMode: "resize", the OS resizes
-  // the activity window automatically. KAV must NOT add its own behavior
-  // or it creates double-adjustment (the visible gap between input & keyboard).
   return (
-    <KeyboardAvoidingView
-      style={s.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={keyboardVerticalOffset}
-    >
-      {/* ── Premium header ──────────────────────────────────────────────── */}
+    <View style={s.container}>
+      {/* ── Header ──────────────────────────────────────────────────────── */}
       <View style={[s.header, { paddingTop: Math.max(insets.top, 20) + 12 }]}>
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="arrow-back" size={22} color="#fff" />
@@ -375,95 +387,112 @@ export default function ChatScreen() {
         </View>
       </View>
 
-      {/* ── Messages ────────────────────────────────────────────────────── */}
-      {loading ? (
-        <View style={s.loadingWrap}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={s.loadingText}>Loading messages…</Text>
-        </View>
-      ) : noBuildingError ? (
-        <View style={s.emptyContainer}>
-          <View style={s.emptyIconWrap}>
-            <Ionicons name="business-outline" size={48} color={Colors.primary} />
-          </View>
-          <Text style={s.emptyTitle}>No Building Assigned</Text>
-          <Text style={s.emptySub}>Admin accounts must be assigned to a building to access chat.</Text>
-        </View>
-      ) : (
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          keyExtractor={keyExtractor}
-          renderItem={renderMessage}
-          extraData={listExtraData}
-          contentContainerStyle={s.listContent}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
-          onScroll={onScroll}
-          scrollEventThrottle={32}
-          onStartReached={loadOlderMessages}
-          onStartReachedThreshold={0.15}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="interactive"
-          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
-          maintainVisibleContentPosition={hasMoreOlder ? { minIndexForVisible: 0, autoscrollToTopThreshold: 40 } : undefined}
-          initialNumToRender={20}
-          maxToRenderPerBatch={12}
-          updateCellsBatchingPeriod={40}
-          windowSize={12}
-          removeClippedSubviews={Platform.OS === 'android'}
-          ListHeaderComponent={loadingMore ? <ActivityIndicator style={{ paddingVertical: 12 }} color={Colors.primary} /> : null}
-          ListEmptyComponent={
+      {/* ── Chat Content ────────────────────────────────────────────────── */}
+      <KeyboardAvoidingView
+        style={s.chatWrapper}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={keyboardVerticalOffset}
+      >
+
+        {/* ── Messages + input ──────────────────────────────────────────── */}
+        <View style={s.chatBody}>
+          {loading ? (
+            <View style={s.loadingWrap}>
+              <ActivityIndicator size="large" color={Colors.primary} />
+              <Text style={s.loadingText}>Loading messages…</Text>
+            </View>
+          ) : noBuildingError ? (
             <View style={s.emptyContainer}>
               <View style={s.emptyIconWrap}>
-                <Ionicons name="chatbubble-ellipses-outline" size={48} color={Colors.primary} />
+                <Text style={s.emptyIcon}>🏢</Text>
               </View>
-              <Text style={s.emptyTitle}>{t('beFirstToSay')}</Text>
-              <Text style={s.emptySub}>Start the conversation with your society members</Text>
+              <Text style={s.emptyTitle}>No Building Assigned</Text>
+              <Text style={s.emptySub}>Admin accounts must be assigned to a building to access chat.</Text>
             </View>
-          }
-        />
-      )}
+          ) : (
+            <FlatList
+              ref={flatListRef}
+              style={s.chatList}
+              data={messages}
+              keyExtractor={keyExtractor}
+              renderItem={renderMessage}
+              extraData={listExtraData}
+              contentContainerStyle={s.listContent}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
+              onScroll={onScroll}
+              scrollEventThrottle={32}
+              onStartReached={loadOlderMessages}
+              onStartReachedThreshold={0.15}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="none"
+              maintainVisibleContentPosition={hasMoreOlder ? { minIndexForVisible: 0, autoscrollToTopThreshold: 40 } : undefined}
+              initialNumToRender={20}
+              maxToRenderPerBatch={12}
+              updateCellsBatchingPeriod={40}
+              windowSize={12}
+              removeClippedSubviews={Platform.OS === 'android'}
+              ListHeaderComponent={loadingMore ? <ActivityIndicator style={{ paddingVertical: 12 }} color={Colors.primary} /> : null}
+              ListEmptyComponent={
+                <View style={s.emptyContainer}>
+                  <View style={s.emptyIconWrap}>
+                    <Text style={s.emptyIcon}>💬</Text>
+                  </View>
+                  <Text style={s.emptyTitle}>{t('beFirstToSay')}</Text>
+                  <Text style={s.emptySub}>Start the conversation with your society members</Text>
+                </View>
+              }
+            />
+          )}
 
-      {/* ── Input bar ───────────────────────────────────────────────────── */}
-      <View style={[
-        s.inputBar,
-        {
-          paddingBottom: kbInset > 0 ? 4 : Math.max(insets.bottom, 5),
-          ...(Platform.OS === 'android' && kbInset > 0 && {
-            transform: [{ translateY: -(kbInset + KB_LIFT_EXTRA) }],
-          }),
-        },
-      ]}>
-        <View style={s.inputWrap}>
-          <TextInput
-            style={s.input}
-            value={text}
-            onChangeText={setText}
-            placeholder={noBuildingError ? 'Not available' : t('typeMessage')}
-            placeholderTextColor={Colors.textMuted}
-            multiline
-            maxLength={500}
-            editable={!noBuildingError}
-            returnKeyType="default"
-            blurOnSubmit={false}
-          />
+          <View style={[s.inputBar, {
+            paddingBottom: kbInset > 0 ? 4 : Math.max(insets.bottom, 5), marginBottom:
+              Platform.OS === 'android' && kbInset > 0
+                ? kbInset + 50
+                : 0,
+          }]}>
+            <View style={s.inputWrap}>
+              <TextInput
+                style={s.input}
+                value={text}
+                onChangeText={setText}
+                placeholder={noBuildingError ? '🚫 Not available' : t('typeMessage')}
+                placeholderTextColor={Colors.textMuted}
+                multiline
+                maxLength={500}
+                editable={!noBuildingError}
+                returnKeyType="default"
+                blurOnSubmit={false}
+                onFocus={() => {
+                  keyboardOpeningRef.current = true;
+
+                  requestAnimationFrame(() => {
+                    scrollToBottom(false);
+
+                    setTimeout(() => {
+                      keyboardOpeningRef.current = false;
+                    }, 300);
+                  });
+                }}
+              />
+            </View>
+            <Animated.View style={{ transform: [{ scale: sendBtnScale }] }}>
+              <TouchableOpacity
+                style={[s.sendBtn, (!text.trim() || sending) && s.sendBtnDisabled]}
+                onPress={sendMessage}
+                disabled={!text.trim() || sending}
+                activeOpacity={0.8}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                {sending
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Ionicons name="send" size={18} color="#fff" />
+                }
+              </TouchableOpacity>
+            </Animated.View>
+          </View>
         </View>
-        <Animated.View style={{ transform: [{ scale: sendBtnScale }] }}>
-          <TouchableOpacity
-            style={[s.sendBtn, (!text.trim() || sending) && s.sendBtnDisabled]}
-            onPress={sendMessage}
-            disabled={!text.trim() || sending}
-            activeOpacity={0.8}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            {sending
-              ? <ActivityIndicator size="small" color="#fff" />
-              : <Ionicons name="send" size={18} color="#fff" />
-            }
-          </TouchableOpacity>
-        </Animated.View>
-      </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -478,6 +507,7 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 12,
     shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 12, shadowOffset: { width: 0, height: 4 },
     elevation: 8,
+    zIndex: 10,
   },
   backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center', borderRadius: 18 },
   headerAvatar: {
@@ -489,7 +519,10 @@ const s = StyleSheet.create({
   headerInfo: { flex: 1 },
   headerTitle: { color: '#fff', fontSize: 17, fontWeight: '700', letterSpacing: 0.2 },
   headerSub: { color: 'rgba(255,255,255,0.75)', fontSize: 12, fontWeight: '500', marginTop: 1 },
-  headerAction: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center', borderRadius: 18 },
+
+  chatWrapper: { flex: 1 },
+  chatBody: { flex: 1 },
+  chatList: { flex: 1 },
 
   /* Messages */
   listContent: { padding: 14, paddingBottom: 8, flexGrow: 1 },
@@ -537,6 +570,7 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(59,95,192,0.1)',
     justifyContent: 'center', alignItems: 'center', marginBottom: 20,
   },
+  emptyIcon: { fontSize: 48 },
   emptyTitle: { fontSize: 18, fontWeight: '700', color: Colors.text, marginBottom: 8, textAlign: 'center' },
   emptySub: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', lineHeight: 20 },
 

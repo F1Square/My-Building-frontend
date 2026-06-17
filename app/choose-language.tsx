@@ -25,15 +25,17 @@ export default function ChooseLanguageScreen() {
   const handleContinue = async () => {
     if (isLoading) return;
     
+    setIsLoading(true);
     try {
-      setIsLoading(true);
       await setLanguage(selected);
       // Navigation handled by _layout.tsx watching hasChosen
+      // No need to wait - let the navigation happen naturally
     } catch (error) {
-      console.error('Error setting language:', error);
-    } finally {
+      console.error('[ChooseLanguage] Error setting language:', error);
+      // Still allow navigation even if storage fails
       setIsLoading(false);
     }
+    // Keep loading state until navigation completes naturally
   };
 
   return (

@@ -134,68 +134,60 @@ function RootNavigator() {
     if (!rootNav?.key) return;
     if (navigationLockRef.current) return;
 
-    // Simple, reliable delay - no InteractionManager complexity
-    const timer = setTimeout(() => {
-      try {
-        if (navigationLockRef.current) return;
-        navigationLockRef.current = true;
+    navigationLockRef.current = true;
 
-        const seg = segmentsRef.current;
-        const seg0 = seg.length > 0 ? (seg[0] as string) : '';
-        const inAuthNow = seg0 === '(auth)';
-        const inLangPickerNow = seg0 === 'choose-language';
-        const inMaintenanceNow = seg0 === 'maintenance-mode';
+    try {
+      const seg = segmentsRef.current;
+      const seg0 = seg.length > 0 ? (seg[0] as string) : '';
+      const inAuthNow = seg0 === '(auth)';
+      const inLangPickerNow = seg0 === 'choose-language';
+      const inMaintenanceNow = seg0 === 'maintenance-mode';
 
-        // 1. Maintenance Check
-        if (isMaintenance && user?.role !== 'admin') {
-          if (!inMaintenanceNow) {
-            void addBreadcrumb('routing', 'replace_maintenance');
-            router.replace({
-              pathname: '/maintenance-mode',
-              params: { message: maintenanceMessage }
-            } as any);
-          }
-          setTimeout(() => { navigationLockRef.current = false; }, 1000);
-          return;
+      // 1. Maintenance Check
+      if (isMaintenance && user?.role !== 'admin') {
+        if (!inMaintenanceNow) {
+          void addBreadcrumb('routing', 'replace_maintenance');
+          router.replace({
+            pathname: '/maintenance-mode',
+            params: { message: maintenanceMessage }
+          } as any);
         }
-
-        // 2. No user - go to login
-        if (!user) {
-          if (!inAuthNow) {
-            void addBreadcrumb('routing', 'replace_login');
-            router.replace('/login' as any);
-          }
-          setTimeout(() => { navigationLockRef.current = false; }, 1000);
-          return;
-        }
-
-        // 3. User logged in but no language chosen
-        if (!hasChosen) {
-          if (!inLangPickerNow) {
-            void addBreadcrumb('routing', 'replace_lang_picker');
-            router.replace('/choose-language' as any);
-          }
-          setTimeout(() => { navigationLockRef.current = false; }, 1000);
-          return;
-        }
-
-        // 4. User logged in + language chosen - go to home if in auth/lang/maintenance
-        if (inAuthNow || inLangPickerNow || inMaintenanceNow) {
-          void addBreadcrumb('routing', 'replace_home');
-          router.replace('/' as any);
-        }
-        
-        setTimeout(() => { navigationLockRef.current = false; }, 1000);
-      } catch (err) {
-        console.warn('[RootNavigator] Navigation error:', err);
-        void addBreadcrumb('routing', 'navigation_error', { message: (err as Error)?.message });
         navigationLockRef.current = false;
+        return;
       }
-    }, 300); // Increased to 300ms for maximum reliability
 
-    return () => {
-      clearTimeout(timer);
-    };
+      // 2. No user - go to login
+      if (!user) {
+        if (!inAuthNow) {
+          void addBreadcrumb('routing', 'replace_login');
+          router.replace('/login' as any);
+        }
+        navigationLockRef.current = false;
+        return;
+      }
+
+      // 3. User logged in but no language chosen
+      if (!hasChosen) {
+        if (!inLangPickerNow) {
+          void addBreadcrumb('routing', 'replace_lang_picker');
+          router.replace('/choose-language' as any);
+        }
+        navigationLockRef.current = false;
+        return;
+      }
+
+      // 4. User logged in + language chosen - go to home if in auth/lang/maintenance
+      if (inAuthNow || inLangPickerNow || inMaintenanceNow) {
+        void addBreadcrumb('routing', 'replace_home');
+        router.replace('/' as any);
+      }
+      
+      navigationLockRef.current = false;
+    } catch (err) {
+      console.warn('[RootNavigator] Navigation error:', err);
+      void addBreadcrumb('routing', 'navigation_error', { message: (err as Error)?.message });
+      navigationLockRef.current = false;
+    }
   }, [user, authLoading, hasChosen, langLoading, isMaintenance, maintenanceMessage, configLoading, router, rootNav?.key, user?.role]);
 
   // After login, LanguageContext sets langLoading=true while it reads per-user prefs.

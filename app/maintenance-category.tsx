@@ -1328,9 +1328,17 @@ export default function MaintenanceCategoryScreen() {
       if (effectiveBuildingId) params.building_id = effectiveBuildingId;
       const res = await api.get('/maintenance/payments', { params });
       setUserPayments(res.data);
-      const bRes = await api.get('/buildings/my');
-      setBuildingInfo(bRes.data);
-    } catch { }
+      
+      // Only fetch building info if we have a building_id
+      if (effectiveBuildingId || user?.building_id) {
+        const bRes = await api.get('/buildings/my', {
+          params: effectiveBuildingId ? { building_id: effectiveBuildingId } : {}
+        });
+        setBuildingInfo(bRes.data);
+      }
+    } catch (err) {
+      console.warn('[MaintenanceCategory] fetchUserData error:', err);
+    }
     finally { setLoading(false); setRefreshing(false); }
   };
 
@@ -1347,23 +1355,38 @@ export default function MaintenanceCategoryScreen() {
         ? `/buildings/members/${effectiveBuildingId}`
         : '/buildings/members';
 
-      const [billsRes, membersRes, myPaymentsRes, buildingRes] = await Promise.all([
+      const promises: Promise<any>[] = [
         api.get('/maintenance/bills', { params: billParams }),
         api.get(membersUrl),
         api.get('/maintenance/payments', { params: payParams }),
-        effectiveBuildingId ? api.get(`/buildings/my?building_id=${effectiveBuildingId}`) : api.get('/buildings/my'),
-      ]);
+      ];
+      
+      // Only fetch building info if we have a building_id
+      if (effectiveBuildingId || user?.building_id) {
+        promises.push(
+          effectiveBuildingId 
+            ? api.get(`/buildings/my?building_id=${effectiveBuildingId}`) 
+            : api.get('/buildings/my')
+        );
+      }
+
+      const results = await Promise.all(promises);
+      const [billsRes, membersRes, myPaymentsRes, buildingRes] = results;
+      
       setBills(billsRes.data);
       setMembers(membersRes.data);
       setMyPramukhPayments(myPaymentsRes.data);
-      setBuildingInfo(buildingRes.data);
+      if (buildingRes) setBuildingInfo(buildingRes.data);
+      
       if (selectedBill) {
         const allParams: any = { category: cat };
         if (effectiveBuildingId) allParams.building_id = effectiveBuildingId;
         const paymentsRes = await api.get('/maintenance/payments', { params: allParams });
         setBillPayments(paymentsRes.data.filter((p: PaymentRecord) => p.bill_id === selectedBill.id));
       }
-    } catch { }
+    } catch (err) {
+      console.warn('[MaintenanceCategory] fetchPramukhData error:', err);
+    }
     finally { setLoading(false); setRefreshing(false); }
   };
 

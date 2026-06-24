@@ -2,9 +2,10 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Colors } from '../../constants/colors';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, Alert, Modal, TextInput, Dimensions, Image,
+  RefreshControl, Modal, TextInput, Dimensions, Image,
   ActivityIndicator, FlatList, Pressable,
 } from 'react-native';
+import { Alert } from '../../utils/alert';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useLanguage } from '../../context/LanguageContext';

@@ -9,6 +9,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
+import BuildingDropdown from '../components/BuildingDropdown';
+import { useBuildings, type Building } from '../hooks/useBuildings';
 
 type Wing = {
   wing: string;
@@ -22,12 +24,15 @@ export default function ExpensesWingSelectScreen() {
   const isPramukh = user?.role === 'pramukh';
   const canManage = isPramukh || isAdmin;
 
+  const { buildings, loading: buildingsLoading } = useBuildings(isAdmin);
+  const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null);
+
   const [wings, setWings] = useState<Wing[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
 
-  const buildingId = user?.building_id;
+  const buildingId = isAdmin ? selectedBuilding?.id : user?.building_id;
 
   const fetchWings = async () => {
     if (!buildingId) {
@@ -55,9 +60,15 @@ export default function ExpensesWingSelectScreen() {
   }, [buildingId]));
 
   const handleWingSelect = (wing: string) => {
+    const params: any = { wing };
+    // Pass building info to detail screen for admin
+    if (isAdmin && selectedBuilding) {
+      params.building_id = selectedBuilding.id;
+      params.building_name = selectedBuilding.name;
+    }
     router.push({
       pathname: '/expenses-detail',
-      params: { wing },
+      params,
     } as any);
   };
 
@@ -78,6 +89,8 @@ export default function ExpensesWingSelectScreen() {
     </TouchableOpacity>
   );
 
+  const showContent = !isAdmin || selectedBuilding;
+
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -87,12 +100,36 @@ export default function ExpensesWingSelectScreen() {
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>{t('expenses')}</Text>
-          <Text style={styles.headerSub}>Select Wing</Text>
+          <Text style={styles.headerSub}>
+            {isAdmin && selectedBuilding ? selectedBuilding.name : 'Select Wing'}
+          </Text>
         </View>
         <View style={{ width: 36 }} />
       </View>
 
-      {loading ? (
+      {/* Admin Building Selection */}
+      {isAdmin && (
+        <View style={styles.adminSelector}>
+          <BuildingDropdown
+            buildings={buildings}
+            loading={buildingsLoading}
+            selected={selectedBuilding}
+            onSelect={(b) => {
+              setSelectedBuilding(b);
+              setWings([]);
+              setError(false);
+            }}
+            label="Select Building"
+          />
+        </View>
+      )}
+
+      {!showContent ? (
+        <View style={styles.empty}>
+          <Ionicons name="business-outline" size={52} color={Colors.border} />
+          <Text style={styles.emptyText}>Select a building to view expenses</Text>
+        </View>
+      ) : loading ? (
         <ActivityIndicator style={{ marginTop: 48 }} size="large" color={Colors.primary} />
       ) : error ? (
         <View style={styles.empty}>
@@ -148,6 +185,12 @@ const styles = StyleSheet.create({
   backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
   headerTitle: { fontSize: 18, fontWeight: '800', color: Colors.white },
   headerSub: { fontSize: 12, color: 'rgba(255,255,255,0.75)', marginTop: 2 },
+  adminSelector: {
+    backgroundColor: Colors.white,
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
   list: { padding: 16 },
   wingCard: {
     flexDirection: 'row',

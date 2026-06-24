@@ -3,8 +3,9 @@ import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput,
-  Modal, Alert, ActivityIndicator, RefreshControl, ScrollView, ToastAndroid,
+  Modal, ActivityIndicator, RefreshControl, ScrollView, ToastAndroid,
 } from 'react-native';
+import { Alert } from '../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
@@ -29,13 +30,18 @@ export default function ExpensesDetailScreen() {
   const router = useRouter();
   const { t } = useLanguage();
   const { user } = useAuth();
-  const { wing } = useLocalSearchParams<{ wing?: string }>();
+  const { wing, building_id, building_name } = useLocalSearchParams<{ 
+    wing?: string; 
+    building_id?: string;
+    building_name?: string;
+  }>();
 
   const isAdmin   = user?.role === 'admin';
   const isPramukh = user?.role === 'pramukh';
   const canManage = isPramukh || isAdmin;
 
-  const buildingId = user?.building_id;
+  // Admin uses building_id from params, pramukh/user use their own
+  const buildingId = isAdmin ? building_id : user?.building_id;
   const wingName = wing || 'Building-Wide';
 
   const [summary, setSummary]   = useState<any>(null);
@@ -271,7 +277,9 @@ export default function ExpensesDetailScreen() {
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>{t('expenses')}</Text>
-          <Text style={styles.headerSub}>{wingName}</Text>
+          <Text style={styles.headerSub}>
+            {isAdmin && building_name ? `${building_name} • ${wingName}` : wingName}
+          </Text>
         </View>
         <View style={styles.headerActions}>
           {canManage && (

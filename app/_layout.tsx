@@ -1,9 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
+import '../utils/alertBootstrap';
 import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { LanguageProvider, useLanguage } from '../context/LanguageContext';
 import { CacheProvider } from '../context/CacheContext';
+import { ToastProvider } from '../context/ToastContext';
 import { ActivityIndicator, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Colors } from '../constants/colors';
 import NoInternetOverlay from '../components/NoInternetOverlay';
 import { OfflineIndicator } from '../components/OfflineIndicator';
@@ -11,6 +14,7 @@ import UpdateModal from '../components/UpdateModal';
 import api from '../utils/api';
 import appJson from '../app.json';
 import { addBreadcrumb, getBreadcrumbs } from '../utils/crashBreadcrumbs';
+import { initToastAndroidPatch } from '../utils/toastPatch';
 
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
@@ -70,6 +74,8 @@ function RootNavigator() {
   const inMaintenance = seg0 === 'maintenance-mode';
 
   useEffect(() => {
+    initToastAndroidPatch();
+    
     // Log persisted breadcrumbs on startup so the last pre-crash steps are visible in JS logs.
     getBreadcrumbs().then((items) => {
       if (!items.length) return;
@@ -245,6 +251,7 @@ function RootNavigator() {
         <Stack.Screen name="activity-logs" />
         <Stack.Screen name="website-contacts" />
         <Stack.Screen name="cache-debug" />
+        <Stack.Screen name="building-form" options={{ gestureEnabled: true }} />
         <Stack.Screen name="bank-details" options={{ gestureEnabled: true }} />
         <Stack.Screen name="users" options={{ gestureEnabled: true }} />
         <Stack.Screen name="entry/[building_id]" options={{ headerShown: false }} />
@@ -381,16 +388,19 @@ export default function RootLayout() {
 
   return (
     <ErrorBoundary>
-      <CacheProvider>
-        <LanguageProvider>
-          <AuthProvider>
-            <OfflineIndicator />
-            <RootNavigator />
-            <NoInternetOverlay />
-            {/* We'll handle the modal inside RootNavigator or here */}
-          </AuthProvider>
-        </LanguageProvider>
-      </CacheProvider>
+      <SafeAreaProvider>
+        <CacheProvider>
+          <LanguageProvider>
+            <AuthProvider>
+              <ToastProvider>
+                <OfflineIndicator />
+                <RootNavigator />
+                <NoInternetOverlay />
+              </ToastProvider>
+            </AuthProvider>
+          </LanguageProvider>
+        </CacheProvider>
+      </SafeAreaProvider>
     </ErrorBoundary>
   );
 }

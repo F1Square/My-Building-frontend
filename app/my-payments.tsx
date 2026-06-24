@@ -3,8 +3,9 @@ import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, RefreshControl, Alert, Linking,
+  ActivityIndicator, RefreshControl, Linking,
 } from 'react-native';
+import { Alert } from '../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter , useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -48,7 +49,6 @@ export default function MyPaymentsScreen() {
   const [payments, setPayments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [paying, setPaying] = useState<string | null>(null);
   const [uploadingReceipt, setUploadingReceipt] = useState<string | null>(null);
   const [tcExpanded, setTcExpanded] = useState(false);
 
@@ -109,25 +109,19 @@ export default function MyPaymentsScreen() {
     return () => sub.remove();
   }, [processPaymentUrl]);
 
-  const payNow = async (recordId: string) => {
-    setPaying(recordId);
-    try {
-      const res = await api.post('/maintenance/pay/order', { payment_record_id: recordId });
-      const { checkout_url } = res.data;
-
-      // Use openAuthSessionAsync to automatically close the browser when redirected back to mybuilding://
-      const result = await WebBrowser.openAuthSessionAsync(checkout_url, 'mybuilding://my-payments');
-
-      if (result.type === 'success' && 'url' in result && result.url) {
-        await processPaymentUrl(result.url);
-      } else {
-        await new Promise((r) => setTimeout(r, 600));
-        fetch();
-      }
-      await WebBrowser.coolDownAsync().catch(() => {});
-    } catch (e: any) {
-      alert(e.response?.data?.error || 'Failed to initiate payment');
-    } finally { setPaying(null); }
+  const payNow = async (recordId: string, item: any) => {
+    // Navigate to payment review page instead of directly initiating payment
+    const bill = item.maintenance_bills;
+    router.push({
+      pathname: '/payment-review',
+      params: {
+        recordId: recordId,
+        billAmount: String(item.display_amount ?? item.amount),
+        billMonth: String(bill?.month || 0),
+        billYear: String(bill?.year || new Date().getFullYear()),
+        billId: String(bill?.id || ''),
+      },
+    } as any);
   };
 
   const uploadReceipt = async (recordId: string) => {
@@ -324,12 +318,9 @@ export default function MyPaymentsScreen() {
                   {actions.includes('pay_now') && (
                     <TouchableOpacity
                       style={styles.payBtn}
-                      onPress={() => payNow(item.id)}
-                      disabled={paying === item.id}
+                      onPress={() => payNow(item.id, item)}
                     >
-                      {paying === item.id
-                        ? <ActivityIndicator size="small" color={Colors.white} />
-                        : <Text style={styles.payBtnText}>Pay Now</Text>}
+                      <Text style={styles.payBtnText}>Pay Now</Text>
                     </TouchableOpacity>
                   )}
                   {actions.includes('mark_cash') && (

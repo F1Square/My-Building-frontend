@@ -2,8 +2,9 @@ import React, { useCallback, useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Modal,
   RefreshControl, ScrollView, TextInput, FlatList,
-  Alert, Linking, Image, Dimensions, Keyboard, Platform,
+  Linking, Image, Dimensions, Keyboard, Platform,
 } from 'react-native';
+import { Alert } from '../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
@@ -1291,7 +1292,8 @@ export default function MaintenanceCategoryScreen() {
   } = useMaintenanceStore();
 
   const isAdmin = user?.role === 'admin';
-  const isPramukh = user?.role === 'pramukh' || isAdmin;
+  const isPramukh = user?.role === 'pramukh';
+  const canManage = isPramukh || isAdmin;
 
   // For admin: use the passed building_id; for pramukh/user: use their own building
   const effectiveBuildingId = isAdmin && building_id && building_id !== 'undefined' ? building_id : undefined;
@@ -1401,12 +1403,12 @@ export default function MaintenanceCategoryScreen() {
 
   useFocusEffect(useCallback(() => {
     setLoading(true);
-    if (isPramukh) {
+    if (canManage) {
       fetchPramukhData();
     } else {
       fetchUserData();
     }
-  }, [cat, isPramukh]));
+  }, [cat, canManage]));
 
   const processMaintenancePaymentUrl = useCallback(async (url: string) => {
     if (!url.startsWith('mybuilding://maintenance-category')) return;
@@ -1416,8 +1418,10 @@ export default function MaintenanceCategoryScreen() {
 
     const q = url.includes('?') ? url.split('?')[1] : '';
     const st = new URLSearchParams(q).get('status');
-    if (isPramukh) {
+    if (isPramukh && !isAdmin) {
       setPramukhTab('my-bill');
+      await fetchPramukhData();
+    } else if (canManage) {
       await fetchPramukhData();
     } else {
       if (st === 'success') setActiveTab('paid');
@@ -1430,7 +1434,7 @@ export default function MaintenanceCategoryScreen() {
     } else if (st === 'failed') {
       Alert.alert(t('paymentFailed'), t('tryAgain'));
     }
-  }, [isPramukh, t]);
+  }, [isPramukh, isAdmin, canManage, t]);
 
   useEffect(() => {
     if (linkStatus === 'success' || linkStatus === 'failed') {
@@ -1466,11 +1470,27 @@ export default function MaintenanceCategoryScreen() {
         processPayment('Cash', record);
         return;
       }
-      processPayment('Online', record);
+      // Navigate to payment review for online payment
+      navigateToPaymentReview(record);
       return;
     }
 
-    processPayment('Online', record);
+    // Navigate to payment review for online payment
+    navigateToPaymentReview(record);
+  };
+
+  const navigateToPaymentReview = (record: PaymentRecord) => {
+    const bill = record.maintenance_bills;
+    router.push({
+      pathname: '/payment-review',
+      params: {
+        recordId: record.id,
+        billAmount: String(record.amount),
+        billMonth: String(bill?.month || 0),
+        billYear: String(bill?.year || new Date().getFullYear()),
+        billId: String(bill?.id || ''),
+      },
+    } as any);
   };
 
   const handleMethodSelect = (method: 'Online' | 'Cash' | 'Cheque', record: PaymentRecord) => {
@@ -1479,7 +1499,12 @@ export default function MaintenanceCategoryScreen() {
       openChequeModal(record);
       return;
     }
-    processPayment(method, record);
+    if (method === 'Cash') {
+      processPayment('Cash', record);
+      return;
+    }
+    // Navigate to payment review for online payment
+    navigateToPaymentReview(record);
   };
 
   const processPayment = async (method: 'Online' | 'Cash' | 'Cheque', record: PaymentRecord) => {
@@ -1499,7 +1524,7 @@ export default function MaintenanceCategoryScreen() {
             await processMaintenancePaymentUrl(result.url);
           } else {
             await new Promise((r) => setTimeout(r, 600));
-            if (isPramukh) await fetchPramukhData();
+            if (canManage) await fetchPramukhData();
             else await fetchUserData();
           }
           await WebBrowser.coolDownAsync().catch(() => {});
@@ -1518,7 +1543,7 @@ export default function MaintenanceCategoryScreen() {
           payment_method: method
         });
         Alert.alert('Payment Submitted', `Your ${method} payment has been submitted for Pramukh approval.`);
-        if (isPramukh) fetchPramukhData();
+        if (canManage) fetchPramukhData();
         else await fetchUserData();
       } catch (e: any) {
         Alert.alert('Payment Error', e?.response?.data?.error || `Could not submit ${method} payment.`);
@@ -1734,7 +1759,7 @@ export default function MaintenanceCategoryScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => {
-          if (selectedBill && isPramukh) {
+          if (selectedBill && canManage) {
             setSelectedBill(null);
             setBillPayments([]);
           } else {
@@ -1746,19 +1771,19 @@ export default function MaintenanceCategoryScreen() {
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>{headerTitle}</Text>
           <Text style={styles.headerSub}>
-            {isPramukh
+            {canManage
               ? selectedBill ? selectedBill.description : (isAdmin && building_name ? building_name : 'Manage bills')
               : 'Your bills'
             }
           </Text>
         </View>
-        {isPramukh && !selectedBill && (
+        {canManage && !selectedBill && (
           <TouchableOpacity style={styles.createBtn} onPress={openCreateModal}>
             <Ionicons name="add" size={20} color={Colors.white} />
             <Text style={styles.createBtnText}>Create</Text>
           </TouchableOpacity>
         )}
-        {isPramukh && selectedBill && (
+        {canManage && selectedBill && (
           <TouchableOpacity style={styles.createBtn} onPress={() => {
             setExportBillId(selectedBill.id);
             openExportModal();
@@ -1773,11 +1798,11 @@ export default function MaintenanceCategoryScreen() {
         <View style={{ padding: DesignTokens.spacing.lg }}>
           <BillListSkeleton count={5} />
         </View>
-      ) : isPramukh ? (
-        // ── Pramukh View ──
+      ) : canManage ? (
+        // ── Pramukh/Admin View ──
         <>
-          {/* Pramukh top tabs: Bills | My Bill */}
-          {!selectedBill && (
+          {/* Pramukh top tabs: Bills | My Bill (only for pramukh, not admin) */}
+          {!selectedBill && isPramukh && (
             <View style={styles.tabBar}>
               <TouchableOpacity
                 style={[styles.tab, pramukhTab === 'bills' && styles.tabActive]}
@@ -1796,7 +1821,7 @@ export default function MaintenanceCategoryScreen() {
             </View>
           )}
 
-          {pramukhTab === 'my-bill' && !selectedBill ? (
+          {pramukhTab === 'my-bill' && !selectedBill && isPramukh ? (
             // Pramukh's own bills — same as user view
             <View style={{ flex: 1 }}>
               <View style={styles.tabBar}>
@@ -2064,7 +2089,7 @@ export default function MaintenanceCategoryScreen() {
         visible={chequeModalVisible}
         onClose={closeChequeModal}
         onSuccess={() => {
-          if (isPramukh) fetchPramukhData();
+          if (canManage) fetchPramukhData();
           else fetchUserData();
         }}
       />
@@ -2093,7 +2118,7 @@ export default function MaintenanceCategoryScreen() {
           closeDetailModal();
           closeFlatDetailModal();
         }}
-        onApprove={isPramukh ? handleApprovePayment : undefined}
+        onApprove={canManage ? handleApprovePayment : undefined}
       />
 
       {/* Edit Bill Modal */}

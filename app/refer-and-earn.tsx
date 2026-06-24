@@ -1,8 +1,9 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  Alert, ActivityIndicator, RefreshControl, Share, TextInput, Modal,
+  ActivityIndicator, RefreshControl, Share, TextInput, Modal,
 } from 'react-native';
+import { Alert } from '../utils/alert';
 import { copyToClipboard } from '../utils/clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter , useFocusEffect } from 'expo-router';

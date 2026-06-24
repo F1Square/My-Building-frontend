@@ -1,8 +1,9 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
-  Alert, Modal, FlatList, Platform,
+  Modal, FlatList, Platform,
 } from 'react-native';
+import { Alert } from '../utils/alert';
 import { WebView } from 'react-native-webview';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ScreenCapture from 'expo-screen-capture';

@@ -4,7 +4,7 @@ import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   TextInput, KeyboardAvoidingView, Platform, ActivityIndicator,
-  RefreshControl, Animated, AppState, Keyboard, Dimensions,
+  RefreshControl, Animated, AppState, Keyboard,
   type NativeSyntheticEvent, type NativeScrollEvent,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,8 +18,7 @@ const PAGE_SIZE = 40;
 const POLL_IDLE_MS = 8000;   // 8s when no new messages
 const POLL_ACTIVE_MS = 3000; // 3s when conversation is active
 const POLL_BG_MS = 30000;    // 30s when app is backgrounded
-const NEAR_BOTTOM_PX = 100;
-const KB_LIFT_EXTRA = 50; // small nudge so input sits flush above keyboard
+const NEAR_BOTTOM_PX = 80;
 const ACTIVE_WINDOW_MS = 60000; // Consider "active" if msg received in last 60s
 
 // Sender color palette for avatar backgrounds
@@ -114,7 +113,7 @@ export default function ChatScreen() {
   const [sending, setSending] = useState(false);
   const [noBuildingError, setNoBuildingError] = useState(false);
   const [memberCount, setMemberCount] = useState<number | null>(null);
-  const [kbInset, setKbInset] = useState(0);
+  const [showJumpToBottom, setShowJumpToBottom] = useState(false);
 
   const flatListRef = useRef<FlatList<ChatMessage>>(null);
   const lastMsgIdRef = useRef<string | null>(null);
@@ -131,12 +130,25 @@ export default function ChatScreen() {
   const appStateRef = useRef(AppState.currentState);
   const sendBtnScale = useRef(new Animated.Value(1)).current;
   const keyboardOpeningRef = useRef(false);
+  const showJumpRef = useRef(false);
+  const initialScrollDoneRef = useRef(false);
 
   /* ── Helpers ──────────────────────────────────────────────────────────── */
 
   const scrollToBottom = useCallback((animated = true) => {
-    requestAnimationFrame(() => flatListRef.current?.scrollToEnd({ animated }));
+    const run = () => flatListRef.current?.scrollToEnd({ animated });
+    requestAnimationFrame(() => {
+      run();
+      requestAnimationFrame(run);
+    });
   }, []);
+
+  const jumpToBottom = useCallback(() => {
+    stickToBottomRef.current = true;
+    showJumpRef.current = false;
+    setShowJumpToBottom(false);
+    scrollToBottom(true);
+  }, [scrollToBottom]);
 
   const mergeMessages = useCallback((prev: ChatMessage[], incoming: ChatMessage[]) => {
     const ids = new Set(prev.map(m => m.id));
@@ -167,7 +179,10 @@ export default function ChatScreen() {
       setHasMoreOlder(msgs.length >= PAGE_SIZE);
       lastMsgIdRef.current = msgs.length ? msgs[msgs.length - 1].id : null;
       setNoBuildingError(false);
-      if (stickToBottomRef.current) queueMicrotask(() => scrollToBottom(false));
+      if (stickToBottomRef.current) {
+        initialScrollDoneRef.current = false;
+        queueMicrotask(() => scrollToBottom(false));
+      }
     } catch (e: any) {
       if (e.response?.data?.error?.includes('building')) setNoBuildingError(true);
     } finally {
@@ -254,36 +269,26 @@ export default function ChatScreen() {
     return () => sub.remove();
   }, [pollNewMessages, scheduleNextPoll]);
 
-  /* ── Keyboard inset (Android edge-to-edge: OS resize often doesn't lift input) ─ */
+  /* ── Keyboard: scroll to latest when typing (OS handles input lift on both platforms) ─ */
   useEffect(() => {
-    const showSub = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      (e) => {
-        keyboardOpeningRef.current = true;
-        if (Platform.OS === 'android') {
-          const { screenY } = e.endCoordinates;
-          setKbInset(Math.max(0, Dimensions.get('window').height - screenY));
-        } else {
-          setKbInset(1);
-        }
-        // Only scroll if we're already near bottom, with delay to let keyboard settle
-        if (stickToBottomRef.current) {
-          setTimeout(() => {
-            keyboardOpeningRef.current = false;
-            scrollToBottom(true);
-          }, 200);
-        } else {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, () => {
+      keyboardOpeningRef.current = true;
+      if (stickToBottomRef.current) {
+        const delay = Platform.OS === 'ios' ? 60 : 120;
+        setTimeout(() => {
           keyboardOpeningRef.current = false;
-        }
-      },
-    );
-    const hideSub = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => {
-        keyboardOpeningRef.current = false;
-        setKbInset(0);
-      },
-    );
+          scrollToBottom(true);
+        }, delay);
+      } else {
+        setTimeout(() => { keyboardOpeningRef.current = false; }, 150);
+      }
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      keyboardOpeningRef.current = false;
+    });
     return () => { showSub.remove(); hideSub.remove(); };
   }, [scrollToBottom]);
 
@@ -292,6 +297,9 @@ export default function ChatScreen() {
     useCallback(() => {
       isFocusedRef.current = true;
       stickToBottomRef.current = true;
+      initialScrollDoneRef.current = false;
+      showJumpRef.current = false;
+      setShowJumpToBottom(false);
       logEvent('open_chat', 'chat');
       // Fetch member count for header (fire and forget)
       api.get('/buildings/my').then(r => setMemberCount(r.data?.total_members ?? null)).catch(() => { });
@@ -304,20 +312,31 @@ export default function ChatScreen() {
   );
 
   useEffect(() => {
-    if (!loading && messages.length > 0 && stickToBottomRef.current) {
-      // Use requestAnimationFrame to avoid scroll during keyboard animation
-      requestAnimationFrame(() => scrollToBottom(false));
+    if (!loading && messages.length > 0 && !initialScrollDoneRef.current) {
+      stickToBottomRef.current = true;
+      initialScrollDoneRef.current = true;
+      scrollToBottom(false);
     }
   }, [loading, messages.length, scrollToBottom]);
 
+  const onListContentSizeChange = useCallback(() => {
+    if (stickToBottomRef.current) scrollToBottom(false);
+  }, [scrollToBottom]);
+
   /* ── Scroll tracking ─────────────────────────────────────────────────── */
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    // Don't update stick-to-bottom during keyboard opening to prevent dismissal
     if (keyboardOpeningRef.current) return;
 
     const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
     const distFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
-    stickToBottomRef.current = distFromBottom <= NEAR_BOTTOM_PX;
+    const nearBottom = distFromBottom <= NEAR_BOTTOM_PX;
+    stickToBottomRef.current = nearBottom;
+
+    const shouldShow = !nearBottom && messagesRef.current.length > 0;
+    if (shouldShow !== showJumpRef.current) {
+      showJumpRef.current = shouldShow;
+      setShowJumpToBottom(shouldShow);
+    }
   }, []);
 
   const onRefresh = useCallback(() => {
@@ -337,6 +356,8 @@ export default function ChatScreen() {
     setSending(true);
     setText('');
     stickToBottomRef.current = true;
+    showJumpRef.current = false;
+    setShowJumpToBottom(false);
     lastNewMsgTimeRef.current = Date.now(); // sender counts as activity
     try {
       const res = await api.post('/chat', { message: trimmed });
@@ -366,7 +387,10 @@ export default function ChatScreen() {
   const listExtraData = messages.length
     ? `${messages.length}:${messages[messages.length - 1]?.id ?? ''}`
     : '0';
-  const keyboardVerticalOffset = Platform.OS === 'ios' ? Math.max(insets.top, 12) + 18 : 0;
+  // Header height so iOS KeyboardAvoidingView lifts content exactly once (no double gap).
+  const headerHeight = Math.max(insets.top, 20) + 12 + 14 + 42;
+  const keyboardVerticalOffset = Platform.OS === 'ios' ? headerHeight : 0;
+  const inputBarPaddingBottom = Math.max(insets.bottom, 8);
 
   /* ─── UI ──────────────────────────────────────────────────────────────── */
   return (
@@ -410,46 +434,56 @@ export default function ChatScreen() {
               <Text style={s.emptySub}>Admin accounts must be assigned to a building to access chat.</Text>
             </View>
           ) : (
-            <FlatList
-              ref={flatListRef}
-              style={s.chatList}
-              data={messages}
-              keyExtractor={keyExtractor}
-              renderItem={renderMessage}
-              extraData={listExtraData}
-              contentContainerStyle={s.listContent}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
-              onScroll={onScroll}
-              scrollEventThrottle={32}
-              onStartReached={loadOlderMessages}
-              onStartReachedThreshold={0.15}
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="none"
-              maintainVisibleContentPosition={hasMoreOlder ? { minIndexForVisible: 0, autoscrollToTopThreshold: 40 } : undefined}
-              initialNumToRender={20}
-              maxToRenderPerBatch={12}
-              updateCellsBatchingPeriod={40}
-              windowSize={12}
-              removeClippedSubviews={Platform.OS === 'android'}
-              ListHeaderComponent={loadingMore ? <ActivityIndicator style={{ paddingVertical: 12 }} color={Colors.primary} /> : null}
-              ListEmptyComponent={
-                <View style={s.emptyContainer}>
-                  <View style={s.emptyIconWrap}>
-                    <Text style={s.emptyIcon}>💬</Text>
+            <View style={s.listArea}>
+              <FlatList
+                ref={flatListRef}
+                style={s.chatList}
+                data={messages}
+                keyExtractor={keyExtractor}
+                renderItem={renderMessage}
+                extraData={listExtraData}
+                contentContainerStyle={s.listContent}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
+                onScroll={onScroll}
+                onContentSizeChange={onListContentSizeChange}
+                scrollEventThrottle={16}
+                onStartReached={loadOlderMessages}
+                onStartReachedThreshold={0.15}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="interactive"
+                maintainVisibleContentPosition={hasMoreOlder ? { minIndexForVisible: 0, autoscrollToTopThreshold: 40 } : undefined}
+                initialNumToRender={20}
+                maxToRenderPerBatch={12}
+                updateCellsBatchingPeriod={40}
+                windowSize={12}
+                removeClippedSubviews={Platform.OS === 'android'}
+                ListHeaderComponent={loadingMore ? <ActivityIndicator style={{ paddingVertical: 12 }} color={Colors.primary} /> : null}
+                ListEmptyComponent={
+                  <View style={s.emptyContainer}>
+                    <View style={s.emptyIconWrap}>
+                      <Text style={s.emptyIcon}>💬</Text>
+                    </View>
+                    <Text style={s.emptyTitle}>{t('beFirstToSay')}</Text>
+                    <Text style={s.emptySub}>Start the conversation with your society members</Text>
                   </View>
-                  <Text style={s.emptyTitle}>{t('beFirstToSay')}</Text>
-                  <Text style={s.emptySub}>Start the conversation with your society members</Text>
-                </View>
-              }
-            />
+                }
+              />
+
+              {showJumpToBottom && (
+                <TouchableOpacity
+                  style={s.jumpBtn}
+                  onPress={jumpToBottom}
+                  activeOpacity={0.85}
+                  accessibilityLabel="Scroll to latest messages"
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name="chevron-down" size={22} color={Colors.primary} />
+                </TouchableOpacity>
+              )}
+            </View>
           )}
 
-          <View style={[s.inputBar, {
-            paddingBottom: kbInset > 0 ? 4 : Math.max(insets.bottom, 5), marginBottom:
-              Platform.OS === 'android' && kbInset > 0
-                ? kbInset + 50
-                : 0,
-          }]}>
+          <View style={[s.inputBar, { paddingBottom: inputBarPaddingBottom }]}>
             <View style={s.inputWrap}>
               <TextInput
                 style={s.input}
@@ -464,14 +498,9 @@ export default function ChatScreen() {
                 blurOnSubmit={false}
                 onFocus={() => {
                   keyboardOpeningRef.current = true;
-
-                  requestAnimationFrame(() => {
-                    scrollToBottom(false);
-
-                    setTimeout(() => {
-                      keyboardOpeningRef.current = false;
-                    }, 300);
-                  });
+                  stickToBottomRef.current = true;
+                  requestAnimationFrame(() => scrollToBottom(false));
+                  setTimeout(() => { keyboardOpeningRef.current = false; }, 280);
                 }}
               />
             </View>
@@ -522,6 +551,7 @@ const s = StyleSheet.create({
 
   chatWrapper: { flex: 1 },
   chatBody: { flex: 1 },
+  listArea: { flex: 1, position: 'relative' },
   chatList: { flex: 1 },
 
   /* Messages */
@@ -573,6 +603,25 @@ const s = StyleSheet.create({
   emptyIcon: { fontSize: 48 },
   emptyTitle: { fontSize: 18, fontWeight: '700', color: Colors.text, marginBottom: 8, textAlign: 'center' },
   emptySub: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', lineHeight: 20 },
+
+  jumpBtn: {
+    position: 'absolute',
+    right: 14,
+    bottom: 10,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+  },
 
   /* Input bar */
   inputBar: {

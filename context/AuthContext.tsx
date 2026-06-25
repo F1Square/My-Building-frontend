@@ -175,21 +175,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     
-    // If subscription came with the login response, cache it immediately — no extra round trip
     const resolvedSub = sub !== undefined ? sub : null;
-    let userJson: string;
-    let subJson: string;
     
     try {
-      userJson = JSON.stringify(u);
-      subJson = JSON.stringify(resolvedSub);
-    } catch (e) {
-      console.error('[AuthContext] Cannot serialize user/subscription for storage:', e);
-      return;
-    }
-
-    try {
-      // Use multiSet for atomic operation - all or nothing
+      const userJson = JSON.stringify(u);
+      const subJson = JSON.stringify(resolvedSub);
+      
+      // Use multiSet for atomic operation
       await AsyncStorage.multiSet([
         ['token', t],
         ['user', userJson],
@@ -199,61 +191,64 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('[AuthContext] Session persisted successfully');
     } catch (e) {
       console.error('[AuthContext] Failed to persist session:', e);
-      // Even if storage fails, update in-memory state so user can continue
-      // They'll need to login again on next app restart
       console.warn('[AuthContext] Continuing with in-memory session only');
     }
 
-    // Update in-memory state AFTER successful storage (or on storage failure as fallback)
+    // Update in-memory state
     setAuthToken(t);
     setToken(t);
     setUser(u);
     setSubscription(resolvedSub);
 
-    // Refresh subscription in background only if it wasn't provided
+    // Background operations - fire and forget
     if (sub === undefined) {
-      // Delay subscription fetch to avoid race with navigation
-      setTimeout(() => {
-        fetchSubscription().catch(err => {
-          console.warn('[AuthContext] Background subscription fetch failed:', err);
-        });
-      }, 1000);
+      fetchSubscription().catch(err => 
+        console.warn('[AuthContext] Background subscription fetch failed:', err)
+      );
     }
 
-    // Warm cache with critical data in background (non-blocking)
-    // Delay to avoid interfering with navigation
-    setTimeout(() => {
-      try {
-        const userKey = cacheManager.generateKey('auth', '/auth/me', {}, u.role, u.building_id);
-        cacheManager.warmCache([
-          { key: userKey, fetcher: async () => u },
-        ]).catch(err => {
-          console.warn('[AuthContext] Cache warming failed (non-critical):', err);
-        });
-      } catch (err) {
-        console.warn('[AuthContext] Cache warming setup failed:', err);
-      }
-    }, 2000);
+    try {
+      const userKey = cacheManager.generateKey('auth', '/auth/me', {}, u.role, u.building_id);
+      cacheManager.warmCache([
+        { key: userKey, fetcher: async () => u },
+      ]).catch(err => 
+        console.warn('[AuthContext] Cache warming failed (non-critical):', err)
+      );
+    } catch (err) {
+      console.warn('[AuthContext] Cache warming setup failed:', err);
+    }
   }, [fetchSubscription]);
 
   useEffect(() => {
     if (loading || !user?.id || !token) return;
-    const timer = setTimeout(() => {
-      registerPushToken().catch((err) => {
+    
+    let cancelled = false;
+    
+    // Register push token immediately in background
+    registerPushToken().catch((err) => {
+      if (!cancelled) {
         console.log('[AuthContext] Push token registration failed (non-critical):', err);
-      });
-    }, 5000);
-    return () => clearTimeout(timer);
+      }
+    });
+    
+    return () => {
+      cancelled = true;
+    };
   }, [loading, user?.id, token, registerPushToken]);
 
   const logout = useCallback(async () => {
-    await AsyncStorage.multiRemove(['token', 'user', 'subscription']);
-    // Clear all cached data on logout for security
-    await cacheManager.clear();
+    // Clear in-memory state first for immediate UI response
     setAuthToken(null);
     setToken(null);
     setUser(null);
     setSubscription(null);
+    
+    // Clear storage and cache in background (non-blocking)
+    AsyncStorage.multiRemove(['token', 'user', 'subscription'])
+      .catch((err) => console.error('[AuthContext] Storage cleanup failed:', err));
+    
+    cacheManager.clear()
+      .catch((err) => console.error('[AuthContext] Cache cleanup failed:', err));
   }, []);
 
   // Wire up the API interceptor so 401/403 auto-triggers logout

@@ -2,9 +2,10 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Colors } from '../../constants/colors';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  RefreshControl, Alert, Modal, TextInput, Dimensions, Image,
+  RefreshControl, Modal, TextInput, Dimensions, Image,
   ActivityIndicator, FlatList, Pressable,
 } from 'react-native';
+import { Alert } from '../../utils/alert';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useLanguage } from '../../context/LanguageContext';
@@ -168,27 +169,33 @@ export default function HomeScreen() {
     ? modules.filter(m => m.title.toLowerCase().includes(search.toLowerCase()))
     : modules;
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
+    if (!user?.building_id) return;
+    
     try {
-      if (user?.building_id) {
-        // 1. Try cache first (no flicker)
-        const cached = await AsyncStorage.getItem('building_data');
-        if (cached) {
+      // 1. Try cache first (no flicker)
+      const cached = await AsyncStorage.getItem('building_data');
+      if (cached) {
+        try {
           const parsed = JSON.parse(cached);
           setBuildingLogo(parsed.society_logo);
           setBuildingName(parsed.name);
-        }
-
-        // 2. Fetch fresh data in background
-        const buildingRes = await api.get('/buildings/my').catch(() => null);
-        if (buildingRes?.data) {
-          setBuildingLogo(buildingRes.data.society_logo ?? null);
-          setBuildingName(buildingRes.data.name ?? null);
-          await AsyncStorage.setItem('building_data', JSON.stringify(buildingRes.data));
+        } catch (e) {
+          console.warn('[Home] Invalid cached building data:', e);
         }
       }
-    } catch { }
-  };
+
+      // 2. Fetch fresh data in background (non-blocking)
+      const buildingRes = await api.get('/buildings/my');
+      if (buildingRes?.data) {
+        setBuildingLogo(buildingRes.data.society_logo ?? null);
+        setBuildingName(buildingRes.data.name ?? null);
+        await AsyncStorage.setItem('building_data', JSON.stringify(buildingRes.data));
+      }
+    } catch (err) {
+      console.warn('[Home] fetchData error:', err);
+    }
+  }, [user?.building_id]);
 
   const openUrgentInbox = async () => {
     setShowUrgentModal(true);
@@ -253,11 +260,24 @@ export default function HomeScreen() {
 
       setTotalUnread(bell);
       setBadgeCounts(routeCounts);
-    } catch { }
+    } catch (err) {
+      console.warn('[Home] Failed to fetch badges:', err);
+    }
   }, [user]);
 
-  useEffect(() => { fetchData(); }, [user?.building_id]);
-  useFocusEffect(useCallback(() => { fetchBadges(); }, [fetchBadges]));
+  useEffect(() => { 
+    if (user?.building_id) {
+      fetchData();
+    }
+  }, [user?.building_id, fetchData]);
+  useFocusEffect(
+    useCallback(() => {
+      // Only fetch badges if user is logged in and has building access
+      if (user?.building_id || user?.role === 'admin') {
+        fetchBadges();
+      }
+    }, [fetchBadges, user?.building_id, user?.role])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);

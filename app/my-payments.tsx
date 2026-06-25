@@ -3,8 +3,9 @@ import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  ActivityIndicator, RefreshControl, Alert, Linking,
+  ActivityIndicator, RefreshControl, Linking,
 } from 'react-native';
+import { Alert } from '../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter , useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -48,23 +49,13 @@ export default function MyPaymentsScreen() {
   const [payments, setPayments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [paying, setPaying] = useState<string | null>(null);
   const [uploadingReceipt, setUploadingReceipt] = useState<string | null>(null);
   const [tcExpanded, setTcExpanded] = useState(false);
-  const [advanceStatus, setAdvanceStatus] = useState<{
-    credit_balance: number;
-    months_covered: number;
-    monthly_amount: number | null;
-  } | null>(null);
 
   const fetch = async () => {
     try {
-      const [paymentsRes, advanceRes] = await Promise.all([
-        api.get('/maintenance/payments?mine=true'),
-        api.get('/maintenance/advance/status').catch(() => null),
-      ]);
+      const paymentsRes = await api.get('/maintenance/payments?mine=true');
       setPayments(paymentsRes.data);
-      if (advanceRes) setAdvanceStatus(advanceRes.data);
     } catch { }
     finally { setLoading(false); setRefreshing(false); }
   };
@@ -118,25 +109,19 @@ export default function MyPaymentsScreen() {
     return () => sub.remove();
   }, [processPaymentUrl]);
 
-  const payNow = async (recordId: string) => {
-    setPaying(recordId);
-    try {
-      const res = await api.post('/maintenance/pay/order', { payment_record_id: recordId });
-      const { checkout_url } = res.data;
-
-      // Use openAuthSessionAsync to automatically close the browser when redirected back to mybuilding://
-      const result = await WebBrowser.openAuthSessionAsync(checkout_url, 'mybuilding://my-payments');
-
-      if (result.type === 'success' && 'url' in result && result.url) {
-        await processPaymentUrl(result.url);
-      } else {
-        await new Promise((r) => setTimeout(r, 600));
-        fetch();
-      }
-      await WebBrowser.coolDownAsync().catch(() => {});
-    } catch (e: any) {
-      alert(e.response?.data?.error || 'Failed to initiate payment');
-    } finally { setPaying(null); }
+  const payNow = async (recordId: string, item: any) => {
+    // Navigate to payment review page instead of directly initiating payment
+    const bill = item.maintenance_bills;
+    router.push({
+      pathname: '/payment-review',
+      params: {
+        recordId: recordId,
+        billAmount: String(item.display_amount ?? item.amount),
+        billMonth: String(bill?.month || 0),
+        billYear: String(bill?.year || new Date().getFullYear()),
+        billId: String(bill?.id || ''),
+      },
+    } as any);
   };
 
   const uploadReceipt = async (recordId: string) => {
@@ -243,34 +228,6 @@ export default function MyPaymentsScreen() {
         </View>
       )}
 
-      {/* Advance credit banner */}
-      {!loading && (
-        <View style={advanceStyles.advanceBanner}>
-          {advanceStatus && advanceStatus.credit_balance > 0 ? (
-            <View style={advanceStyles.advanceCreditInfo}>
-              <Ionicons name="wallet-outline" size={18} color={Colors.success} />
-              <View style={{ flex: 1 }}>
-                <Text style={advanceStyles.advanceCreditTitle}>
-                  ₹{advanceStatus.credit_balance.toLocaleString('en-IN')} advance credit
-                </Text>
-                {advanceStatus.months_covered > 0 && (
-                  <Text style={advanceStyles.advanceCreditSub}>
-                    {advanceStatus.months_covered} month{advanceStatus.months_covered > 1 ? 's' : ''} covered
-                  </Text>
-                )}
-              </View>
-            </View>
-          ) : null}
-          <TouchableOpacity
-            style={advanceStyles.advanceBtn}
-            onPress={() => router.push('/advance-payment')}
-          >
-            <Ionicons name="add-circle-outline" size={16} color={Colors.white} />
-            <Text style={advanceStyles.advanceBtnText}>Pay in Advance</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
       {loading ? (
         <ActivityIndicator style={{ marginTop: 48 }} size="large" color={Colors.primary} />
       ) : (
@@ -303,7 +260,7 @@ export default function MyPaymentsScreen() {
             const bill = item.maintenance_bills;
             const actions = getPaymentActions(item.status, buildingPaymentMethod);
             return (
-              <View style={[styles.card, (isPaid || isReceiptUploaded) && styles.cardPaid, isPartial && advanceStyles.cardPartial]}>
+              <View style={[styles.card, (isPaid || isReceiptUploaded) && styles.cardPaid]}>
                 <View style={styles.cardTop}>
                   <View style={styles.monthBox}>
                     <Text style={styles.monthText}>{MONTHS[bill?.month]}</Text>
@@ -361,12 +318,9 @@ export default function MyPaymentsScreen() {
                   {actions.includes('pay_now') && (
                     <TouchableOpacity
                       style={styles.payBtn}
-                      onPress={() => payNow(item.id)}
-                      disabled={paying === item.id}
+                      onPress={() => payNow(item.id, item)}
                     >
-                      {paying === item.id
-                        ? <ActivityIndicator size="small" color={Colors.white} />
-                        : <Text style={styles.payBtnText}>Pay Now</Text>}
+                      <Text style={styles.payBtnText}>Pay Now</Text>
                     </TouchableOpacity>
                   )}
                   {actions.includes('mark_cash') && (
@@ -474,23 +428,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28, paddingVertical: 14, marginTop: 8,
   },
   lockedBtnText: { fontSize: 15, fontWeight: '800', color: Colors.white },
-});
-
-// Appended styles for advance payment feature
-const advanceStyles = StyleSheet.create({
-  cardPartial: { borderLeftWidth: 3, borderLeftColor: '#7C3AED' },
-  advanceBanner: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginHorizontal: 16, marginBottom: 4, marginTop: 8,
-    backgroundColor: Colors.white, borderRadius: 12, padding: 12,
-    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
-  },
-  advanceCreditInfo: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
-  advanceCreditTitle: { fontSize: 13, fontWeight: '700', color: Colors.success },
-  advanceCreditSub: { fontSize: 11, color: Colors.textMuted },
-  advanceBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: Colors.primary, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,
-  },
-  advanceBtnText: { color: Colors.white, fontWeight: '700', fontSize: 13 },
 });

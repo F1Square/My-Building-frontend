@@ -40,6 +40,9 @@
         "android.permission.WRITE_EXTERNAL_STORAGE"
       ]
     },
+    "androidNavigationBar": {
+      "enforceContrast": true
+    },
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"
@@ -67,12 +70,7 @@
           "cameraPermission": "Allow My Building to use your camera for visitor photos."
         }
       ],
-      [
-        "expo-camera",
-        {
-          "cameraPermission": "Allow My Building to use your camera."
-        }
-      ]
+      "./plugins/withAndroidPlayCompliance"
     ],
     "experiments": {
       "typedRoutes": true,

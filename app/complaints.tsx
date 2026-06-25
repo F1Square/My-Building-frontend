@@ -3,9 +3,10 @@ import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput,
-  Modal, Alert, ActivityIndicator, RefreshControl, ScrollView, Image, Pressable,
+  Modal, ActivityIndicator, RefreshControl, ScrollView, Image, Pressable,
   InteractionManager,
 } from 'react-native';
+import { Alert } from '../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useActivityLog } from '../hooks/useActivityLog';

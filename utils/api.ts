@@ -24,6 +24,9 @@ let _authToken: string | null = null;
 let _tokenLoaded = false;
 let _tokenLoadPromise: Promise<void> | null = null;
 
+// Track active requests to cancel on logout
+const _activeRequests = new Set<AbortController>();
+
 async function ensureTokenLoaded(): Promise<void> {
   if (_tokenLoaded) return;
   if (!_tokenLoadPromise) {
@@ -46,6 +49,18 @@ async function ensureTokenLoaded(): Promise<void> {
 export function setAuthToken(token: string | null) {
   _authToken = token;
   _tokenLoaded = true;
+  
+  // Cancel all pending requests on logout
+  if (!token) {
+    _activeRequests.forEach(controller => {
+      try {
+        controller.abort();
+      } catch (e) {
+        // Ignore abort errors
+      }
+    });
+    _activeRequests.clear();
+  }
 }
 
 export function registerAuthFailureHandler(fn: () => void) {
@@ -56,6 +71,12 @@ export function registerAuthFailureHandler(fn: () => void) {
 api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
   await ensureTokenLoaded();
   if (_authToken) config.headers.Authorization = `Bearer ${_authToken}`;
+  
+  // Create abort controller for this request
+  const controller = new AbortController();
+  config.signal = controller.signal;
+  _activeRequests.add(controller);
+  
   console.log(`[API] ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`);
   return config;
 });
@@ -65,6 +86,15 @@ api.interceptors.response.use(
   async (response) => {
     const config = response.config;
     const method = config.method?.toLowerCase();
+    
+    // Remove controller from active set
+    if (config.signal) {
+      _activeRequests.forEach(controller => {
+        if (controller.signal === config.signal) {
+          _activeRequests.delete(controller);
+        }
+      });
+    }
 
     // Cache successful GET responses
     if (method === 'get' && !config._skipCache) {
@@ -83,6 +113,20 @@ api.interceptors.response.use(
     return response;
   },
   async (error) => {
+    // Remove controller from active set on error
+    if (error.config?.signal) {
+      _activeRequests.forEach(controller => {
+        if (controller.signal === error.config.signal) {
+          _activeRequests.delete(controller);
+        }
+      });
+    }
+    
+    // Ignore aborted requests
+    if (error.name === 'CanceledError' || error.code === 'ERR_CANCELED') {
+      return Promise.reject({ _canceled: true });
+    }
+    
     const status = error.response?.status;
     const url = error.config?.url ?? '';
 
@@ -102,6 +146,8 @@ api.interceptors.response.use(
       console.error('[API] Network error — is the backend running at', API_BASE, '?');
     } else if (status === 404 && error.response?.data?.error === 'not_available') {
       // Expected — no newspaper uploaded for this date
+    } else if (status === 422 && ['WING_REQUIRED', 'WING_INVALID'].includes(error.response?.data?.code)) {
+      // Expected validation — handled by the calling screen
     } else {
       console.error('[API] Error:', status, error.response?.data);
     }

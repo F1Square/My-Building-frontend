@@ -1,18 +1,24 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
-  Modal, Alert, ActivityIndicator, RefreshControl, FlatList, Clipboard,
+  Modal, ActivityIndicator, RefreshControl, FlatList,
 } from 'react-native';
+import { copyToClipboard } from '../utils/clipboard';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Colors } from '../constants/colors';
 import { useLanguage } from '../context/LanguageContext';
 import api from '../utils/api';
+import { Alert } from '../utils/alert';
 import type { Building } from '../hooks/useBuildings';
 import MemberDetailModal, { type Member } from '../components/MemberDetailModal';
 import { useMemberActions } from '../hooks/useMemberActions';
 
-type ModalType = 'none' | 'createBuilding' | 'deleteBuilding' | 'buildingActions' | 'members' | 'memberDetail';
+type ModalType = 'none' | 'deleteBuilding' | 'buildingActions' | 'updateSelect' | 'members' | 'memberDetail';
+
+type BuildingRow = Building & {
+  address?: string;
+};
 
 const getBuildingCode = (buildingId: string) =>
   String(buildingId || '').split('-')[0]?.toUpperCase() || '';
@@ -30,25 +36,15 @@ const BUILD_ACTIONS = [
 export default function BuildingsScreen() {
   const router = useRouter();
   const { t } = useLanguage();
-  const [buildings, setBuildings] = useState<Building[]>([]);
+  const [buildings, setBuildings] = useState<BuildingRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [modal, setModal] = useState<ModalType>('none');
   const [submitting, setSubmitting] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null);
+  const [selectedBuilding, setSelectedBuilding] = useState<BuildingRow | null>(null);
 
-  // Create form
-  const [bForm, setBForm] = useState({
-    name: '', address: '',
-    has_wings: false, wings: '',
-    late_fees_enabled: false, late_fees_amount: '',
-    water_reading_enabled: false,
-    payment_methods: ['Online', 'Cash', 'Cheque'] as string[],
-  });
-
-  // Members modal state
-  const [membersBuilding, setMembersBuilding] = useState<Building | null>(null);
+  const [membersBuilding, setMembersBuilding] = useState<BuildingRow | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
@@ -72,53 +68,39 @@ export default function BuildingsScreen() {
     getBuildingCode(b.id).toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  useEffect(() => { fetchBuildings(); }, []);
-
-  const fetchBuildings = async () => {
+  const fetchBuildings = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const r = await api.get('/buildings');
       setBuildings(r.data);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to load');
+      Alert.error('Error', e.response?.data?.error || 'Failed to load');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchBuildings(buildings.length > 0);
+    }, [fetchBuildings, buildings.length])
+  );
 
   const closeModal = () => setModal('none');
 
-  const createBuilding = async () => {
-    if (!bForm.name.trim()) return Alert.alert('Error', 'Building name is required');
-    setSubmitting(true);
-    try {
-      await api.post('/buildings/create', {
-        name: bForm.name.trim(),
-        address: bForm.address.trim(),
-        has_wings: bForm.has_wings,
-        wings: bForm.has_wings ? bForm.wings.trim() : null,
-        late_fees_enabled: bForm.late_fees_enabled,
-        late_fees_amount: bForm.late_fees_amount,
-        water_reading_enabled: bForm.water_reading_enabled,
-        payment_methods: bForm.payment_methods,
-      });
-      setBForm({
-        name: '', address: '',
-        has_wings: false, wings: '',
-        late_fees_enabled: false, late_fees_amount: '',
-        water_reading_enabled: false,
-        payment_methods: ['Online', 'Cash', 'Cheque'],
-      });
-      closeModal();
-      fetchBuildings();
-      Alert.alert('Done', 'Building created');
-    } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed');
-    } finally { setSubmitting(false); }
+  const goToCreate = () => {
+    closeModal();
+    router.push('/building-form');
   };
 
-  const deleteBuilding = async (b: Building) => {
-    Alert.alert(
+  const goToEdit = (buildingId: string) => {
+    closeModal();
+    router.push({ pathname: '/building-form', params: { building_id: buildingId } });
+  };
+
+  const deleteBuilding = async (b: BuildingRow) => {
+    Alert.confirm(
       'Delete Everything?',
       `Are you sure you want to delete "${b.name}"?\n\nThis will permanently delete:\n• All Residents & Roles\n• All Notices & Announcements\n• All Maintenance Bills & Payments\n• All Expenses & Funds\n• All Parking & Visitor Logs\n\nThis action CANNOT be undone.`,
       [
@@ -130,11 +112,11 @@ export default function BuildingsScreen() {
             setSubmitting(true);
             try {
               await api.delete(`/buildings/${b.id}`);
-              fetchBuildings();
+              fetchBuildings(true);
               closeModal();
-              Alert.alert('Success', 'Building and all associated data deleted');
+              Alert.success('Success', 'Building and all associated data deleted');
             } catch (e: any) {
-              Alert.alert('Error', e.response?.data?.error || 'Failed to delete');
+              Alert.error('Error', e.response?.data?.error || 'Failed to delete');
             } finally {
               setSubmitting(false);
             }
@@ -144,7 +126,7 @@ export default function BuildingsScreen() {
     );
   };
 
-  const openMembers = async (b: Building) => {
+  const openMembers = async (b: BuildingRow) => {
     setMembersBuilding(b);
     setModal('members');
     setMembersLoading(true);
@@ -152,7 +134,7 @@ export default function BuildingsScreen() {
       const r = await api.get(`/buildings/members/${b.id}`);
       setMembers(r.data);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed');
+      Alert.error('Error', e.response?.data?.error || 'Failed');
     } finally {
       setMembersLoading(false);
     }
@@ -168,19 +150,20 @@ export default function BuildingsScreen() {
     setModal('members');
   };
 
-  const navigateTo = (route: string, b: Building) => {
+  const navigateTo = (route: string, b: BuildingRow) => {
     router.push({ pathname: route as any, params: { building_id: b.id, building_name: b.name } });
     setSelectedBuilding(null);
   };
 
-  const handleBuildingClick = (b: Building) => {
+  const handleBuildingClick = (b: BuildingRow) => {
     setSelectedBuilding(prev => (prev?.id === b.id ? null : b));
   };
 
-  const copyBuildingCode = (buildingId: string, buildingName: string) => {
+  const copyBuildingCode = async (buildingId: string, buildingName: string) => {
     const code = getBuildingCode(buildingId);
-    Clipboard.setString(code);
-    Alert.alert('Copied!', `Building code for "${buildingName}" copied: ${code}`);
+    if (await copyToClipboard(code)) {
+      Alert.success('Copied!', `Building code for "${buildingName}" copied: ${code}`);
+    }
   };
 
   return (
@@ -204,7 +187,7 @@ export default function BuildingsScreen() {
       ) : (
         <ScrollView
           contentContainerStyle={{ padding: 16 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchBuildings(); }} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchBuildings(true); }} />}
         >
           {buildings.length > 0 && (
             <View style={styles.searchBar}>
@@ -279,6 +262,10 @@ export default function BuildingsScreen() {
                         <Ionicons name="people" size={14} color={Colors.primary} />
                         <Text style={styles.membersBtnText}>{t('members')}</Text>
                       </TouchableOpacity>
+                      <TouchableOpacity style={styles.editBtn} onPress={() => goToEdit(b.id)}>
+                        <Ionicons name="create-outline" size={14} color={Colors.warning} />
+                        <Text style={styles.editBtnText}>Edit</Text>
+                      </TouchableOpacity>
                     </View>
 
                     <View style={styles.moduleButtons}>
@@ -301,7 +288,6 @@ export default function BuildingsScreen() {
         </ScrollView>
       )}
 
-      {/* Building Management Choices */}
       <Modal visible={modal === 'buildingActions'} transparent animationType="fade">
         <View style={styles.choiceOverlay}>
           <View style={styles.choiceSheet}>
@@ -309,16 +295,22 @@ export default function BuildingsScreen() {
               <Text style={styles.modalTitle}>Building Management</Text>
               <TouchableOpacity onPress={closeModal}><Ionicons name="close" size={24} color={Colors.text} /></TouchableOpacity>
             </View>
-            <View style={styles.choiceRow}>
-              <TouchableOpacity style={styles.choiceBtn} onPress={() => setModal('createBuilding')}>
+            <View style={styles.choiceGrid}>
+              <TouchableOpacity style={styles.choiceBtn} onPress={goToCreate}>
                 <View style={[styles.choiceIcon, { backgroundColor: Colors.primary + '15' }]}>
-                  <Ionicons name="add-circle" size={32} color={Colors.primary} />
+                  <Ionicons name="add-circle" size={28} color={Colors.primary} />
                 </View>
                 <Text style={styles.choiceLabel}>Create New</Text>
               </TouchableOpacity>
+              <TouchableOpacity style={styles.choiceBtn} onPress={() => { setSearchQuery(''); setModal('updateSelect'); }}>
+                <View style={[styles.choiceIcon, { backgroundColor: Colors.warning + '15' }]}>
+                  <Ionicons name="create" size={28} color={Colors.warning} />
+                </View>
+                <Text style={styles.choiceLabel}>Update Existing</Text>
+              </TouchableOpacity>
               <TouchableOpacity style={styles.choiceBtn} onPress={() => { setSearchQuery(''); setModal('deleteBuilding'); }}>
                 <View style={[styles.choiceIcon, { backgroundColor: Colors.danger + '15' }]}>
-                  <Ionicons name="trash" size={32} color={Colors.danger} />
+                  <Ionicons name="trash" size={28} color={Colors.danger} />
                 </View>
                 <Text style={styles.choiceLabel}>Delete Existing</Text>
               </TouchableOpacity>
@@ -327,7 +319,49 @@ export default function BuildingsScreen() {
         </View>
       </Modal>
 
-      {/* Delete Building Selector */}
+      <Modal visible={modal === 'updateSelect'} animationType="slide" presentationStyle="pageSheet">
+        <View style={styles.modal}>
+          <View style={styles.modalHeader}>
+            <View>
+              <Text style={styles.modalTitle}>Update Building</Text>
+              <Text style={styles.modalSub}>Select a building to edit</Text>
+            </View>
+            <TouchableOpacity onPress={closeModal}><Ionicons name="close" size={24} color={Colors.text} /></TouchableOpacity>
+          </View>
+          <View style={[styles.searchBar, { margin: 16 }]}>
+            <Ionicons name="search" size={18} color={Colors.textMuted} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search building..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholderTextColor={Colors.textMuted}
+            />
+          </View>
+          <FlatList
+            data={filtered}
+            keyExtractor={item => item.id}
+            contentContainerStyle={{ padding: 16 }}
+            renderItem={({ item }) => (
+              <TouchableOpacity style={styles.listItem} onPress={() => goToEdit(item.id)}>
+                <View style={styles.listItemInfo}>
+                  <Text style={styles.listItemName}>{item.name}</Text>
+                  <Text style={styles.listItemAddress}>{item.address || 'No address'}</Text>
+                </View>
+                <View style={[styles.listItemIcon, { backgroundColor: Colors.warning + '10' }]}>
+                  <Ionicons name="create-outline" size={20} color={Colors.warning} />
+                </View>
+              </TouchableOpacity>
+            )}
+            ListEmptyComponent={
+              <View style={styles.emptyList}>
+                <Text style={styles.emptyTitle}>No buildings found</Text>
+              </View>
+            }
+          />
+        </View>
+      </Modal>
+
       <Modal visible={modal === 'deleteBuilding'} animationType="slide" presentationStyle="pageSheet">
         <View style={styles.modal}>
           <View style={styles.modalHeader}>
@@ -352,18 +386,18 @@ export default function BuildingsScreen() {
             keyExtractor={item => item.id}
             contentContainerStyle={{ padding: 16 }}
             renderItem={({ item }) => (
-              <TouchableOpacity style={styles.deleteItem} onPress={() => deleteBuilding(item)}>
-                <View style={styles.deleteItemInfo}>
-                  <Text style={styles.deleteItemName}>{item.name}</Text>
-                  <Text style={styles.deleteItemAddress}>{item.address || 'No address'}</Text>
+              <TouchableOpacity style={styles.listItem} onPress={() => deleteBuilding(item)} disabled={submitting}>
+                <View style={styles.listItemInfo}>
+                  <Text style={styles.listItemName}>{item.name}</Text>
+                  <Text style={styles.listItemAddress}>{item.address || 'No address'}</Text>
                 </View>
-                <View style={styles.deleteIconBox}>
+                <View style={[styles.listItemIcon, { backgroundColor: Colors.danger + '10' }]}>
                   <Ionicons name="trash-outline" size={20} color={Colors.danger} />
                 </View>
               </TouchableOpacity>
             )}
             ListEmptyComponent={
-              <View style={styles.deleteEmptyState}>
+              <View style={styles.emptyList}>
                 <Text style={styles.emptyTitle}>No buildings found</Text>
               </View>
             }
@@ -371,118 +405,6 @@ export default function BuildingsScreen() {
         </View>
       </Modal>
 
-      {/* Create Building */}
-      <Modal visible={modal === 'createBuilding'} animationType="slide" presentationStyle="pageSheet">
-        <View style={styles.modal}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>New Building</Text>
-            <TouchableOpacity onPress={closeModal}><Ionicons name="close" size={24} color={Colors.text} /></TouchableOpacity>
-          </View>
-          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            <Text style={styles.label}>Building Name *</Text>
-            <TextInput style={styles.input} value={bForm.name} onChangeText={(v) => setBForm({ ...bForm, name: v })} placeholder="e.g. Shree Residency" placeholderTextColor={Colors.textMuted} />
-
-            <Text style={styles.label}>Address</Text>
-            <TextInput style={styles.input} value={bForm.address} onChangeText={(v) => setBForm({ ...bForm, address: v })} placeholder="e.g. 12, MG Road, Ahmedabad" placeholderTextColor={Colors.textMuted} />
-
-            <View style={styles.switchRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.switchLabel}>Has Wings?</Text>
-                <Text style={styles.switchSub}>Does this society have multiple wings (A, B, C...)?</Text>
-              </View>
-              <TouchableOpacity
-                style={[styles.switch, bForm.has_wings && styles.switchOn]}
-                onPress={() => setBForm({ ...bForm, has_wings: !bForm.has_wings })}
-              >
-                <View style={[styles.switchThumb, bForm.has_wings && styles.switchThumbOn]} />
-              </TouchableOpacity>
-            </View>
-
-            {bForm.has_wings && (
-              <View style={{ marginTop: 4 }}>
-                <Text style={styles.label}>Wings (comma separated)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={bForm.wings}
-                  onChangeText={(v) => setBForm({ ...bForm, wings: v })}
-                  placeholder="e.g. A, B, C"
-                  placeholderTextColor={Colors.textMuted}
-                />
-              </View>
-            )}
-
-            <View style={styles.switchRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.switchLabel}>Late Fees</Text>
-                <Text style={styles.switchSub}>Enable automatic late fee calculation</Text>
-              </View>
-              <TouchableOpacity
-                style={[styles.switch, bForm.late_fees_enabled && styles.switchOn]}
-                onPress={() => setBForm({ ...bForm, late_fees_enabled: !bForm.late_fees_enabled })}
-              >
-                <View style={[styles.switchThumb, bForm.late_fees_enabled && styles.switchThumbOn]} />
-              </TouchableOpacity>
-            </View>
-
-            {bForm.late_fees_enabled && (
-              <View style={{ marginTop: 4 }}>
-                <Text style={styles.label}>Late Fee Amount (₹)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={bForm.late_fees_amount}
-                  onChangeText={(v) => setBForm({ ...bForm, late_fees_amount: v })}
-                  placeholder="e.g. 100"
-                  keyboardType="numeric"
-                  placeholderTextColor={Colors.textMuted}
-                />
-              </View>
-            )}
-
-            <View style={styles.switchRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.switchLabel}>Water Reading</Text>
-                <Text style={styles.switchSub}>Enable separate water bill module</Text>
-              </View>
-              <TouchableOpacity
-                style={[styles.switch, bForm.water_reading_enabled && styles.switchOn]}
-                onPress={() => setBForm({ ...bForm, water_reading_enabled: !bForm.water_reading_enabled })}
-              >
-                <View style={[styles.switchThumb, bForm.water_reading_enabled && styles.switchThumbOn]} />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.label}>Payment Methods</Text>
-            <View style={styles.checkboxGroup}>
-              {['Online', 'Cash', 'Cheque'].map(m => {
-                const isSelected = bForm.payment_methods.includes(m);
-                return (
-                  <TouchableOpacity
-                    key={m}
-                    style={styles.checkboxRow}
-                    onPress={() => {
-                      const newMethods = isSelected
-                        ? bForm.payment_methods.filter(x => x !== m)
-                        : [...bForm.payment_methods, m];
-                      setBForm({ ...bForm, payment_methods: newMethods });
-                    }}
-                  >
-                    <View style={[styles.checkbox, isSelected && styles.checkboxChecked]}>
-                      {isSelected && <Ionicons name="checkmark" size={14} color={Colors.white} />}
-                    </View>
-                    <Text style={styles.checkboxText}>{m}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <TouchableOpacity style={styles.submitBtn} onPress={createBuilding} disabled={submitting}>
-              {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>Create Building</Text>}
-            </TouchableOpacity>
-          </ScrollView>
-        </View>
-      </Modal>
-
-      {/* Members */}
       <Modal visible={modal === 'members'} animationType="slide" presentationStyle="pageSheet">
         <View style={styles.modal}>
           <View style={styles.modalHeader}>
@@ -577,6 +499,8 @@ const styles = StyleSheet.create({
   buildingActionsExpanded: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   membersBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.primary + '12', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
   membersBtnText: { fontSize: 12, color: Colors.primary, fontWeight: '700' },
+  editBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.warning + '12', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  editBtnText: { fontSize: 12, color: Colors.warning, fontWeight: '700' },
   moduleButtons: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   moduleBtn: { flex: 1, minWidth: '47%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 10, borderWidth: 1 },
   moduleBtnText: { fontSize: 13, fontWeight: '700' },
@@ -588,26 +512,7 @@ const styles = StyleSheet.create({
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, paddingTop: 8 },
   modalTitle: { fontSize: 20, fontWeight: '800', color: Colors.text },
   modalSub: { fontSize: 13, color: Colors.textMuted, marginTop: 2 },
-  label: { fontSize: 13, fontWeight: '600', color: Colors.text, marginBottom: 6, marginTop: 14 },
-  input: { borderWidth: 1.5, borderColor: Colors.border, borderRadius: 10, padding: 12, fontSize: 15, color: Colors.text, backgroundColor: Colors.bg },
-  submitBtn: { backgroundColor: Colors.primary, borderRadius: 12, padding: 15, alignItems: 'center', marginTop: 24, marginBottom: 30 },
-  submitBtnText: { color: Colors.white, fontSize: 16, fontWeight: '700' },
 
-  switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, backgroundColor: Colors.bg, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: Colors.border },
-  switchLabel: { fontSize: 14, fontWeight: '700', color: Colors.text },
-  switchSub: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
-  switch: { width: 44, height: 24, borderRadius: 12, backgroundColor: '#E5E7EB', padding: 2 },
-  switchOn: { backgroundColor: Colors.primary },
-  switchThumb: { width: 20, height: 20, borderRadius: 10, backgroundColor: Colors.white },
-  switchThumbOn: { alignSelf: 'flex-end' },
-
-  checkboxGroup: { flexDirection: 'row', gap: 16, marginTop: 4 },
-  checkboxRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  checkbox: { width: 20, height: 20, borderRadius: 4, borderWidth: 2, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' },
-  checkboxChecked: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  checkboxText: { fontSize: 14, color: Colors.text, fontWeight: '600' },
-
-  // Member rows
   memberCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Colors.bg, borderRadius: 12, padding: 14, marginBottom: 10 },
   memberAvatar: { width: 42, height: 42, borderRadius: 21, backgroundColor: Colors.primary + '20', justifyContent: 'center', alignItems: 'center' },
   memberAvatarText: { fontSize: 16, fontWeight: '800', color: Colors.primary },
@@ -618,19 +523,17 @@ const styles = StyleSheet.create({
   roleText: { fontSize: 12, fontWeight: '700' },
   empty: { textAlign: 'center', color: Colors.textMuted, marginTop: 40, fontSize: 15 },
 
-  // Choice sheet
   choiceOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   choiceSheet: { backgroundColor: Colors.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 40 },
-  choiceRow: { flexDirection: 'row', gap: 16, marginTop: 10 },
-  choiceBtn: { flex: 1, backgroundColor: Colors.bg, borderRadius: 20, padding: 20, alignItems: 'center', borderWidth: 1, borderColor: Colors.border },
-  choiceIcon: { width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
-  choiceLabel: { fontSize: 15, fontWeight: '800', color: Colors.text },
+  choiceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 10 },
+  choiceBtn: { width: '31%', flexGrow: 1, minWidth: 100, backgroundColor: Colors.bg, borderRadius: 16, padding: 16, alignItems: 'center', borderWidth: 1, borderColor: Colors.border },
+  choiceIcon: { width: 52, height: 52, borderRadius: 26, justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
+  choiceLabel: { fontSize: 13, fontWeight: '800', color: Colors.text, textAlign: 'center' },
 
-  // Delete list
-  deleteItem: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: Colors.bg, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.border },
-  deleteItemInfo: { flex: 1 },
-  deleteItemName: { fontSize: 16, fontWeight: '700', color: Colors.text },
-  deleteItemAddress: { fontSize: 13, color: Colors.textMuted, marginTop: 2 },
-  deleteIconBox: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.danger + '10', justifyContent: 'center', alignItems: 'center' },
-  deleteEmptyState: { alignItems: 'center', marginTop: 40 },
+  listItem: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: Colors.bg, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Colors.border },
+  listItemInfo: { flex: 1 },
+  listItemName: { fontSize: 16, fontWeight: '700', color: Colors.text },
+  listItemAddress: { fontSize: 13, color: Colors.textMuted, marginTop: 2 },
+  listItemIcon: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
+  emptyList: { alignItems: 'center', marginTop: 40 },
 });

@@ -2,19 +2,22 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity,
-  Alert, ActivityIndicator, RefreshControl, Share, Modal, ScrollView, Image,
+  View, Text, StyleSheet, TouchableOpacity,
+  ActivityIndicator, RefreshControl, Modal, ScrollView, Image, ToastAndroid, Linking,
 } from 'react-native';
+import { Alert } from '../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
-import { ENTRY_BASE } from '../constants/api';
 import { useBuildings } from '../hooks/useBuildings';
 import BuildingDropdown from '../components/BuildingDropdown';
 import type { Building } from '../hooks/useBuildings';
 import { useMarkNotificationsRead } from '../hooks/useMarkNotificationsRead';
 import { cacheManager, CACHE_PRESETS } from '../utils/CacheManager';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
+import * as ImagePicker from 'expo-image-picker';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -31,11 +34,8 @@ export default function VisitorsScreen() {
   const router = useRouter();
   const { t } = useLanguage();
   const isAdmin = user?.role === 'admin';
-  const isPramukh = user?.role === 'pramukh';
 
   useMarkNotificationsRead(['visitor']);
-  // All roles can share QR
-  const canShareQR = true;
   const params = useLocalSearchParams<{ building_id?: string; building_name?: string }>();
 
   const { buildings, loading: buildingsLoading } = useBuildings(isAdmin);
@@ -63,8 +63,16 @@ export default function VisitorsScreen() {
   // Detail modal
   const [detailItem, setDetailItem] = useState<any | null>(null);
 
+  // QR Code modal state
+  const [showQRShareModal, setShowQRShareModal] = useState(false);
+  const [downloadingQR, setDownloadingQR] = useState(false);
+  const [showUploadQRModal, setShowUploadQRModal] = useState(false);
+  const [uploadingQR, setUploadingQR] = useState(false);
+  const [qrPhoto, setQRPhoto] = useState<string | null>(null);
+  const [qrPhotoLoading, setQRPhotoLoading] = useState(false);
+  const [selectedQRBuilding, setSelectedQRBuilding] = useState<Building | null>(null);
+
   const activeBuildingId = isAdmin ? selectedBuilding?.id : user?.building_id;
-  const qrUrl = activeBuildingId ? `${ENTRY_BASE}/building/${activeBuildingId}` : null;
 
   // Fetch marked dates for current calendar month
   const fetchDates = useCallback(async () => {
@@ -111,18 +119,169 @@ export default function VisitorsScreen() {
   useEffect(() => { fetchDates(); }, [fetchDates]);
   useEffect(() => { fetchVisitors(selectedDate); }, [selectedDate, fetchVisitors]);
 
-  const prevMonth = () => {
-    if (calMonth === 1) { setCalMonth(12); setCalYear((y) => y - 1); }
-    else setCalMonth((m) => m - 1);
-  };
-  const nextMonth = () => {
-    if (calMonth === 12) { setCalMonth(1); setCalYear((y) => y + 1); }
-    else setCalMonth((m) => m + 1);
+  // Fetch QR photo for building
+  const fetchQRPhoto = useCallback(async (buildingId: string) => {
+    if (!buildingId) return;
+    setQRPhotoLoading(true);
+    try {
+      const res = await api.get(`/qr-photos/building/${buildingId}`);
+      setQRPhoto(res.data.photo_url);
+    } catch (e: any) {
+      setQRPhoto(null);
+    } finally {
+      setQRPhotoLoading(false);
+    }
+  }, []);
+
+  // Auto-fetch QR photo when viewing
+  useEffect(() => {
+    if (activeBuildingId) {
+      fetchQRPhoto(activeBuildingId);
+    }
+  }, [activeBuildingId, fetchQRPhoto]);
+
+  // Admin: Upload QR photo
+  const handleUploadQRPhoto = async () => {
+    if (!selectedQRBuilding) {
+      Alert.alert('Error', 'Please select a society first');
+      return;
+    }
+
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (result.canceled) return;
+
+      const asset = result.assets[0];
+      if (!asset.uri) return;
+
+      setUploadingQR(true);
+
+      const formData = new FormData();
+      formData.append('photo', {
+        uri: asset.uri,
+        type: asset.mimeType || 'image/jpeg',
+        name: `qr-photo-${Date.now()}.jpg`,
+      } as any);
+
+      const res = await api.post(`/qr-photos/${selectedQRBuilding.id}/upload`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      setQRPhoto(res.data.photo_url);
+      setShowUploadQRModal(false);
+      ToastAndroid.show('QR photo uploaded successfully', ToastAndroid.SHORT);
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.error || 'Failed to upload QR photo';
+      Alert.alert('Upload Error', errorMsg);
+    } finally {
+      setUploadingQR(false);
+    }
   };
 
+  // Share QR photo
   const shareQR = async () => {
-    if (!qrUrl) return Alert.alert('No Building', 'No building linked to your account');
-    await Share.share({ message: `Scan to register your visit: ${qrUrl}`, url: qrUrl });
+    if (!qrPhoto) {
+      Alert.alert('No QR Photo', 'No QR photo uploaded for this society');
+      return;
+    }
+    setShowQRShareModal(true);
+  };
+
+  const downloadQR = async () => {
+    if (!qrPhoto) {
+      ToastAndroid.show('No QR photo available', ToastAndroid.SHORT);
+      return;
+    }
+    
+    setDownloadingQR(true);
+    try {
+      const fileName = `visitor-qr-${Date.now()}.jpg`;
+      const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+
+      // Download QR image from Cloudinary
+      const downloadResult = await FileSystem.downloadAsync(qrPhoto, fileUri);
+      
+      if (downloadResult.status === 200) {
+        await Sharing.shareAsync(fileUri, { 
+          mimeType: 'image/jpeg',
+          dialogTitle: 'Save QR Code'
+        });
+        ToastAndroid.show('QR code saved', ToastAndroid.SHORT);
+      } else {
+        throw new Error('Download failed');
+      }
+    } catch (error: any) {
+      console.error('Download error:', error);
+      ToastAndroid.show('Failed to download QR code', ToastAndroid.LONG);
+    } finally {
+      setDownloadingQR(false);
+    }
+  };
+
+  const shareQRWhatsApp = async () => {
+    if (!qrPhoto) {
+      ToastAndroid.show('No QR photo available', ToastAndroid.SHORT);
+      return;
+    }
+    
+    setDownloadingQR(true);
+    try {
+      const fileName = `visitor-qr-${Date.now()}.jpg`;
+      const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+
+      // Download QR image from Cloudinary to local storage
+      const downloadResult = await FileSystem.downloadAsync(qrPhoto, fileUri);
+      
+      if (downloadResult.status !== 200) {
+        throw new Error('Failed to download QR photo');
+      }
+
+      // Share image via WhatsApp with message
+      const message = 'Scan this QR code to register visitor entry';
+      
+      // Check if WhatsApp is installed
+      const whatsappUrl = 'whatsapp://send';
+      const canOpen = await Linking.canOpenURL(whatsappUrl);
+      
+      if (!canOpen) {
+        // WhatsApp not installed, use generic share
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'image/jpeg',
+          dialogTitle: message,
+        });
+      } else {
+        // Share via native share sheet (will show WhatsApp option)
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'image/jpeg',
+          dialogTitle: message,
+        });
+      }
+      
+      setShowQRShareModal(false);
+      ToastAndroid.show('Shared successfully', ToastAndroid.SHORT);
+    } catch (error: any) {
+      console.error('WhatsApp share error:', error);
+      ToastAndroid.show('Failed to share QR code', ToastAndroid.LONG);
+    } finally {
+      setDownloadingQR(false);
+    }
+  };
+
+  // Calendar navigation functions
+  const prevMonth = () => {
+    setCalMonth(calMonth === 1 ? 12 : calMonth - 1);
+    if (calMonth === 1) setCalYear(calYear - 1);
+  };
+
+  const nextMonth = () => {
+    setCalMonth(calMonth === 12 ? 1 : calMonth + 1);
+    if (calMonth === 12) setCalYear(calYear + 1);
   };
 
   // Build calendar grid
@@ -134,6 +293,16 @@ export default function VisitorsScreen() {
   ];
   // Pad to complete last row
   while (calCells.length % 7 !== 0) calCells.push(null);
+
+  // Record QR share action (fire-and-forget, doesn't block UI)
+  const recordQRShare = (shareMethod: string) => {
+    if (!activeBuildingId) return;
+    
+    // Fire and forget - don't wait for response
+    api.post(`/qr-photos/${activeBuildingId}/share`, {
+      share_method: shareMethod
+    }).catch(() => {}); // Silently fail, non-critical
+  };
 
   const renderCalendar = () => (
     <View style={styles.calendarCard}>
@@ -231,10 +400,24 @@ export default function VisitorsScreen() {
           <Ionicons name="arrow-back" size={22} color={Colors.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{t('visitors')}</Text>
-        <TouchableOpacity style={styles.qrBtn} onPress={shareQR}>
-          <Ionicons name="qr-code" size={18} color={Colors.white} />
-          <Text style={styles.qrBtnText}>Share QR</Text>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          {isAdmin && (
+            <TouchableOpacity 
+              style={styles.headerActionBtn}
+              onPress={() => setShowUploadQRModal(true)}
+            >
+              <Ionicons name="cloud-upload-outline" size={18} color={Colors.white} />
+              <Text style={styles.headerActionBtnText}>Upload</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity 
+            style={[styles.headerActionBtn, { marginLeft: isAdmin ? 8 : 0 }]}
+            onPress={shareQR}
+          >
+            <Ionicons name="share-social-outline" size={18} color={Colors.white} />
+            <Text style={styles.headerActionBtnText}>Share QR</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Admin building filter */}
@@ -340,17 +523,165 @@ export default function VisitorsScreen() {
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
+
+      {/* QR Code Share Modal */}
+      <Modal visible={showQRShareModal} transparent animationType="fade" onRequestClose={() => setShowQRShareModal(false)}>
+        <TouchableOpacity style={styles.qrModalOverlay} activeOpacity={1} onPress={() => setShowQRShareModal(false)}>
+          <TouchableOpacity activeOpacity={1} style={styles.qrModalContent}>
+            <View style={styles.qrModalHeader}>
+              <Text style={styles.qrModalTitle}>Visitor Entry QR Code</Text>
+              <TouchableOpacity onPress={() => setShowQRShareModal(false)} style={styles.qrCloseBtn}>
+                <Ionicons name="close" size={24} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            {qrPhotoLoading ? (
+              <View style={[styles.qrImage, { justifyContent: 'center', alignItems: 'center' }]}>
+                <ActivityIndicator size="large" color={Colors.primary} />
+              </View>
+            ) : qrPhoto ? (
+              <Image
+                source={{ uri: qrPhoto }}
+                style={styles.qrImage}
+                resizeMode="contain"
+              />
+            ) : (
+              <View style={[styles.qrImage, { justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.bg }]}>
+                <Ionicons name="image-outline" size={48} color={Colors.border} />
+                <Text style={{ color: Colors.textMuted, marginTop: 12, fontSize: 14 }}>No QR photo available</Text>
+              </View>
+            )}
+
+            <Text style={styles.qrCodeText}>
+              {qrPhoto 
+                ? 'Share this QR code for visitor registration' 
+                : 'QR photo not uploaded yet'}
+            </Text>
+
+            <View style={styles.qrActionContainer}>
+              <TouchableOpacity
+                style={[styles.qrActionBtnWhatsApp, !qrPhoto && { opacity: 0.5 }]}
+                onPress={() => {
+                  recordQRShare('whatsapp');
+                  shareQRWhatsApp();
+                }}
+                disabled={downloadingQR || !qrPhoto}
+              >
+                <Ionicons name="logo-whatsapp" size={20} color={Colors.white} />
+                <Text style={styles.qrActionBtnText}>Share on WhatsApp</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.qrActionBtnDownload, !qrPhoto && { opacity: 0.5 }]}
+                onPress={() => {
+                  recordQRShare('download');
+                  downloadQR();
+                }}
+                disabled={downloadingQR || !qrPhoto}
+              >
+                {downloadingQR ? (
+                  <ActivityIndicator size="small" color={Colors.primary} />
+                ) : (
+                  <Ionicons name="download-outline" size={20} color={Colors.primary} />
+                )}
+                <Text style={styles.qrActionBtnTextDownload}>
+                  {downloadingQR ? 'Downloading...' : 'Download'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Upload QR Photo Modal (Admin Only) */}
+      <Modal visible={showUploadQRModal} transparent animationType="slide" onRequestClose={() => setShowUploadQRModal(false)}>
+        <View style={styles.uploadModalOverlay}>
+          <View style={styles.uploadModalContent}>
+            <View style={styles.uploadModalHeader}>
+              <Text style={styles.uploadModalTitle}>Upload QR Photo</Text>
+              <TouchableOpacity onPress={() => setShowUploadQRModal(false)}>
+                <Ionicons name="close" size={28} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.uploadModalBody} showsVerticalScrollIndicator={false}>
+              {/* Building Selection */}
+              <View style={{ marginBottom: 24 }}>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: Colors.text, marginBottom: 12 }}>Select Society</Text>
+                <BuildingDropdown
+                  buildings={buildings}
+                  loading={buildingsLoading}
+                  selected={selectedQRBuilding}
+                  onSelect={(b) => {
+                    if (b) {
+                      setSelectedQRBuilding(b);
+                      if (activeBuildingId !== b.id) {
+                        fetchQRPhoto(b.id);
+                      }
+                    }
+                  }}
+                  label="Choose a society"
+                />
+              </View>
+
+              {/* Upload Icon */}
+              <View style={styles.uploadIconContainer}>
+                <Ionicons name="image-outline" size={48} color={Colors.primary} />
+              </View>
+
+              <Text style={styles.uploadModalDesc}>
+                Upload a QR code photo for this society
+              </Text>
+
+              {/* Current QR Photo (if exists) */}
+              {qrPhoto && (
+                <View style={styles.currentQRSection}>
+                  <Text style={styles.currentQRLabel}>Current QR Photo:</Text>
+                  <Image
+                    source={{ uri: qrPhoto }}
+                    style={styles.currentQRPreview}
+                    resizeMode="cover"
+                  />
+                </View>
+              )}
+
+              {/* Upload Button */}
+              <TouchableOpacity
+                style={[styles.uploadPhotoBtn, (uploadingQR || !selectedQRBuilding) && styles.uploadPhotoBtnDisabled]}
+                onPress={handleUploadQRPhoto}
+                disabled={uploadingQR || !selectedQRBuilding}
+              >
+                {uploadingQR ? (
+                  <ActivityIndicator size="large" color={Colors.white} />
+                ) : (
+                  <>
+                    <Ionicons name="cloud-upload" size={24} color={Colors.white} />
+                    <Text style={styles.uploadPhotoBtnText}>Choose Photo</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              <Text style={styles.uploadHint}>
+                • Square format recommended{'\n'}
+                • JPEG, PNG or WebP{'\n'}
+                • Max 10MB
+              </Text>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
-  header: { backgroundColor: '#3B5FC0', paddingTop: 56, paddingBottom: 16, paddingHorizontal: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  headerTitle: { color: Colors.white, fontSize: 22, fontWeight: '800' },
-  backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center', marginRight: 4 },
-  qrBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
-  qrBtnText: { color: Colors.white, fontWeight: '700', fontSize: 13 },
+  header: { backgroundColor: '#3B5FC0', paddingTop: 56, paddingBottom: 16, paddingHorizontal: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  headerTitle: { color: Colors.white, fontSize: 20, fontWeight: '800', flex: 1, marginLeft: 12 },
+  backBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center', borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.15)' },
+  headerActions: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  headerActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' },
+  headerActionBtnText: { color: Colors.white, fontWeight: '700', fontSize: 12 },
   filterBar: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4, backgroundColor: Colors.white, borderBottomWidth: 1, borderBottomColor: Colors.border },
 
   // Calendar
@@ -401,4 +732,34 @@ const styles = StyleSheet.create({
   modalRowIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.primary + '12', justifyContent: 'center', alignItems: 'center' },
   modalRowLabel: { fontSize: 11, color: Colors.textMuted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
   modalRowValue: { fontSize: 15, fontWeight: '600', color: Colors.text, marginTop: 1 },
+
+  // QR Code Modal
+  qrModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  qrModalContent: { backgroundColor: Colors.white, borderRadius: 20, padding: 24, width: '87%', maxWidth: 340, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 12, elevation: 10 },
+  qrModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  qrModalTitle: { fontSize: 18, fontWeight: '800', color: Colors.text },
+  qrImage: { width: '100%', height: 260, borderRadius: 14, backgroundColor: Colors.bg, marginBottom: 18 },
+  qrCodeText: { textAlign: 'center', fontSize: 14, fontWeight: '600', color: Colors.textMuted, marginBottom: 20 },
+  qrActionContainer: { gap: 10 },
+  qrActionBtnWhatsApp: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 13, paddingHorizontal: 16, borderRadius: 11, backgroundColor: '#25D366', shadowColor: '#25D366', shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
+  qrActionBtnDownload: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 13, paddingHorizontal: 16, borderRadius: 11, backgroundColor: Colors.white, borderWidth: 2, borderColor: Colors.primary },
+  qrActionBtnText: { color: Colors.white, fontWeight: '700', fontSize: 15 },
+  qrActionBtnTextDownload: { color: Colors.primary, fontWeight: '700', fontSize: 15 },
+  qrCloseBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center', borderRadius: 10, backgroundColor: Colors.bg },
+
+  // Upload QR Modal
+  uploadModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  uploadModalContent: { backgroundColor: Colors.white, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 20, paddingBottom: 32, maxHeight: '90%' },
+  uploadModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  uploadModalTitle: { fontSize: 18, fontWeight: '800', color: Colors.text },
+  uploadModalBody: { paddingHorizontal: 20, paddingTop: 20 },
+  uploadModalDesc: { textAlign: 'center', fontSize: 15, fontWeight: '600', color: Colors.text, marginBottom: 20 },
+  uploadIconContainer: { alignItems: 'center', marginBottom: 16 },
+  currentQRSection: { backgroundColor: Colors.bg, borderRadius: 12, padding: 16, marginBottom: 20, alignItems: 'center' },
+  currentQRLabel: { fontSize: 12, fontWeight: '700', color: Colors.textMuted, marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 },
+  currentQRPreview: { width: 140, height: 140, borderRadius: 12, backgroundColor: Colors.white },
+  uploadPhotoBtn: { width: '100%', backgroundColor: Colors.primary, paddingVertical: 16, borderRadius: 12, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 12, shadowColor: Colors.primary, shadowOpacity: 0.3, shadowRadius: 8, elevation: 5, marginBottom: 16 },
+  uploadPhotoBtnDisabled: { opacity: 0.6 },
+  uploadPhotoBtnText: { color: Colors.white, fontWeight: '800', fontSize: 16 },
+  uploadHint: { fontSize: 13, color: Colors.textMuted, textAlign: 'center', fontWeight: '500', lineHeight: 20 },
 });

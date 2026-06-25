@@ -3,8 +3,9 @@ import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput,
-  Modal, Alert, ActivityIndicator, RefreshControl, ScrollView
+  Modal, ActivityIndicator, RefreshControl, ScrollView
 } from 'react-native';
+import { Alert } from '../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';

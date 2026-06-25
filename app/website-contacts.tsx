@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  Modal, ScrollView, Alert, ActivityIndicator, RefreshControl,
+  Modal, ScrollView, ActivityIndicator, RefreshControl,
 } from 'react-native';
+import { Alert } from '../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import api from '../utils/api';

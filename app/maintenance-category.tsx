@@ -1,20 +1,27 @@
 import React, { useCallback, useState, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
-  RefreshControl, ScrollView, Modal, TextInput, FlatList,
-  Alert, Linking, Image, Dimensions,
+  View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Modal,
+  RefreshControl, ScrollView, TextInput, FlatList,
+  Linking, Image, Dimensions, Keyboard, Platform,
 } from 'react-native';
+import { Alert } from '../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as ImagePicker from 'expo-image-picker';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
+import { DesignTokens } from '../constants/designTokens';
 import api from '../utils/api';
 import { API_BASE } from '../constants/api';
+import { useMaintenanceStore } from '../stores/maintenanceStore';
+import { usePagination } from '../hooks/usePagination';
+import { BillListSkeleton } from '../components/SkeletonLoader';
+import { PaginationControls } from '../components/PaginationControls';
 
 type BillingCategory = 'maintenance' | 'water_meter' | 'special';
 
@@ -214,32 +221,96 @@ function BillCard({ record, category, onPay, onReceipt }: BillCardProps) {
 
 const cardStyles = StyleSheet.create({
   card: {
-    backgroundColor: Colors.white, borderRadius: 14, padding: 16, marginBottom: 12,
-    shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
+    backgroundColor: Colors.white, 
+    borderRadius: DesignTokens.borderRadius.xl, 
+    padding: DesignTokens.spacing.lg, 
+    marginBottom: DesignTokens.spacing.md,
+    ...DesignTokens.shadow.md,
   },
-  cardHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8 },
-  desc: { fontSize: 15, fontWeight: '700', color: Colors.text },
-  period: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
-  statusBadge: { borderRadius: 10, paddingHorizontal: 10, paddingVertical: 3, marginLeft: 8 },
+  cardHeader: { 
+    flexDirection: 'row', 
+    alignItems: 'flex-start', 
+    marginBottom: DesignTokens.spacing.sm 
+  },
+  desc: { 
+    fontSize: DesignTokens.fontSize.lg, 
+    fontWeight: DesignTokens.fontWeight.bold, 
+    color: Colors.text 
+  },
+  period: { 
+    fontSize: DesignTokens.fontSize.sm, 
+    color: Colors.textMuted, 
+    marginTop: 2 
+  },
+  statusBadge: { 
+    borderRadius: DesignTokens.borderRadius.md, 
+    paddingHorizontal: DesignTokens.padding.sm, 
+    paddingVertical: 3, 
+    marginLeft: DesignTokens.spacing.sm 
+  },
   paidBadge: { backgroundColor: '#DCFCE7' },
   pendingBadge: { backgroundColor: '#FEF3C7' },
   overdueBadge: { backgroundColor: '#FEE2E2' },
-  statusText: { fontSize: 12, fontWeight: '700', color: Colors.text },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8 },
-  meta: { fontSize: 12, color: Colors.textMuted },
-  amountRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  amount: { fontSize: 20, fontWeight: '800', color: Colors.text },
-  penalty: { fontSize: 12, color: Colors.danger, flex: 1 },
+  statusText: { 
+    fontSize: DesignTokens.fontSize.sm, 
+    fontWeight: DesignTokens.fontWeight.bold, 
+    color: Colors.text 
+  },
+  row: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    gap: 4, 
+    marginBottom: DesignTokens.spacing.sm 
+  },
+  meta: { 
+    fontSize: DesignTokens.fontSize.sm, 
+    color: Colors.textMuted 
+  },
+  amountRow: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    gap: DesignTokens.spacing.sm, 
+    marginBottom: DesignTokens.spacing.md 
+  },
+  amount: { 
+    fontSize: DesignTokens.fontSize.xxxl, 
+    fontWeight: DesignTokens.fontWeight.bold, 
+    color: Colors.text 
+  },
+  penalty: { 
+    fontSize: DesignTokens.fontSize.sm, 
+    color: Colors.danger, 
+    flex: 1 
+  },
   payBtn: {
-    backgroundColor: Colors.primary, borderRadius: 10, paddingVertical: 10,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: Colors.primary, 
+    borderRadius: DesignTokens.borderRadius.md, 
+    paddingVertical: DesignTokens.padding.sm,
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    gap: 6,
   },
-  payBtnText: { color: Colors.white, fontWeight: '700', fontSize: 14 },
+  payBtnText: { 
+    color: Colors.white, 
+    fontWeight: DesignTokens.fontWeight.bold, 
+    fontSize: DesignTokens.fontSize.base 
+  },
   receiptBtn: {
-    borderWidth: 1.5, borderColor: Colors.primary, borderRadius: 10, paddingVertical: 10,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    borderWidth: 1.5, 
+    borderColor: Colors.primary, 
+    borderRadius: DesignTokens.borderRadius.md, 
+    paddingVertical: DesignTokens.padding.sm,
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    gap: 6,
   },
-  receiptBtnText: { color: Colors.primary, fontWeight: '700', fontSize: 14 },
+  receiptBtnText: { 
+    color: Colors.primary, 
+    fontWeight: DesignTokens.fontWeight.bold, 
+    fontSize: DesignTokens.fontSize.base 
+  },
 });
 
 // ─── Payment Detail Modal ─────────────────────────────────────────────────────
@@ -594,6 +665,22 @@ const chequePickStyles = StyleSheet.create({
 
 // ─── Bill Creation Form Modal ─────────────────────────────────────────────────
 
+function useKeyboardHeight() {
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    const show = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => setHeight(e.endCoordinates.height),
+    );
+    const hide = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setHeight(0),
+    );
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+  return height;
+}
+
 interface BillFormModalProps {
   visible: boolean;
   category: BillingCategory;
@@ -601,9 +688,10 @@ interface BillFormModalProps {
   onClose: () => void;
   onSubmit: (form: BillFormState) => Promise<void>;
   buildingInfo?: any;
+  kbHeight?: number;
 }
 
-function BillFormModal({ visible, category, members, onClose, onSubmit, buildingInfo }: BillFormModalProps) {
+function BillFormModal({ visible, category, members, onClose, onSubmit, buildingInfo, kbHeight = 0 }: BillFormModalProps) {
   const currentYear = new Date().getFullYear();
   const [form, setForm] = useState<BillFormState>({
     due_date: '',
@@ -686,16 +774,16 @@ function BillFormModal({ visible, category, members, onClose, onSubmit, building
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={formStyles.overlay}>
-        <View style={formStyles.sheet}>
+        <View style={[formStyles.sheet, kbHeight > 0 && { marginBottom: kbHeight }]}>
           <View style={formStyles.handle} />
           <View style={formStyles.sheetHeader}>
-            <Text style={formStyles.title}>Create {CATEGORY_LABELS[category]} Bill</Text>
+            <Text style={formStyles.title}>Create {CATEGORY_LABELS[category]}</Text>
             <TouchableOpacity onPress={onClose}>
               <Ionicons name="close" size={24} color={Colors.text} />
             </TouchableOpacity>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
             {/* Due Date — calendar picker */}
             <Text style={formStyles.label}>Due Date *</Text>
             <TouchableOpacity style={formStyles.input} onPress={() => setShowDatePicker(true)}>
@@ -1155,31 +1243,65 @@ export default function MaintenanceCategoryScreen() {
   const router = useRouter();
   const { user, token } = useAuth();
   const { t } = useLanguage();
+  const kbHeight = useKeyboardHeight();
+
+  // Zustand store
+  const {
+    userPayments,
+    bills,
+    billPayments,
+    myPramukhPayments,
+    activeTab,
+    pramukhTab,
+    loading,
+    refreshing,
+    currentPage,
+    pageSize,
+    detailVisible,
+    selectedRecord,
+    methodModalVisible,
+    methodModalRecord,
+    chequeModalVisible,
+    chequeModalRecord,
+    createVisible,
+    exportVisible,
+    flatDetailVisible,
+    flatDetailRecord,
+    setUserPayments,
+    setBills,
+    setBillPayments,
+    setMyPramukhPayments,
+    setActiveTab,
+    setPramukhTab,
+    setLoading,
+    setRefreshing,
+    setCurrentPage,
+    nextPage,
+    prevPage,
+    closeDetailModal,
+    openMethodModal,
+    closeMethodModal,
+    openChequeModal,
+    closeChequeModal,
+    openCreateModal,
+    closeCreateModal,
+    openExportModal,
+    closeExportModal,
+    openFlatDetailModal,
+    closeFlatDetailModal,
+  } = useMaintenanceStore();
 
   const isAdmin = user?.role === 'admin';
-  const isPramukh = user?.role === 'pramukh' || isAdmin;
+  const isPramukh = user?.role === 'pramukh';
+  const canManage = isPramukh || isAdmin;
 
   // For admin: use the passed building_id; for pramukh/user: use their own building
   const effectiveBuildingId = isAdmin && building_id && building_id !== 'undefined' ? building_id : undefined;
 
-  // ── User view state ──
-  const [userPayments, setUserPayments] = useState<PaymentRecord[]>([]);
-  const [activeTab, setActiveTab] = useState<'pending' | 'paid'>('pending');
-  const [selectedRecord, setSelectedRecord] = useState<PaymentRecord | null>(null);
-  const [detailVisible, setDetailVisible] = useState(false);
-
-  // ── Pramukh view state ──
-  const [bills, setBills] = useState<Bill[]>([]);
+  // ── Local state for non-store items ──
   const [selectedBill, setSelectedBill] = useState<Bill | null>(null);
-  const [billPayments, setBillPayments] = useState<PaymentRecord[]>([]);
-  const [myPramukhPayments, setMyPramukhPayments] = useState<PaymentRecord[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
-  const [createVisible, setCreateVisible] = useState(false);
-  const [exportVisible, setExportVisible] = useState(false);
   const [exportBillId, setExportBillId] = useState<string>('');
-  const [flatDetailRecord, setFlatDetailRecord] = useState<PaymentRecord | null>(null);
-  const [flatDetailVisible, setFlatDetailVisible] = useState(false);
-  const [pramukhTab, setPramukhTab] = useState<'bills' | 'my-bill'>('bills');
   const [editBill, setEditBill] = useState<Bill | null>(null);
   const [editForm, setEditForm] = useState({ 
     description: '', 
@@ -1193,17 +1315,8 @@ export default function MaintenanceCategoryScreen() {
   const [editDpYear, setEditDpYear] = useState(new Date().getFullYear());
   const [editDpMonth, setEditDpMonth] = useState(new Date().getMonth() + 1);
   const [buildingInfo, setBuildingInfo] = useState<any>(null);
-
-  // ── Shared state ──
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [paying, setPaying] = useState<string | null>(null);
   
-  // Payment Method Modal
-  const [methodModalVisible, setMethodModalVisible] = useState(false);
-  const [methodModalRecord, setMethodModalRecord] = useState<PaymentRecord | null>(null);
-  const [chequeModalVisible, setChequeModalVisible] = useState(false);
-  const [chequeModalRecord, setChequeModalRecord] = useState<PaymentRecord | null>(null);
   const processGuardRef = useRef(0);
   const paymentAlertShownRef = useRef(false);
 
@@ -1217,9 +1330,17 @@ export default function MaintenanceCategoryScreen() {
       if (effectiveBuildingId) params.building_id = effectiveBuildingId;
       const res = await api.get('/maintenance/payments', { params });
       setUserPayments(res.data);
-      const bRes = await api.get('/buildings/my');
-      setBuildingInfo(bRes.data);
-    } catch { }
+      
+      // Only fetch building info if we have a building_id
+      if (effectiveBuildingId || user?.building_id) {
+        const bRes = await api.get('/buildings/my', {
+          params: effectiveBuildingId ? { building_id: effectiveBuildingId } : {}
+        });
+        setBuildingInfo(bRes.data);
+      }
+    } catch (err) {
+      console.warn('[MaintenanceCategory] fetchUserData error:', err);
+    }
     finally { setLoading(false); setRefreshing(false); }
   };
 
@@ -1236,23 +1357,38 @@ export default function MaintenanceCategoryScreen() {
         ? `/buildings/members/${effectiveBuildingId}`
         : '/buildings/members';
 
-      const [billsRes, membersRes, myPaymentsRes, buildingRes] = await Promise.all([
+      const promises: Promise<any>[] = [
         api.get('/maintenance/bills', { params: billParams }),
         api.get(membersUrl),
         api.get('/maintenance/payments', { params: payParams }),
-        effectiveBuildingId ? api.get(`/buildings/my?building_id=${effectiveBuildingId}`) : api.get('/buildings/my'),
-      ]);
+      ];
+      
+      // Only fetch building info if we have a building_id
+      if (effectiveBuildingId || user?.building_id) {
+        promises.push(
+          effectiveBuildingId 
+            ? api.get(`/buildings/my?building_id=${effectiveBuildingId}`) 
+            : api.get('/buildings/my')
+        );
+      }
+
+      const results = await Promise.all(promises);
+      const [billsRes, membersRes, myPaymentsRes, buildingRes] = results;
+      
       setBills(billsRes.data);
       setMembers(membersRes.data);
       setMyPramukhPayments(myPaymentsRes.data);
-      setBuildingInfo(buildingRes.data);
+      if (buildingRes) setBuildingInfo(buildingRes.data);
+      
       if (selectedBill) {
         const allParams: any = { category: cat };
         if (effectiveBuildingId) allParams.building_id = effectiveBuildingId;
         const paymentsRes = await api.get('/maintenance/payments', { params: allParams });
         setBillPayments(paymentsRes.data.filter((p: PaymentRecord) => p.bill_id === selectedBill.id));
       }
-    } catch { }
+    } catch (err) {
+      console.warn('[MaintenanceCategory] fetchPramukhData error:', err);
+    }
     finally { setLoading(false); setRefreshing(false); }
   };
 
@@ -1267,12 +1403,12 @@ export default function MaintenanceCategoryScreen() {
 
   useFocusEffect(useCallback(() => {
     setLoading(true);
-    if (isPramukh) {
+    if (canManage) {
       fetchPramukhData();
     } else {
       fetchUserData();
     }
-  }, [cat, isPramukh]));
+  }, [cat, canManage]));
 
   const processMaintenancePaymentUrl = useCallback(async (url: string) => {
     if (!url.startsWith('mybuilding://maintenance-category')) return;
@@ -1282,8 +1418,10 @@ export default function MaintenanceCategoryScreen() {
 
     const q = url.includes('?') ? url.split('?')[1] : '';
     const st = new URLSearchParams(q).get('status');
-    if (isPramukh) {
+    if (isPramukh && !isAdmin) {
       setPramukhTab('my-bill');
+      await fetchPramukhData();
+    } else if (canManage) {
       await fetchPramukhData();
     } else {
       if (st === 'success') setActiveTab('paid');
@@ -1296,7 +1434,7 @@ export default function MaintenanceCategoryScreen() {
     } else if (st === 'failed') {
       Alert.alert(t('paymentFailed'), t('tryAgain'));
     }
-  }, [isPramukh, t]);
+  }, [isPramukh, isAdmin, canManage, t]);
 
   useEffect(() => {
     if (linkStatus === 'success' || linkStatus === 'failed') {
@@ -1318,38 +1456,55 @@ export default function MaintenanceCategoryScreen() {
     const supportedMethods = methodsStr.split(',').map(m => m.trim()).filter(Boolean);
 
     if (supportedMethods.length > 1) {
-      setMethodModalRecord(record);
-      setMethodModalVisible(true);
+      openMethodModal(record);
       return;
     }
 
     if (supportedMethods.length === 1) {
       const only = supportedMethods[0];
       if (only === 'Cheque') {
-        setChequeModalRecord(record);
-        setChequeModalVisible(true);
+        openChequeModal(record);
         return;
       }
       if (only === 'Cash') {
         processPayment('Cash', record);
         return;
       }
-      processPayment('Online', record);
+      // Navigate to payment review for online payment
+      navigateToPaymentReview(record);
       return;
     }
 
-    processPayment('Online', record);
+    // Navigate to payment review for online payment
+    navigateToPaymentReview(record);
+  };
+
+  const navigateToPaymentReview = (record: PaymentRecord) => {
+    const bill = record.maintenance_bills;
+    router.push({
+      pathname: '/payment-review',
+      params: {
+        recordId: record.id,
+        billAmount: String(record.amount),
+        billMonth: String(bill?.month || 0),
+        billYear: String(bill?.year || new Date().getFullYear()),
+        billId: String(bill?.id || ''),
+      },
+    } as any);
   };
 
   const handleMethodSelect = (method: 'Online' | 'Cash' | 'Cheque', record: PaymentRecord) => {
-    setMethodModalVisible(false);
-    setMethodModalRecord(null);
+    closeMethodModal();
     if (method === 'Cheque') {
-      setChequeModalRecord(record);
-      setChequeModalVisible(true);
+      openChequeModal(record);
       return;
     }
-    processPayment(method, record);
+    if (method === 'Cash') {
+      processPayment('Cash', record);
+      return;
+    }
+    // Navigate to payment review for online payment
+    navigateToPaymentReview(record);
   };
 
   const processPayment = async (method: 'Online' | 'Cash' | 'Cheque', record: PaymentRecord) => {
@@ -1369,7 +1524,7 @@ export default function MaintenanceCategoryScreen() {
             await processMaintenancePaymentUrl(result.url);
           } else {
             await new Promise((r) => setTimeout(r, 600));
-            if (isPramukh) await fetchPramukhData();
+            if (canManage) await fetchPramukhData();
             else await fetchUserData();
           }
           await WebBrowser.coolDownAsync().catch(() => {});
@@ -1388,7 +1543,7 @@ export default function MaintenanceCategoryScreen() {
           payment_method: method
         });
         Alert.alert('Payment Submitted', `Your ${method} payment has been submitted for Pramukh approval.`);
-        if (isPramukh) fetchPramukhData();
+        if (canManage) fetchPramukhData();
         else await fetchUserData();
       } catch (e: any) {
         Alert.alert('Payment Error', e?.response?.data?.error || `Could not submit ${method} payment.`);
@@ -1454,7 +1609,7 @@ export default function MaintenanceCategoryScreen() {
       }
 
       await api.post('/maintenance/bills', body);
-      setCreateVisible(false);
+      closeCreateModal();
       Alert.alert('Success', 'Bill created successfully.');
       fetchPramukhData();
     } catch (e: any) {
@@ -1531,8 +1686,8 @@ export default function MaintenanceCategoryScreen() {
         {
           text: 'Approve', style: 'default', onPress: async () => {
             try {
-              setDetailVisible(false);
-              setFlatDetailVisible(false);
+              closeDetailModal();
+              closeFlatDetailModal();
               await api.patch(`/maintenance/payments/${record.id}/approve`);
               Alert.alert('Success', 'Payment approved successfully.');
               fetchPramukhData();
@@ -1549,7 +1704,22 @@ export default function MaintenanceCategoryScreen() {
 
   const pendingPayments = userPayments.filter(p => p.status === 'pending');
   const paidPayments = userPayments.filter(p => p.status === 'paid');
-  const displayedPayments = activeTab === 'pending' ? pendingPayments : paidPayments;
+  
+  // Pagination for user payments
+  const currentPayments = activeTab === 'pending' ? pendingPayments : paidPayments;
+  const {
+    paginatedData: displayedPayments,
+    totalPages,
+    hasNextPage,
+    hasPrevPage,
+    startIndex,
+    endIndex,
+    totalItems,
+  } = usePagination({
+    data: currentPayments,
+    currentPage,
+    pageSize,
+  });
 
   const paidCount = billPayments.filter(p => p.status === 'paid').length;
   const pendingCount = billPayments.filter(p => p.status === 'pending').length;
@@ -1561,9 +1731,22 @@ export default function MaintenanceCategoryScreen() {
   // Pramukh's own bills
   const myPendingBills = myPramukhPayments.filter(p => p.status === 'pending');
   const myPaidBills = myPramukhPayments.filter(p => p.status === 'paid');
-  const myDisplayedBills = pramukhTab === 'my-bill'
-    ? (activeTab === 'pending' ? myPendingBills : myPaidBills)
-    : [];
+  const myCurrentBills = activeTab === 'pending' ? myPendingBills : myPaidBills;
+  
+  // Pagination for pramukh's own bills
+  const {
+    paginatedData: myDisplayedBills,
+    totalPages: myTotalPages,
+    hasNextPage: myHasNextPage,
+    hasPrevPage: myHasPrevPage,
+    startIndex: myStartIndex,
+    endIndex: myEndIndex,
+    totalItems: myTotalItems,
+  } = usePagination({
+    data: myCurrentBills,
+    currentPage,
+    pageSize,
+  });
 
   // ── Header title ──
   const headerTitle = CATEGORY_LABELS[cat] || 'Bills';
@@ -1571,11 +1754,12 @@ export default function MaintenanceCategoryScreen() {
   // ── Render ──
 
   return (
-    <View style={styles.container}>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => {
-          if (selectedBill && isPramukh) {
+          if (selectedBill && canManage) {
             setSelectedBill(null);
             setBillPayments([]);
           } else {
@@ -1587,22 +1771,22 @@ export default function MaintenanceCategoryScreen() {
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>{headerTitle}</Text>
           <Text style={styles.headerSub}>
-            {isPramukh
+            {canManage
               ? selectedBill ? selectedBill.description : (isAdmin && building_name ? building_name : 'Manage bills')
               : 'Your bills'
             }
           </Text>
         </View>
-        {isPramukh && !selectedBill && (
-          <TouchableOpacity style={styles.createBtn} onPress={() => setCreateVisible(true)}>
+        {canManage && !selectedBill && (
+          <TouchableOpacity style={styles.createBtn} onPress={openCreateModal}>
             <Ionicons name="add" size={20} color={Colors.white} />
             <Text style={styles.createBtnText}>Create</Text>
           </TouchableOpacity>
         )}
-        {isPramukh && selectedBill && (
+        {canManage && selectedBill && (
           <TouchableOpacity style={styles.createBtn} onPress={() => {
             setExportBillId(selectedBill.id);
-            setExportVisible(true);
+            openExportModal();
           }}>
             <Ionicons name="share-outline" size={18} color={Colors.white} />
             <Text style={styles.createBtnText}>Export</Text>
@@ -1611,12 +1795,14 @@ export default function MaintenanceCategoryScreen() {
       </View>
 
       {loading ? (
-        <ActivityIndicator style={{ marginTop: 60 }} size="large" color={Colors.primary} />
-      ) : isPramukh ? (
-        // ── Pramukh View ──
+        <View style={{ padding: DesignTokens.spacing.lg }}>
+          <BillListSkeleton count={5} />
+        </View>
+      ) : canManage ? (
+        // ── Pramukh/Admin View ──
         <>
-          {/* Pramukh top tabs: Bills | My Bill */}
-          {!selectedBill && (
+          {/* Pramukh top tabs: Bills | My Bill (only for pramukh, not admin) */}
+          {!selectedBill && isPramukh && (
             <View style={styles.tabBar}>
               <TouchableOpacity
                 style={[styles.tab, pramukhTab === 'bills' && styles.tabActive]}
@@ -1635,7 +1821,7 @@ export default function MaintenanceCategoryScreen() {
             </View>
           )}
 
-          {pramukhTab === 'my-bill' && !selectedBill ? (
+          {pramukhTab === 'my-bill' && !selectedBill && isPramukh ? (
             // Pramukh's own bills — same as user view
             <View style={{ flex: 1 }}>
               <View style={styles.tabBar}>
@@ -1643,7 +1829,10 @@ export default function MaintenanceCategoryScreen() {
                   <TouchableOpacity
                     key={tab}
                     style={[styles.tab, activeTab === tab && styles.tabActive]}
-                    onPress={() => setActiveTab(tab)}
+                    onPress={() => {
+                      setActiveTab(tab);
+                      setCurrentPage(1);
+                    }}
                   >
                     <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
                       {tab === 'pending' ? `Pending (${myPendingBills.length})` : `Paid (${myPaidBills.length})`}
@@ -1651,18 +1840,40 @@ export default function MaintenanceCategoryScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
-              <ScrollView contentContainerStyle={{ padding: 16 }}
-                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchPramukhData(); }} />}
-              >
-                {(activeTab === 'pending' ? myPendingBills : myPaidBills).length === 0 ? (
-                  <Text style={styles.emptyText}>{activeTab === 'pending' ? 'No pending bills.' : 'No paid bills yet.'}</Text>
-                ) : (
-                  (activeTab === 'pending' ? myPendingBills : myPaidBills).map(record => (
-                    <BillCard key={record.id} record={record} category={cat}
-                      onPay={paying ? () => { } : handlePay} onReceipt={handleReceipt} />
-                  ))
-                )}
-              </ScrollView>
+
+              {loading ? (
+                <View style={{ padding: DesignTokens.spacing.lg }}>
+                  <BillListSkeleton count={5} />
+                </View>
+              ) : (
+                <>
+                  <ScrollView 
+                    contentContainerStyle={{ padding: DesignTokens.spacing.lg }}
+                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchPramukhData(); }} />}
+                  >
+                    {myDisplayedBills.length === 0 ? (
+                      <Text style={styles.emptyText}>{activeTab === 'pending' ? 'No pending bills.' : 'No paid bills yet.'}</Text>
+                    ) : (
+                      myDisplayedBills.map(record => (
+                        <BillCard key={record.id} record={record} category={cat}
+                          onPay={paying ? () => { } : handlePay} onReceipt={handleReceipt} />
+                      ))
+                    )}
+                  </ScrollView>
+
+                  <PaginationControls
+                    currentPage={currentPage}
+                    totalPages={myTotalPages}
+                    onNextPage={nextPage}
+                    onPrevPage={prevPage}
+                    hasNextPage={myHasNextPage}
+                    hasPrevPage={myHasPrevPage}
+                    startIndex={myStartIndex}
+                    endIndex={myEndIndex}
+                    totalItems={myTotalItems}
+                  />
+                </>
+              )}
             </View>
           ) : selectedBill ? (
             // Flat-wise payment status — block grid
@@ -1712,7 +1923,7 @@ export default function MaintenanceCategoryScreen() {
                     <TouchableOpacity
                       key={p.id}
                       style={[styles.flatBlock, { backgroundColor: bgColor }]}
-                      onPress={() => { setFlatDetailRecord(p); setFlatDetailVisible(true); }}
+                      onPress={() => openFlatDetailModal(p)}
                       activeOpacity={0.8}
                     >
                       <Text style={styles.flatBlockNo}>{wing ? `${wing}-` : ''}{flatNo}</Text>
@@ -1791,7 +2002,7 @@ export default function MaintenanceCategoryScreen() {
                   <Ionicons name="chevron-forward" size={18} color={Colors.border} style={{ marginLeft: 4 }} />
                 </TouchableOpacity>
               )}
-              ListEmptyComponent={<Text style={styles.emptyText}>No bills yet. Tap "Create" to add one.</Text>}
+              ListEmptyComponent={<Text style={styles.emptyText}>No bills yet. Tap &quot;Create&quot; to add one.</Text>}
             />
           )}
         </>
@@ -1804,7 +2015,10 @@ export default function MaintenanceCategoryScreen() {
               <TouchableOpacity
                 key={tab}
                 style={[styles.tab, activeTab === tab && styles.tabActive]}
-                onPress={() => setActiveTab(tab)}
+                onPress={() => {
+                  setActiveTab(tab);
+                  setCurrentPage(1);
+                }}
               >
                 <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
                   {tab === 'pending' ? `Pending (${pendingPayments.length})` : `Paid (${paidPayments.length})`}
@@ -1813,31 +2027,51 @@ export default function MaintenanceCategoryScreen() {
             ))}
           </View>
 
-          <ScrollView
-            contentContainerStyle={{ padding: 16 }}
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={() => {
-                setRefreshing(true);
-                fetchUserData();
-              }} />
-            }
-          >
-            {displayedPayments.length === 0 ? (
-              <Text style={styles.emptyText}>
-                {activeTab === 'pending' ? 'No pending bills.' : 'No paid bills yet.'}
-              </Text>
-            ) : (
-              displayedPayments.map(record => (
-                <BillCard
-                  key={record.id}
-                  record={record}
-                  category={cat}
-                  onPay={paying ? () => { } : handlePay}
-                  onReceipt={handleReceipt}
-                />
-              ))
-            )}
-          </ScrollView>
+          {loading ? (
+            <View style={{ padding: DesignTokens.spacing.lg }}>
+              <BillListSkeleton count={5} />
+            </View>
+          ) : (
+            <>
+              <ScrollView
+                contentContainerStyle={{ padding: DesignTokens.spacing.lg }}
+                refreshControl={
+                  <RefreshControl refreshing={refreshing} onRefresh={() => {
+                    setRefreshing(true);
+                    fetchUserData();
+                  }} />
+                }
+              >
+                {displayedPayments.length === 0 ? (
+                  <Text style={styles.emptyText}>
+                    {activeTab === 'pending' ? 'No pending bills.' : 'No paid bills yet.'}
+                  </Text>
+                ) : (
+                  displayedPayments.map(record => (
+                    <BillCard
+                      key={record.id}
+                      record={record}
+                      category={cat}
+                      onPay={paying ? () => { } : handlePay}
+                      onReceipt={handleReceipt}
+                    />
+                  ))
+                )}
+              </ScrollView>
+
+              <PaginationControls
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onNextPage={nextPage}
+                onPrevPage={prevPage}
+                hasNextPage={hasNextPage}
+                hasPrevPage={hasPrevPage}
+                startIndex={startIndex}
+                endIndex={endIndex}
+                totalItems={totalItems}
+              />
+            </>
+          )}
         </View>
       )}
 
@@ -1845,7 +2079,7 @@ export default function MaintenanceCategoryScreen() {
       <PaymentMethodModal
         record={methodModalRecord}
         visible={methodModalVisible}
-        onClose={() => setMethodModalVisible(false)}
+        onClose={closeMethodModal}
         onSelectMethod={handleMethodSelect}
         supportedMethods={methodModalRecord?.building_payment_method?.split(',').map(m => m.trim()).filter(Boolean) || ['Online']}
       />
@@ -1853,12 +2087,9 @@ export default function MaintenanceCategoryScreen() {
       <ChequeUploadModal
         record={chequeModalRecord}
         visible={chequeModalVisible}
-        onClose={() => {
-          setChequeModalVisible(false);
-          setChequeModalRecord(null);
-        }}
+        onClose={closeChequeModal}
         onSuccess={() => {
-          if (isPramukh) fetchPramukhData();
+          if (canManage) fetchPramukhData();
           else fetchUserData();
         }}
       />
@@ -1867,34 +2098,33 @@ export default function MaintenanceCategoryScreen() {
         visible={createVisible}
         category={cat}
         members={members}
-        onClose={() => setCreateVisible(false)}
+        onClose={closeCreateModal}
         onSubmit={handleCreateBill}
         buildingInfo={buildingInfo}
+        kbHeight={kbHeight}
       />
 
       <ExportSheet
         visible={exportVisible}
         billId={exportBillId}
         token={token}
-        onClose={() => setExportVisible(false)}
+        onClose={closeExportModal}
       />
 
       <PaymentDetailModal
         record={selectedRecord || flatDetailRecord}
         visible={detailVisible || flatDetailVisible}
         onClose={() => {
-          setDetailVisible(false);
-          setFlatDetailVisible(false);
-          setSelectedRecord(null);
-          setFlatDetailRecord(null);
+          closeDetailModal();
+          closeFlatDetailModal();
         }}
-        onApprove={isPramukh ? handleApprovePayment : undefined}
+        onApprove={canManage ? handleApprovePayment : undefined}
       />
 
       {/* Edit Bill Modal */}
       <Modal visible={!!editBill} transparent animationType="slide" onRequestClose={() => setEditBill(null)}>
         <View style={detailStyles.overlay}>
-          <View style={detailStyles.sheet}>
+          <View style={[detailStyles.sheet, kbHeight > 0 && { marginBottom: kbHeight }]}>
             <View style={detailStyles.handle} />
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <Text style={detailStyles.title}>Edit Bill</Text>
@@ -1903,7 +2133,7 @@ export default function MaintenanceCategoryScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
               <Text style={formStyles.label}>Description</Text>
               <TextInput
                 style={formStyles.input}
@@ -2027,6 +2257,7 @@ export default function MaintenanceCategoryScreen() {
         </View>
       </Modal>
     </View>
+    </GestureHandlerRootView>
   );
 }
 

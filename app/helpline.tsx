@@ -3,8 +3,9 @@ import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  Modal, TextInput, Alert, ActivityIndicator, RefreshControl, Linking,
+  Modal, TextInput, ActivityIndicator, RefreshControl, Linking,
 } from 'react-native';
+import { Alert } from '../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter , useFocusEffect } from 'expo-router';
 

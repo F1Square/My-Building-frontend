@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView,
-  Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Image
+  ActivityIndicator, KeyboardAvoidingView, Platform, Image
 } from 'react-native';
+import { Alert } from '../../utils/alert';
 import { useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import axios from 'axios';

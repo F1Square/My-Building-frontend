@@ -90,7 +90,6 @@ export default function NoInternetOverlay() {
       visible
       animationType="fade"
       presentationStyle="fullScreen"
-      statusBarTranslucent
       onRequestClose={() => { /* block dismiss — must reconnect or use Try again */ }}
     >
       <StatusBar style="light" />

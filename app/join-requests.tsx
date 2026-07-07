@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import api from '../utils/api';
 import { useMarkNotificationsRead } from '../hooks/useMarkNotificationsRead';
+import { ModuleHeader } from '../components/ModuleHeader';
 
 export default function JoinRequestsScreen() {
   const { t } = useLanguage();
@@ -85,12 +86,7 @@ export default function JoinRequestsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t('joinRequestsTitle')}</Text>
-      </View>
+      <ModuleHeader title={t('joinRequestsTitle')} />
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} size="large" color={Colors.primary} />
       ) : (

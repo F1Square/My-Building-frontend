@@ -13,6 +13,7 @@ import { Colors } from '../constants/colors';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import { cacheManager, CACHE_PRESETS } from '../utils/CacheManager';
+import { ModuleHeader, ModuleHeaderIconButton } from '../components/ModuleHeader';
 
 const LANGUAGES = [
   { key: 'english', label: 'English', flag: '🇬🇧' },
@@ -357,17 +358,12 @@ export default function NewspaperScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>📰 Newspaper</Text>
-        {isAdmin ? (
-          <TouchableOpacity testID="upload-btn" style={styles.uploadBtn} onPress={() => setShowUpload(true)}>
-            <Ionicons name="cloud-upload-outline" size={20} color={Colors.white} />
-          </TouchableOpacity>
-        ) : <View style={{ width: 36 }} />}
-      </View>
+      <ModuleHeader
+        title="📰 Newspaper"
+        rightAction={isAdmin ? (
+          <ModuleHeaderIconButton icon="cloud-upload-outline" onPress={() => setShowUpload(true)} />
+        ) : undefined}
+      />
 
       {/* Language tabs */}
       <View style={styles.langTabs}>

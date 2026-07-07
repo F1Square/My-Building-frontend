@@ -12,6 +12,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import { SkeletonLoader } from '../components/SkeletonLoader';
+import { ModuleHeader, ModuleHeaderIconButton } from '../components/ModuleHeader';
 
 type DetailField = 'phone' | 'flat_no' | 'wing' | 'total_members';
 type Details = Record<DetailField, string>;
@@ -252,19 +253,12 @@ export default function MyDetailsScreen() {
       style={{ flex: 1 }}
     >
       <ScrollView style={styles.container} keyboardShouldPersistTaps="handled" scrollEnabled={!saving}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Ionicons name="arrow-back" size={22} color={Colors.white} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>{t('myDetails')}</Text>
-          {!editing ? (
-            <TouchableOpacity onPress={() => setEditing(true)} style={styles.editBtn}>
-              <Ionicons name="pencil" size={18} color={Colors.white} />
-            </TouchableOpacity>
-          ) : (
-            <View style={{ width: 36 }} />
-          )}
-        </View>
+        <ModuleHeader
+          title={t('myDetails')}
+          rightAction={!editing ? (
+            <ModuleHeaderIconButton icon="pencil" onPress={() => setEditing(true)} size={18} />
+          ) : undefined}
+        />
 
         {authLoading ? (
           <DetailsSkeleton />

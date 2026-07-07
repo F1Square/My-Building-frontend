@@ -16,6 +16,7 @@ import { API_BASE } from '../constants/api';
 import * as WebBrowser from 'expo-web-browser';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
+import { ModuleHeader } from '../components/ModuleHeader';
 
 const MONTHS = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -190,13 +191,7 @@ export default function MyPaymentsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t('paymentHistory')}</Text>
-        <View style={{ width: 36 }} />
-      </View>
+      <ModuleHeader title={t('paymentHistory')} />
 
       {isLocked ? (
         <View style={styles.lockedContainer}>

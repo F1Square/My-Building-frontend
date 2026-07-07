@@ -9,6 +9,7 @@ import { Alert } from '../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import api from '../utils/api';
+import { ModuleHeader } from '../components/ModuleHeader';
 
 export default function InquiriesScreen() {
   const router = useRouter();
@@ -84,13 +85,7 @@ export default function InquiriesScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Building Inquiries</Text>
-        <View style={{ width: 36 }} />
-      </View>
+      <ModuleHeader title="Building Inquiries" />
 
       <View style={styles.searchBox}>
         <Ionicons name="search-outline" size={16} color={Colors.textMuted} style={{ marginRight: 8 }} />

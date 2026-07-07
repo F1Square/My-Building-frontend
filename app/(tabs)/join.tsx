@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../utils/api';
+import { ModuleHeader } from '../../components/ModuleHeader';
 
 export default function JoinBuildingScreen() {
   const { user, refreshUser } = useAuth();
@@ -78,12 +79,7 @@ export default function JoinBuildingScreen() {
   if (submitted) {
     return (
       <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Ionicons name="arrow-back" size={22} color={Colors.white} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Join Building</Text>
-        </View>
+        <ModuleHeader title="Join Building" />
         <View style={styles.successContainer}>
           <View style={styles.successIcon}>
             <Ionicons name="checkmark-circle" size={72} color={Colors.success} />
@@ -106,12 +102,7 @@ export default function JoinBuildingScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Join a Building</Text>
-      </View>
+      <ModuleHeader title="Join a Building" />
 
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.infoCard}>

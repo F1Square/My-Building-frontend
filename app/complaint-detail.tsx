@@ -8,6 +8,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { useActivityLog } from '../hooks/useActivityLog';
 import * as ImagePicker from 'expo-image-picker';
 import api from '../utils/api';
+import { ModuleHeader } from '../components/ModuleHeader';
 
 const CATEGORIES = ['General', 'Water', 'Electricity', 'Cleanliness', 'Security', 'Parking', 'Noise', 'Other'];
 const CAT_ICONS: Record<string, string> = {
@@ -139,12 +140,7 @@ export default function ComplaintDetailScreen() {
   };
 
   const renderHeader = () => (
-    <View style={styles.header}>
-      <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-        <Ionicons name="arrow-back" size={24} color={Colors.white} />
-      </TouchableOpacity>
-      <Text style={styles.headerTitle}>Complaint Detail</Text>
-    </View>
+    <ModuleHeader title="Complaint Detail" />
   );
 
   if (loading) {

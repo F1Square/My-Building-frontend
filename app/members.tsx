@@ -9,6 +9,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import api from '../utils/api';
+import { ModuleHeader } from '../components/ModuleHeader';
 
 type Member = {
   id: string;
@@ -222,18 +223,10 @@ export default function MembersScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>{t('members')}</Text>
-          <Text style={styles.headerSub}>
-            {filtered.length} of {members.length} members
-            {selectedWing !== 'All' ? ` · Wing ${selectedWing}` : ''}
-          </Text>
-        </View>
-      </View>
+      <ModuleHeader
+        title={t('members')}
+        subtitle={`${filtered.length} of ${members.length} members${selectedWing !== 'All' ? ` · Wing ${selectedWing}` : ''}`}
+      />
 
       {/* Search */}
       <View style={styles.searchBox}>

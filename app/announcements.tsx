@@ -15,6 +15,7 @@ import { useBuildings, Building } from '../hooks/useBuildings';
 import { useMarkNotificationsRead } from '../hooks/useMarkNotificationsRead';
 import { cacheManager, CACHE_PRESETS } from '../utils/CacheManager';
 import AnnouncementDetailModal, { Announcement } from '../components/AnnouncementDetailModal';
+import { ModuleHeader, ModuleHeaderIconButton } from '../components/ModuleHeader';
 
 export default function AnnouncementsScreen() {
   const { user } = useAuth();
@@ -121,19 +122,10 @@ export default function AnnouncementsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t('announcements')}</Text>
-        {canPost ? (
-          <TouchableOpacity style={styles.addBtn} onPress={() => setShowAdd(true)}>
-            <Ionicons name="add" size={22} color={Colors.white} />
-          </TouchableOpacity>
-        ) : (
-          <View style={{ width: 36 }} />
-        )}
-      </View>
+      <ModuleHeader
+        title={t('announcements')}
+        rightAction={canPost ? <ModuleHeaderIconButton icon="add" onPress={() => setShowAdd(true)} /> : undefined}
+      />
 
       {isAdmin && (
         <View style={styles.filterBar}>

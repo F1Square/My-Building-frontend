@@ -9,6 +9,7 @@ import { useRouter } from 'expo-router';
 import { Colors } from '../constants/colors';
 import api from '../utils/api';
 import * as ImagePicker from 'expo-image-picker';
+import { ModuleHeader } from '../components/ModuleHeader';
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 const SOCIETY_TYPES = ['Apartment Complex', 'Gated Community', 'Township', 'Co-operative Housing', 'Villa Society', 'Other'];
@@ -186,13 +187,7 @@ export default function RegisterBuildingScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Register Your Building</Text>
-        <View style={{ width: 36 }} />
-      </View>
+      <ModuleHeader title="Register Your Building" />
 
       {/* Step indicator */}
       <View style={styles.stepBar}>

@@ -9,6 +9,7 @@ import { Alert } from '../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import api from '../utils/api';
+import { ModuleHeader } from '../components/ModuleHeader';
 
 const DEFAULT_ACCENT = Colors.primary;
 
@@ -338,13 +339,7 @@ export default function SubscriptionsAdminScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Subscriptions</Text>
-        <View style={{ width: 36 }} />
-      </View>
+      <ModuleHeader title="Subscriptions" />
 
       <View style={styles.tabRow}>
         <TouchableOpacity style={[styles.tabChip, tab === 'members' && styles.tabChipOn]} onPress={() => setTab('members')}>

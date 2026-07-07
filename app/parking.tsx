@@ -15,6 +15,7 @@ import BuildingDropdown from '../components/BuildingDropdown';
 import type { Building } from '../hooks/useBuildings';
 import { useActivityLog } from '../hooks/useActivityLog';
 import ParkingReportDetailModal, { ParkingReport } from '../components/ParkingReportDetailModal';
+import { ModuleHeader, ModuleHeaderIconButton, ModuleHeaderTextButton } from '../components/ModuleHeader';
 
 type Tab = 'vehicles' | 'reports';
 
@@ -338,23 +339,21 @@ export default function ParkingScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t('parking')}</Text>
-        <View style={styles.headerActions}>
-          {user?.role === 'user' && (
-            <TouchableOpacity style={styles.headerBtn} onPress={() => setShowAddVehicle(true)}>
-              <Ionicons name="add" size={22} color={Colors.white} />
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity style={styles.headerReportBtn} onPress={() => setShowReport(true)}>
-            <Ionicons name="warning" size={16} color={Colors.white} />
-            <Text style={styles.headerReportBtnText}>{t('report')}</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+      <ModuleHeader
+        title={t('parking')}
+        rightAction={
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            {user?.role === 'user' && (
+              <ModuleHeaderIconButton icon="add" onPress={() => setShowAddVehicle(true)} />
+            )}
+            <ModuleHeaderTextButton
+              icon="warning"
+              label={t('report')}
+              onPress={() => setShowReport(true)}
+            />
+          </View>
+        }
+      />
 
       {/* Admin building filter */}
       {isAdmin && (

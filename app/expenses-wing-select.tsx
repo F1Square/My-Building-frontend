@@ -11,6 +11,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import BuildingDropdown from '../components/BuildingDropdown';
 import { useBuildings, type Building } from '../hooks/useBuildings';
+import { ModuleHeader } from '../components/ModuleHeader';
 
 type Wing = {
   wing: string;
@@ -94,18 +95,10 @@ export default function ExpensesWingSelectScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>{t('expenses')}</Text>
-          <Text style={styles.headerSub}>
-            {isAdmin && selectedBuilding ? selectedBuilding.name : 'Select Wing'}
-          </Text>
-        </View>
-        <View style={{ width: 36 }} />
-      </View>
+      <ModuleHeader
+        title={t('expenses')}
+        subtitle={isAdmin && selectedBuilding ? selectedBuilding.name : 'Select Wing'}
+      />
 
       {/* Admin Building Selection */}
       {isAdmin && (

@@ -8,9 +8,11 @@ import { Alert } from '../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
 import api from '../utils/api';
 import { useBuildings, Building } from '../hooks/useBuildings';
 import BuildingDropdown from '../components/BuildingDropdown';
+import { ModuleHeader, ModuleHeaderIconButton } from '../components/ModuleHeader';
 
 const RULE_CATEGORIES = ['General', 'Parking', 'Noise', 'Cleanliness', 'Security', 'Pets', 'Guests', 'Other'];
 
@@ -45,6 +47,7 @@ type Rule = {
 
 export default function SocietyRulesScreen() {
   const router = useRouter();
+  const { t } = useLanguage();
   const { user, hasActiveSubscription } = useAuth();
   const isAdmin = user?.role === 'admin';
   const isPramukh = user?.role === 'pramukh';
@@ -182,22 +185,11 @@ export default function SocietyRulesScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Society Rules</Text>
-          <Text style={styles.headerSub}>
-            {isAdmin ? (selectedBuilding?.name || 'Select a society') : `${rules.length} rule${rules.length !== 1 ? 's' : ''}`}
-          </Text>
-        </View>
-        {canEdit && showContent && !isLocked && (
-          <TouchableOpacity style={styles.addBtn} onPress={openAdd}>
-            <Ionicons name="add" size={22} color={Colors.white} />
-          </TouchableOpacity>
-        )}
-      </View>
+      <ModuleHeader
+        title={t('societyRules')}
+        subtitle={isAdmin ? (selectedBuilding?.name || 'Select a society') : `${rules.length} rule${rules.length !== 1 ? 's' : ''}`}
+        rightAction={canEdit && showContent && !isLocked ? <ModuleHeaderIconButton icon="add" onPress={openAdd} /> : undefined}
+      />
 
       {/* Admin: building dropdown */}
       {isAdmin && (

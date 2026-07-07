@@ -12,6 +12,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import BuildingDropdown from '../components/BuildingDropdown';
 import { useBuildings, Building } from '../hooks/useBuildings';
+import { ModuleHeader, ModuleHeaderTextButton } from '../components/ModuleHeader';
 
 function Row({ icon, label, value, mono }: { icon: any; label: string; value: string; mono?: boolean }) {
   
@@ -113,20 +114,16 @@ export default function BankDetailsScreen() {
   return (
     <View style={styles.container}>
       {/* Fixed Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t('bankDetails')}</Text>
-        {activeBuildingId ? (
-          <TouchableOpacity style={styles.editBtn} onPress={() => setEditing(!editing)}>
-            <Ionicons name={editing ? 'close' : 'create-outline'} size={20} color={Colors.white} />
-            <Text style={styles.editBtnText}>{editing ? 'Cancel' : 'Edit'}</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.editBtn} />
-        )}
-      </View>
+      <ModuleHeader
+        title={t('bankDetails')}
+        rightAction={activeBuildingId ? (
+          <ModuleHeaderTextButton
+            icon={editing ? 'close' : 'create-outline'}
+            label={editing ? 'Cancel' : 'Edit'}
+            onPress={() => setEditing(!editing)}
+          />
+        ) : undefined}
+      />
 
       {/* Fixed Admin building selector */}
       {isAdmin && (

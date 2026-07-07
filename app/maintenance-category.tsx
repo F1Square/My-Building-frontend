@@ -22,6 +22,7 @@ import { useMaintenanceStore } from '../stores/maintenanceStore';
 import { usePagination } from '../hooks/usePagination';
 import { BillListSkeleton } from '../components/SkeletonLoader';
 import { PaginationControls } from '../components/PaginationControls';
+import { ModuleHeader, ModuleHeaderTextButton } from '../components/ModuleHeader';
 
 type BillingCategory = 'maintenance' | 'water_meter' | 'special';
 
@@ -1757,42 +1758,36 @@ export default function MaintenanceCategoryScreen() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => {
+      <ModuleHeader
+        title={headerTitle}
+        subtitle={
+          canManage
+            ? selectedBill ? selectedBill.description : (isAdmin && building_name ? building_name : 'Manage bills')
+            : 'Your bills'
+        }
+        onBack={() => {
           if (selectedBill && canManage) {
             setSelectedBill(null);
             setBillPayments([]);
           } else {
             router.back();
           }
-        }} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>{headerTitle}</Text>
-          <Text style={styles.headerSub}>
-            {canManage
-              ? selectedBill ? selectedBill.description : (isAdmin && building_name ? building_name : 'Manage bills')
-              : 'Your bills'
-            }
-          </Text>
-        </View>
-        {canManage && !selectedBill && (
-          <TouchableOpacity style={styles.createBtn} onPress={openCreateModal}>
-            <Ionicons name="add" size={20} color={Colors.white} />
-            <Text style={styles.createBtnText}>Create</Text>
-          </TouchableOpacity>
-        )}
-        {canManage && selectedBill && (
-          <TouchableOpacity style={styles.createBtn} onPress={() => {
-            setExportBillId(selectedBill.id);
-            openExportModal();
-          }}>
-            <Ionicons name="share-outline" size={18} color={Colors.white} />
-            <Text style={styles.createBtnText}>Export</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+        }}
+        rightAction={
+          canManage && !selectedBill ? (
+            <ModuleHeaderTextButton icon="add" label="Create" onPress={openCreateModal} />
+          ) : canManage && selectedBill ? (
+            <ModuleHeaderTextButton
+              icon="share-outline"
+              label="Export"
+              onPress={() => {
+                setExportBillId(selectedBill.id);
+                openExportModal();
+              }}
+            />
+          ) : undefined
+        }
+      />
 
       {loading ? (
         <View style={{ padding: DesignTokens.spacing.lg }}>

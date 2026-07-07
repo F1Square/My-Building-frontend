@@ -16,7 +16,8 @@ import { cacheManager } from '../../utils/CacheManager';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-const CARD_SIZE = (SCREEN_W - 48) / 3;
+/** Shared horizontal inset so header + module grid align on both sides */
+const SCREEN_PADDING = 20;
 
 const GATED_ROUTES = [
   '/maintenance', '/announcements', '/visitors',
@@ -163,7 +164,9 @@ export default function HomeScreen() {
     if (m.adminOnly && user?.role !== 'admin') return false;
     if (m.pramukhOnly && user?.role !== 'pramukh') return false;
     return true;
-  }).map(m => ({ ...m, title: t(m.titleKey) }));
+  })
+    .map(m => ({ ...m, title: t(m.titleKey) }))
+    .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
 
   const filteredModules = search.trim()
     ? modules.filter(m => m.title.toLowerCase().includes(search.toLowerCase()))
@@ -487,7 +490,7 @@ const styles = StyleSheet.create({
 
   // ── Gradient header (FIXED) ──────────────────────────────────────────────
   gradientHeader: {
-    paddingTop: 56, paddingBottom: 24, paddingHorizontal: 20,
+    paddingTop: 56, paddingBottom: 24, paddingHorizontal: SCREEN_PADDING,
     borderBottomLeftRadius: 28, borderBottomRightRadius: 28,
     backgroundColor: '#3B5FC0',
   },
@@ -550,11 +553,13 @@ const styles = StyleSheet.create({
   },
 
   // ── Module grid ──────────────────────────────────────────────────────────
-  gridSection: { paddingHorizontal: 16, paddingTop: 24 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 0 },
+  gridSection: { paddingHorizontal: SCREEN_PADDING, paddingTop: 24 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', width: '100%' },
   moduleCard: {
-    width: CARD_SIZE, alignItems: 'center',
-    paddingVertical: 18, paddingHorizontal: 4,
+    width: '33.333%',
+    alignItems: 'center',
+    paddingVertical: 18,
+    paddingHorizontal: 4,
   },
   moduleIconCircle: {
     width: 64, height: 64, borderRadius: 32,

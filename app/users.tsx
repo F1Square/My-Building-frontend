@@ -13,6 +13,7 @@ import { useBuildings } from '../hooks/useBuildings';
 import type { Building } from '../hooks/useBuildings';
 import MemberDetailModal, { type Member } from '../components/MemberDetailModal';
 import { useMemberActions } from '../hooks/useMemberActions';
+import { ModuleHeader, ModuleHeaderTextButton } from '../components/ModuleHeader';
 
 const ROLES = ['user', 'pramukh'];
 
@@ -151,19 +152,17 @@ export default function UsersScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Users</Text>
-          <Text style={styles.headerSub}>{users.length} {users.length === 1 ? 'account' : 'accounts'}</Text>
-        </View>
-        <TouchableOpacity style={styles.addBtn} onPress={() => setShowAdd(true)}>
-          <Ionicons name="person-add" size={18} color={Colors.white} />
-          <Text style={styles.addBtnText}>Add</Text>
-        </TouchableOpacity>
-      </View>
+      <ModuleHeader
+        title="Users"
+        subtitle={`${users.length} ${users.length === 1 ? 'account' : 'accounts'}`}
+        rightAction={
+          <ModuleHeaderTextButton
+            icon="person-add"
+            label="Add"
+            onPress={() => setShowAdd(true)}
+          />
+        }
+      />
 
       {/* Search + filters */}
       <View style={styles.filterSection}>

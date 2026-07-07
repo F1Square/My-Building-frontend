@@ -11,6 +11,7 @@ import { useRouter , useFocusEffect } from 'expo-router';
 import { Colors } from '../constants/colors';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
+import { ModuleHeader } from '../components/ModuleHeader';
 
 type Referral = {
   id: string;
@@ -208,13 +209,7 @@ export default function ReferAndEarnScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{isAdmin ? 'Refer & Earn — Admin' : 'Refer & Earn'}</Text>
-        <View style={{ width: 36 }} />
-      </View>
+      <ModuleHeader title={isAdmin ? 'Refer & Earn — Admin' : 'Refer & Earn'} />
 
       {isLocked ? (
         <View style={styles.lockedContainer}>

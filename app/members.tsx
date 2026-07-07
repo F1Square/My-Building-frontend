@@ -4,12 +4,13 @@ import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TextInput,
   TouchableOpacity, ActivityIndicator, RefreshControl,
-  Linking, ScrollView, Modal,
+  ScrollView, Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import api from '../utils/api';
 import { ModuleHeader } from '../components/ModuleHeader';
+import { openPhoneDialer, openWhatsApp } from '../utils/phoneLinks';
 
 type Member = {
   id: string;
@@ -192,7 +193,7 @@ export default function MembersScreen() {
               {m.phone ? (
                 <TouchableOpacity
                   style={[styles.actionBtn, { backgroundColor: Colors.primary }]}
-                  onPress={() => Linking.openURL(`tel:${m.phone}`)}
+                  onPress={() => openPhoneDialer(m.phone)}
                 >
                   <Ionicons name="call" size={18} color="#fff" />
                   <Text style={styles.actionBtnText}>Call</Text>
@@ -201,7 +202,7 @@ export default function MembersScreen() {
               {m.phone ? (
                 <TouchableOpacity
                   style={[styles.actionBtn, { backgroundColor: '#25D366' }]}
-                  onPress={() => Linking.openURL(`whatsapp://send?phone=${m.phone}`)}
+                  onPress={() => openWhatsApp(m.phone)}
                 >
                   <Ionicons name="logo-whatsapp" size={18} color="#fff" />
                   <Text style={styles.actionBtnText}>WhatsApp</Text>

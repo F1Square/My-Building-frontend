@@ -83,7 +83,7 @@ export default function ReferAndEarnScreen() {
   const shareCode = () => {
     if (!referralCode) return;
     Share.share({
-      message: `Join My Building app! Use my referral code ${referralCode} when registering your society to earn rewards.`,
+      message: `Register your society on My Building! Use my referral code ${referralCode} when you submit your society registration.`,
     });
   };
 

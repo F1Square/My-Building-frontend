@@ -62,6 +62,7 @@ const en: Record<string, string> = {
   grantSub: 'Grant Sub', subscriptions: 'Subscriptions',
   promoCodes: 'Promo Codes', activityLogs: 'Activity Logs',
   referAndEarn: 'Refer & Earn',
+  helpSupport: 'Help & Support',
   newspaper: 'Newspaper',
   societyRules: 'Society Rules',
 
@@ -251,6 +252,7 @@ const hi: Record<string, string> = {
   inquiries: 'पूछताछ', webInquiries: 'वेब पूछताछ', grantSub: 'सदस्यता दें',
   subscriptions: 'सदस्यताएं', promoCodes: 'प्रोमो कोड',
   activityLogs: 'गतिविधि लॉग', referAndEarn: 'रेफर करें और कमाएं',
+  helpSupport: 'सहायता और समर्थन',
   newspaper: 'समाचार पत्र',
   societyRules: 'सोसायटी नियम',
   maintenanceBills: 'रखरखाव बिल', myBills: 'मेरे बिल',
@@ -399,6 +401,7 @@ const gu: Record<string, string> = {
   inquiries: 'પૂછપરછ', webInquiries: 'વેબ પૂછપરછ', grantSub: 'સબ્સ્ક્રિપ્શન આપો',
   subscriptions: 'સભ્યપદો', promoCodes: 'પ્રોમો કોડ',
   activityLogs: 'પ્રવૃત્તિ લૉગ', referAndEarn: 'રેફર કરો અને કમાઓ',
+  helpSupport: 'મદદ અને સહાય',
   newspaper: 'સમાચારપત્ર',
   societyRules: 'સોસાયટી નિયમો',
   maintenanceBills: 'જાળવણી બિલ', myBills: 'મારા બિલ',

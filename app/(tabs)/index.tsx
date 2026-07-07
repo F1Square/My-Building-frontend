@@ -58,6 +58,7 @@ const MODULE_PALETTE: Record<string, { bg: string; icon: string }> = {
   promoCodes: { bg: '#FDE8E8', icon: '#EF4444' },
   activityLogs: { bg: '#F1F5F9', icon: '#475569' },
   referAndEarn: { bg: '#FFF0F5', icon: '#EC4899' },
+  helpSupport: { bg: '#E0F7F4', icon: '#0D9488' },
   newspaper: { bg: '#FFF7ED', icon: '#EA580C' },
   societyRules: { bg: '#F0FDF4', icon: '#16A34A' },
 };
@@ -75,6 +76,7 @@ const MODULE_ICONS: Record<string, string> = {
   subscriptions: 'card-outline', promoCodes: 'pricetag-outline',
   activityLogs: 'list-circle-outline',
   referAndEarn: 'gift-outline',
+  helpSupport: 'help-circle-outline',
   newspaper: 'newspaper-outline',
   societyRules: 'book-outline',
 };
@@ -153,6 +155,7 @@ export default function HomeScreen() {
     { titleKey: 'subscriptions', route: '/subscriptions-admin', adminOnly: true },
     { titleKey: 'promoCodes', route: '/promos', adminOnly: true },
     { titleKey: 'activityLogs', route: '/activity-logs', adminOnly: true },
+    { titleKey: 'helpSupport', route: '/help-support-admin', adminOnly: true },
     { titleKey: 'referAndEarn', route: '/refer-and-earn' },
     { titleKey: 'newspaper', route: '/newspaper' },
     { titleKey: 'societyRules', route: '/society-rules' },
@@ -301,8 +304,13 @@ export default function HomeScreen() {
             <TouchableOpacity onPress={() => router.push('/profile' as any)} style={styles.avatarCircle}>
               <Text style={styles.avatarText}>{user?.name?.[0]?.toUpperCase()}</Text>
             </TouchableOpacity>
-            <Text style={styles.greetingText}>{t('welcome')} {user?.name}</Text>
+            {(user?.role === 'user' || user?.role === 'pramukh') && (
+              <TouchableOpacity onPress={() => router.push('/help-support' as any)} style={styles.bellBtn}>
+                <Ionicons name="help-circle-outline" size={22} color={Colors.white} />
+              </TouchableOpacity>
+            )}
           </View>
+          <Text style={styles.greetingText}>{t('welcome')} {user?.name}</Text>
         </View>
         <View style={styles.pendingContainer}>
           <Ionicons name="business-outline" size={64} color={Colors.primary} style={{ marginBottom: 16 }} />
@@ -340,16 +348,23 @@ export default function HomeScreen() {
               <Text style={styles.avatarText}>{user?.name?.[0]?.toUpperCase()}</Text>
             )}
           </TouchableOpacity>
-          <TouchableOpacity onPress={openUrgentInbox} style={styles.bellBtn}>
-            <Ionicons name="notifications-outline" size={22} color={Colors.white} />
-            {totalUnread > 0 && (
-              <View style={styles.bellBadge}>
-                <Text style={styles.bellBadgeText}>
-                  {totalUnread > 9 ? '9+' : totalUnread}
-                </Text>
-              </View>
+          <View style={styles.headerActions}>
+            {(user?.role === 'user' || user?.role === 'pramukh') && (
+              <TouchableOpacity onPress={() => router.push('/help-support' as any)} style={styles.bellBtn}>
+                <Ionicons name="help-circle-outline" size={22} color={Colors.white} />
+              </TouchableOpacity>
             )}
-          </TouchableOpacity>
+            <TouchableOpacity onPress={openUrgentInbox} style={styles.bellBtn}>
+              <Ionicons name="notifications-outline" size={22} color={Colors.white} />
+              {totalUnread > 0 && (
+                <View style={styles.bellBadge}>
+                  <Text style={styles.bellBadgeText}>
+                    {totalUnread > 9 ? '9+' : totalUnread}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Greeting */}
@@ -495,6 +510,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#3B5FC0',
   },
   headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   avatarCircle: {
     width: 48, height: 48, borderRadius: 24,
     backgroundColor: 'rgba(255,255,255,0.3)',

@@ -9,6 +9,7 @@ import { useRouter } from 'expo-router';
 import { Colors } from '../constants/colors';
 import api from '../utils/api';
 import * as ImagePicker from 'expo-image-picker';
+import { ModuleHeader } from '../components/ModuleHeader';
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 const SOCIETY_TYPES = ['Apartment Complex', 'Gated Community', 'Township', 'Co-operative Housing', 'Villa Society', 'Other'];
@@ -126,6 +127,7 @@ export default function RegisterBuildingScreen() {
     // Basic
     society_type: '', society_name: '', total_wings: '',
     society_logo: '',
+    referral_code: '',
     // Location
     state: '', city: '', pincode: '', address: '',
     // Financials
@@ -166,9 +168,17 @@ export default function RegisterBuildingScreen() {
   };
 
   const submit = async () => {
+    const refCode = form.referral_code.trim().toUpperCase().replace(/\s/g, '');
+    if (refCode && !/^[A-Z0-9]{4,12}$/.test(refCode)) {
+      return Alert.alert('Invalid Referral Code', 'Referral code must be 4–12 letters or digits.');
+    }
+
     setSubmitting(true);
     try {
-      await api.post('/inquiries', form);
+      await api.post('/inquiries', {
+        ...form,
+        referral_code: refCode || undefined,
+      });
       Alert.alert(
         'Submitted!',
         'Your building registration request has been received. Our admin will review and set up your society.',
@@ -186,13 +196,7 @@ export default function RegisterBuildingScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Register Your Building</Text>
-        <View style={{ width: 36 }} />
-      </View>
+      <ModuleHeader title="Register Your Building" />
 
       {/* Step indicator */}
       <View style={styles.stepBar}>
@@ -230,6 +234,27 @@ export default function RegisterBuildingScreen() {
               }
             </TouchableOpacity>
             {logoError ? <Text style={styles.logoError}>{logoError}</Text> : null}
+
+            <View style={styles.referralLabelRow}>
+              <Text style={styles.label}>Referral Code</Text>
+              <Text style={styles.optionalTag}>Optional</Text>
+            </View>
+            <View style={styles.referralRow}>
+              <Ionicons name="gift-outline" size={18} color={Colors.primary} style={{ marginLeft: 12 }} />
+              <TextInput
+                style={styles.referralInput}
+                value={form.referral_code}
+                onChangeText={v => set('referral_code', v.toUpperCase().replace(/\s/g, ''))}
+                placeholder="Friend's referral code"
+                autoCapitalize="characters"
+                autoCorrect={false}
+                maxLength={12}
+                placeholderTextColor={Colors.textMuted}
+              />
+            </View>
+            <Text style={styles.referralHint}>
+              Have a referral code? Enter it here when registering your society so your friend earns rewards.
+            </Text>
           </View>
         )}
 
@@ -373,4 +398,9 @@ const styles = StyleSheet.create({
   infoNoteText: { fontSize: 13, color: Colors.primary, flex: 1, lineHeight: 18 },
   charCount: { fontSize: 11, color: Colors.textMuted, textAlign: 'right', marginTop: -10, marginBottom: 14 },
   charCountWarn: { color: Colors.danger },
+  referralLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, marginTop: 4 },
+  optionalTag: { fontSize: 11, fontWeight: '600', color: Colors.textMuted, backgroundColor: Colors.bg, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  referralRow: { flexDirection: 'row', alignItems: 'center', borderWidth: 1.5, borderColor: Colors.border, borderRadius: 10, backgroundColor: Colors.bg, marginBottom: 6 },
+  referralInput: { flex: 1, padding: 12, fontSize: 15, color: Colors.text, letterSpacing: 2 },
+  referralHint: { fontSize: 11, color: Colors.textMuted, marginBottom: 4, lineHeight: 16 },
 });

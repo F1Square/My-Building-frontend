@@ -13,6 +13,7 @@ import api from '../utils/api';
 import BuildingDropdown from '../components/BuildingDropdown';
 import type { Building } from '../hooks/useBuildings';
 import { useBuildings } from '../hooks/useBuildings';
+import { ModuleHeader, ModuleHeaderIconButton } from '../components/ModuleHeader';
 
 const CATEGORIES = ['General', 'Water', 'Electricity', 'Cleanliness', 'Security', 'Parking', 'Noise', 'Other'];
 
@@ -262,18 +263,13 @@ export default function AdminComplaintsScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>{t('complaints')}</Text>
-          <Text style={styles.headerSub}>{complaints.length} total complaint{complaints.length !== 1 ? 's' : ''}</Text>
-        </View>
-        <TouchableOpacity style={styles.addBtn} onPress={() => setShowAdd(true)}>
-          <Ionicons name="add" size={22} color={Colors.white} />
-        </TouchableOpacity>
-      </View>
+      <ModuleHeader
+        title={t('complaints')}
+        subtitle={`${complaints.length} total complaint${complaints.length !== 1 ? 's' : ''}`}
+        rightAction={
+          <ModuleHeaderIconButton icon="add" onPress={() => setShowAdd(true)} size={22} />
+        }
+      />
 
       {loading ? (
         <ActivityIndicator style={{ marginTop: 60 }} size="large" color={Colors.primary} />

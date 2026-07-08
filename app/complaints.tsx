@@ -15,6 +15,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ModuleHeader } from '../components/ModuleHeader';
 
 const CATEGORIES = ['General', 'Water', 'Electricity', 'Cleanliness', 'Security', 'Parking', 'Noise', 'Other'];
 
@@ -291,15 +292,10 @@ export default function ComplaintsScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>{screenTitle}</Text>
-          <Text style={styles.headerSub}>{complaints.length} total complaint{complaints.length !== 1 ? 's' : ''}</Text>
-        </View>
-      </View>
+      <ModuleHeader
+        title={screenTitle}
+        subtitle={`${complaints.length} total complaint${complaints.length !== 1 ? 's' : ''}`}
+      />
 
       {/* Subscription gate */}
       {isLocked ? (

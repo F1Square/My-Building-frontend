@@ -14,6 +14,7 @@ import { useMarkNotificationsRead } from '../hooks/useMarkNotificationsRead';
 import { useActivityLog } from '../hooks/useActivityLog';
 import { useBuildings, Building } from '../hooks/useBuildings';
 import BuildingDropdown from '../components/BuildingDropdown';
+import { ModuleHeader } from '../components/ModuleHeader';
 import { cacheManager, CACHE_PRESETS } from '../utils/CacheManager';
 
 type BillingCategory = 'maintenance' | 'water_meter' | 'special';
@@ -180,17 +181,10 @@ export default function MaintenanceScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>{t('maintenance')}</Text>
-          <Text style={styles.headerSub}>
-            {isAdmin ? (selectedBuilding ? selectedBuilding.name : 'Select a society') : 'Select a billing category'}
-          </Text>
-        </View>
-      </View>
+      <ModuleHeader
+        title={t('maintenance')}
+        subtitle={isAdmin ? (selectedBuilding ? selectedBuilding.name : 'Select a society') : 'Select a billing category'}
+      />
 
       <ScrollView
         contentContainerStyle={styles.content}

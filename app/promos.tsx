@@ -9,6 +9,7 @@ import { useRouter , useFocusEffect } from 'expo-router';
 
 import { Colors } from '../constants/colors';
 import api from '../utils/api';
+import { ModuleHeader, ModuleHeaderIconButton } from '../components/ModuleHeader';
 
 type Promo = {
   id: string; code: string; type: 'percent' | 'flat';
@@ -125,15 +126,12 @@ export default function PromosScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Promo Codes</Text>
-        <TouchableOpacity style={styles.addBtn} onPress={() => setShowCreate(true)}>
-          <Ionicons name="add" size={24} color={Colors.white} />
-        </TouchableOpacity>
-      </View>
+      <ModuleHeader
+        title="Promo Codes"
+        rightAction={
+          <ModuleHeaderIconButton icon="add" onPress={() => setShowCreate(true)} size={24} />
+        }
+      />
 
       {/* Stats */}
       <View style={styles.statsRow}>

@@ -10,6 +10,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
+import { entryMatchesMonthYear, formatExpenseDate, localDateString, parseExpenseDateParts } from '../utils/expenseDate';
+import { ExpenseDatePicker } from '../components/ExpenseDatePicker';
+import { ModuleHeader, ModuleHeaderIconButton } from '../components/ModuleHeader';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -17,6 +20,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 type Entry = {
   id: string; type: 'inflow' | 'outflow'; amount: number;
   description: string; category: string | null; date: string;
+  created_at?: string;
   is_edited: boolean; edited_at: string | null;
   added_by_user?: { name: string; role: string } | null;
   edited_by_user?: { name: string } | null;
@@ -64,7 +68,7 @@ export default function ExpensesDetailScreen() {
     amount: '',
     description: '',
     category: '',
-    date: new Date().toISOString().slice(0, 10)
+    date: localDateString()
   });
   const [submitting, setSubmitting] = useState(false);
   const [typeFilter, setTypeFilter] = useState<'all' | 'inflow' | 'outflow'>('all');
@@ -106,15 +110,14 @@ export default function ExpensesDetailScreen() {
     finally { setLoading(false); setRefreshing(false); }
   };
 
-  useFocusEffect(useCallback(() => { fetchData(); }, [buildingId, wing]));
+  useFocusEffect(useCallback(() => { fetchData(); }, [buildingId, wingName]));
 
   const filtered = useMemo(() => {
     let result = entries;
     if (typeFilter !== 'all') result = result.filter(e => e.type === typeFilter);
-    result = result.filter(e => {
-      const d = new Date(e.date);
-      return d.getMonth() === selectedMonth && d.getFullYear() === selectedYear;
-    });
+    result = result.filter(e =>
+      entryMatchesMonthYear(e.date, e.created_at, selectedMonth, selectedYear),
+    );
     return result;
   }, [entries, typeFilter, selectedMonth, selectedYear]);
 
@@ -157,13 +160,24 @@ export default function ExpensesDetailScreen() {
     try {
       const res = await api.post('/expenses/entries', {
         ...form,
+        amount: parseFloat(form.amount),
         building_id: buildingId,
         wing: wingName,
       });
-      setEntries(prev => [res.data.entry, ...prev]);
+      const added = res.data?.entry;
+      if (added) {
+        setEntries(prev => [added, ...prev.filter(e => e.id !== added.id)]);
+      } else {
+        await fetchData();
+      }
+      const parts = parseExpenseDateParts(form.date, localDateString());
+      if (parts) {
+        setSelectedMonth(parts.month);
+        setSelectedYear(parts.year);
+      }
       setSummary((prev: any) => ({ ...prev, current_balance: res.data.current_balance }));
       setShowAdd(false);
-      setForm({ type: 'outflow', amount: '', description: '', category: '', date: new Date().toISOString().slice(0, 10) });
+      setForm({ type: 'outflow', amount: '', description: '', category: '', date: localDateString() });
       ToastAndroid.show('Entry added', ToastAndroid.SHORT);
     } catch (e: any) {
       ToastAndroid.show(e.response?.data?.error || 'Failed to add entry', ToastAndroid.LONG);
@@ -242,7 +256,7 @@ export default function ExpensesDetailScreen() {
           </View>
           <View style={styles.entryMeta}>
             {item.category ? <View style={styles.catTag}><Text style={styles.catTagText}>{item.category}</Text></View> : null}
-            <Text style={styles.entryDate}>{new Date(item.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</Text>
+            <Text style={styles.entryDate}>{formatExpenseDate(item.date, item.created_at)}</Text>
             {item.is_edited && !isAdmin ? (
               <View style={styles.editedTag}>
                 <Ionicons name="pencil" size={10} color="#7C3AED" />
@@ -271,24 +285,11 @@ export default function ExpensesDetailScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>{t('expenses')}</Text>
-          <Text style={styles.headerSub}>
-            {isAdmin && building_name ? `${building_name} • ${wingName}` : wingName}
-          </Text>
-        </View>
-        <View style={styles.headerActions}>
-          {canManage && (
-            <TouchableOpacity style={styles.headerBtn} onPress={() => setShowAdd(true)}>
-              <Ionicons name="add" size={22} color={Colors.white} />
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
+      <ModuleHeader
+        title={t('expenses')}
+        subtitle={isAdmin && building_name ? `${building_name} • ${wingName}` : wingName}
+        rightAction={canManage ? <ModuleHeaderIconButton icon="add" onPress={() => setShowAdd(true)} /> : undefined}
+      />
 
       {loading ? (
         <ActivityIndicator style={{ marginTop: 48 }} size="large" color={Colors.primary} />
@@ -423,7 +424,7 @@ export default function ExpensesDetailScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.detailRowLabel}>Date</Text>
                     <Text style={styles.detailRowValue}>
-                      {new Date(showDetail.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+                      {formatExpenseDate(showDetail.date, showDetail.created_at)}
                     </Text>
                   </View>
                 </View>
@@ -531,13 +532,66 @@ export default function ExpensesDetailScreen() {
                 </TouchableOpacity>
               ))}
             </ScrollView>
-            <Text style={styles.label}>Date</Text>
-            <TextInput style={styles.input} value={form.date} onChangeText={v => setForm({ ...form, date: v })}
-              placeholder="YYYY-MM-DD" placeholderTextColor={Colors.textMuted} />
+            <ExpenseDatePicker
+              value={form.date}
+              onChange={date => setForm({ ...form, date })}
+            />
             <TouchableOpacity style={styles.submitBtn} onPress={showEdit ? saveEdit : addEntry} disabled={submitting}>
               {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>{showEdit ? 'Update' : 'Add'} Entry</Text>}
             </TouchableOpacity>
           </ScrollView>
+        </View>
+      </Modal>
+
+      {/* Month picker */}
+      <Modal visible={showMonthPicker} animationType="slide" transparent>
+        <View style={styles.pickerOverlay}>
+          <View style={styles.pickerSheet}>
+            <View style={styles.pickerHeader}>
+              <Text style={styles.pickerTitle}>Select Month</Text>
+              <TouchableOpacity onPress={() => setShowMonthPicker(false)}>
+                <Ionicons name="close" size={24} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView>
+              {MONTHS.map((label, idx) => (
+                <TouchableOpacity
+                  key={label}
+                  style={[styles.pickerRow, selectedMonth === idx && styles.pickerRowActive]}
+                  onPress={() => { setSelectedMonth(idx); setShowMonthPicker(false); }}
+                >
+                  <Text style={[styles.pickerRowText, selectedMonth === idx && styles.pickerRowTextActive]}>{label}</Text>
+                  {selectedMonth === idx && <Ionicons name="checkmark" size={20} color={Colors.primary} />}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Year picker */}
+      <Modal visible={showYearPicker} animationType="slide" transparent>
+        <View style={styles.pickerOverlay}>
+          <View style={styles.pickerSheet}>
+            <View style={styles.pickerHeader}>
+              <Text style={styles.pickerTitle}>Select Year</Text>
+              <TouchableOpacity onPress={() => setShowYearPicker(false)}>
+                <Ionicons name="close" size={24} color={Colors.text} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView>
+              {YEARS.map(y => (
+                <TouchableOpacity
+                  key={y}
+                  style={[styles.pickerRow, selectedYear === y && styles.pickerRowActive]}
+                  onPress={() => { setSelectedYear(y); setShowYearPicker(false); }}
+                >
+                  <Text style={[styles.pickerRowText, selectedYear === y && styles.pickerRowTextActive]}>{y}</Text>
+                  {selectedYear === y && <Ionicons name="checkmark" size={20} color={Colors.primary} />}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
         </View>
       </Modal>
     </View>
@@ -624,4 +678,12 @@ const styles = StyleSheet.create({
   detailEditBtnText: { fontSize: 14, fontWeight: '700', color: Colors.white },
   detailDeleteBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: Colors.danger + '20', borderRadius: 10, paddingVertical: 12 },
   detailDeleteBtnText: { fontSize: 14, fontWeight: '700', color: Colors.danger },
+  pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  pickerSheet: { backgroundColor: Colors.white, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '60%' },
+  pickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  pickerTitle: { fontSize: 17, fontWeight: '800', color: Colors.text },
+  pickerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Colors.border + '60' },
+  pickerRowActive: { backgroundColor: Colors.primary + '10' },
+  pickerRowText: { fontSize: 16, color: Colors.text },
+  pickerRowTextActive: { fontWeight: '800', color: Colors.primary },
 });

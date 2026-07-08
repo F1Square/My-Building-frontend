@@ -11,6 +11,7 @@ import { useRouter , useFocusEffect } from 'expo-router';
 
 import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
+import { ModuleHeader, ModuleHeaderIconButton } from '../components/ModuleHeader';
 
 const VEHICLE_RE = /^[A-Z]{2}\d{2}[A-Z]{1,3}\d{4}$/;
 
@@ -78,19 +79,12 @@ export default function MyVehiclesScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t('myVehicles')}</Text>
-        {!isLocked ? (
-          <TouchableOpacity onPress={() => setShowAdd(true)} style={styles.addBtn}>
-            <Ionicons name="add" size={24} color={Colors.white} />
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.addBtn} />
-        )}
-      </View>
+      <ModuleHeader
+        title={t('myVehicles')}
+        rightAction={!isLocked ? (
+          <ModuleHeaderIconButton icon="add" onPress={() => setShowAdd(true)} size={24} />
+        ) : undefined}
+      />
 
       {isLocked ? (
         <View style={styles.lockedContainer}>

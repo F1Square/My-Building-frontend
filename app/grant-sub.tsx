@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Colors } from '../constants/colors';
 import api from '../utils/api';
+import { ModuleHeader } from '../components/ModuleHeader';
 
 type UserOption = { id: string; name: string; email: string };
 type PlanOpt = {
@@ -124,15 +125,10 @@ export default function GrantSubScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Grant Subscription</Text>
-          <Text style={styles.headerSub}>Grant plan or newspaper add-on to a user</Text>
-        </View>
-      </View>
+      <ModuleHeader
+        title="Grant Subscription"
+        subtitle="Grant plan or newspaper add-on to a user"
+      />
 
       <ScrollView contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
         <Text style={styles.label}>Grant type *</Text>

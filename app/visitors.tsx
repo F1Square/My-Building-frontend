@@ -18,6 +18,7 @@ import { cacheManager, CACHE_PRESETS } from '../utils/CacheManager';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as ImagePicker from 'expo-image-picker';
+import { ModuleHeader, ModuleHeaderTextButton } from '../components/ModuleHeader';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -395,30 +396,25 @@ export default function VisitorsScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t('visitors')}</Text>
-        <View style={styles.headerActions}>
-          {isAdmin && (
-            <TouchableOpacity 
-              style={styles.headerActionBtn}
-              onPress={() => setShowUploadQRModal(true)}
-            >
-              <Ionicons name="cloud-upload-outline" size={18} color={Colors.white} />
-              <Text style={styles.headerActionBtnText}>Upload</Text>
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity 
-            style={[styles.headerActionBtn, { marginLeft: isAdmin ? 8 : 0 }]}
-            onPress={shareQR}
-          >
-            <Ionicons name="share-social-outline" size={18} color={Colors.white} />
-            <Text style={styles.headerActionBtnText}>Share QR</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+      <ModuleHeader
+        title={t('visitors')}
+        rightAction={
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            {isAdmin && (
+              <ModuleHeaderTextButton
+                icon="cloud-upload-outline"
+                label="Upload"
+                onPress={() => setShowUploadQRModal(true)}
+              />
+            )}
+            <ModuleHeaderTextButton
+              icon="share-social-outline"
+              label="Share QR"
+              onPress={shareQR}
+            />
+          </View>
+        }
+      />
 
       {/* Admin building filter */}
       {isAdmin && (

@@ -8,6 +8,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import api from '../utils/api';
+import { ModuleHeader } from '../components/ModuleHeader';
 
 const DAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
@@ -407,15 +408,10 @@ export default function ActivityLogsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>{t('activityLogsTitle')}</Text>
-          <Text style={styles.headerSub}>{total} records · clears after 6 days</Text>
-        </View>
-      </View>
+      <ModuleHeader
+        title={t('activityLogsTitle')}
+        subtitle={`${total} records · clears after 6 days`}
+      />
 
       <View style={styles.levelRow}>
         {(['all', 'error', 'info'] as const).map((lv) => {

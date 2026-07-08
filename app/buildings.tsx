@@ -13,6 +13,7 @@ import { Alert } from '../utils/alert';
 import type { Building } from '../hooks/useBuildings';
 import MemberDetailModal, { type Member } from '../components/MemberDetailModal';
 import { useMemberActions } from '../hooks/useMemberActions';
+import { ModuleHeader, ModuleHeaderTextButton } from '../components/ModuleHeader';
 
 type ModalType = 'none' | 'deleteBuilding' | 'buildingActions' | 'updateSelect' | 'members' | 'memberDetail';
 
@@ -168,19 +169,17 @@ export default function BuildingsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Buildings</Text>
-          <Text style={styles.headerSub}>{buildings.length} building{buildings.length !== 1 ? 's' : ''}</Text>
-        </View>
-        <TouchableOpacity style={styles.addBtn} onPress={() => setModal('buildingActions')}>
-          <Ionicons name="business-outline" size={18} color={Colors.white} />
-          <Text style={styles.addBtnText}>Manage</Text>
-        </TouchableOpacity>
-      </View>
+      <ModuleHeader
+        title="Buildings"
+        subtitle={`${buildings.length} building${buildings.length !== 1 ? 's' : ''}`}
+        rightAction={
+          <ModuleHeaderTextButton
+            icon="business-outline"
+            label="Manage"
+            onPress={() => setModal('buildingActions')}
+          />
+        }
+      />
 
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} size="large" color={Colors.primary} />

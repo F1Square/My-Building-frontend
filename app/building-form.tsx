@@ -8,6 +8,7 @@ import { Colors } from '../constants/colors';
 import api from '../utils/api';
 import { Alert } from '../utils/alert';
 import PaymentTermsModal, { type PaymentTermsData } from '../components/PaymentTermsModal';
+import { ModuleHeader } from '../components/ModuleHeader';
 import { fetchPaymentTerms } from '../utils/paymentTermsCache';
 import {
   PAYMENT_OPTIONS,
@@ -129,15 +130,9 @@ export default function BuildingFormScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          {isEdit ? `Edit — ${buildingName || 'Building'}` : 'New Building'}
-        </Text>
-        <View style={{ width: 36 }} />
-      </View>
+      <ModuleHeader
+        title={isEdit ? `Edit — ${buildingName || 'Building'}` : 'New Building'}
+      />
 
       <ScrollView
         style={styles.scroll}

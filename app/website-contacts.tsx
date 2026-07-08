@@ -8,6 +8,7 @@ import { Alert } from '../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import api from '../utils/api';
+import { ModuleHeader } from '../components/ModuleHeader';
 
 type Contact = {
   id: string;
@@ -97,15 +98,10 @@ export default function WebsiteContactsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Website Inquiries</Text>
-          <Text style={styles.headerSub}>{contacts.length} total{newCount > 0 ? ` · ${newCount} new` : ''}</Text>
-        </View>
-      </View>
+      <ModuleHeader
+        title="Website Inquiries"
+        subtitle={`${contacts.length} total${newCount > 0 ? ` · ${newCount} new` : ''}`}
+      />
 
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} size="large" color={Colors.primary} />

@@ -3,6 +3,7 @@ import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput,
   Modal, ActivityIndicator, RefreshControl, ScrollView,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Alert } from '../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,6 +14,7 @@ import { useBuildings } from '../hooks/useBuildings';
 import type { Building } from '../hooks/useBuildings';
 import MemberDetailModal, { type Member } from '../components/MemberDetailModal';
 import { useMemberActions } from '../hooks/useMemberActions';
+import { ModuleHeader, ModuleHeaderTextButton } from '../components/ModuleHeader';
 
 const ROLES = ['user', 'pramukh'];
 
@@ -151,19 +153,17 @@ export default function UsersScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Users</Text>
-          <Text style={styles.headerSub}>{users.length} {users.length === 1 ? 'account' : 'accounts'}</Text>
-        </View>
-        <TouchableOpacity style={styles.addBtn} onPress={() => setShowAdd(true)}>
-          <Ionicons name="person-add" size={18} color={Colors.white} />
-          <Text style={styles.addBtnText}>Add</Text>
-        </TouchableOpacity>
-      </View>
+      <ModuleHeader
+        title="Users"
+        subtitle={`${users.length} ${users.length === 1 ? 'account' : 'accounts'}`}
+        rightAction={
+          <ModuleHeaderTextButton
+            icon="person-add"
+            label="Add"
+            onPress={() => setShowAdd(true)}
+          />
+        }
+      />
 
       {/* Search + filters */}
       <View style={styles.filterSection}>
@@ -225,62 +225,71 @@ export default function UsersScreen() {
 
       {/* Add User Modal */}
       <Modal visible={showAdd} animationType="slide" presentationStyle="pageSheet">
-        <View style={styles.modal}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Add User</Text>
-            <TouchableOpacity onPress={() => setShowAdd(false)}>
-              <Ionicons name="close" size={24} color={Colors.text} />
-            </TouchableOpacity>
-          </View>
-          <ScrollView keyboardShouldPersistTaps="handled">
-            <Text style={styles.label}>Full Name *</Text>
-            <TextInput style={styles.input} value={form.name} onChangeText={(v) => setForm({ ...form, name: v })} placeholder="Full name" autoCapitalize="words" placeholderTextColor={Colors.textMuted} />
-
-            <Text style={styles.label}>Email *</Text>
-            <TextInput style={styles.input} value={form.email} onChangeText={(v) => setForm({ ...form, email: v })} placeholder="user@example.com" keyboardType="email-address" autoCapitalize="none" placeholderTextColor={Colors.textMuted} />
-
-            <Text style={styles.label}>Phone</Text>
-            <TextInput style={styles.input} value={form.phone} onChangeText={(v) => setForm({ ...form, phone: v })} placeholder="10-digit mobile" keyboardType="phone-pad" maxLength={10} placeholderTextColor={Colors.textMuted} />
-
-            <Text style={styles.label}>Password *</Text>
-            <View style={styles.passwordRow}>
-              <TextInput style={styles.passwordInput} value={form.password} onChangeText={(v) => setForm({ ...form, password: v })} placeholder="Min 8 characters" secureTextEntry={!showPassword} placeholderTextColor={Colors.textMuted} />
-              <TouchableOpacity onPress={() => setShowPassword((v) => !v)} style={{ paddingHorizontal: 12 }}>
-                <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={20} color={Colors.textMuted} />
+        <KeyboardAvoidingView
+          style={styles.modalRoot}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add User</Text>
+              <TouchableOpacity onPress={() => setShowAdd(false)}>
+                <Ionicons name="close" size={24} color={Colors.text} />
               </TouchableOpacity>
             </View>
+            <ScrollView
+              style={styles.modalScroll}
+              contentContainerStyle={styles.modalScrollContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator
+            >
+              <Text style={styles.label}>Full Name *</Text>
+              <TextInput style={styles.input} value={form.name} onChangeText={(v) => setForm({ ...form, name: v })} placeholder="Full name" autoCapitalize="words" placeholderTextColor={Colors.textMuted} />
 
-            <Text style={styles.label}>Role *</Text>
-            <View style={styles.roleOptions}>
-              {ROLES.map((r) => (
-                <TouchableOpacity
-                  key={r}
-                  style={[styles.roleOption, form.role === r && { backgroundColor: ROLE_COLORS[r], borderColor: ROLE_COLORS[r] }]}
-                  onPress={() => setForm({ ...form, role: r })}
-                >
-                  <Text style={[styles.roleOptionText, form.role === r && { color: Colors.white }]}>
-                    {r.charAt(0).toUpperCase() + r.slice(1)}
-                  </Text>
+              <Text style={styles.label}>Email *</Text>
+              <TextInput style={styles.input} value={form.email} onChangeText={(v) => setForm({ ...form, email: v })} placeholder="user@example.com" keyboardType="email-address" autoCapitalize="none" placeholderTextColor={Colors.textMuted} />
+
+              <Text style={styles.label}>Phone</Text>
+              <TextInput style={styles.input} value={form.phone} onChangeText={(v) => setForm({ ...form, phone: v })} placeholder="10-digit mobile" keyboardType="phone-pad" maxLength={10} placeholderTextColor={Colors.textMuted} />
+
+              <Text style={styles.label}>Password *</Text>
+              <View style={styles.passwordRow}>
+                <TextInput style={styles.passwordInput} value={form.password} onChangeText={(v) => setForm({ ...form, password: v })} placeholder="Min 8 characters" secureTextEntry={!showPassword} placeholderTextColor={Colors.textMuted} />
+                <TouchableOpacity onPress={() => setShowPassword((v) => !v)} style={{ paddingHorizontal: 12 }}>
+                  <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={20} color={Colors.textMuted} />
                 </TouchableOpacity>
-              ))}
-            </View>
+              </View>
 
-            <Text style={styles.label}>Assign to Building</Text>
-            <BuildingDropdown buildings={buildings} loading={buildingsLoading} selected={formBuilding} onSelect={setFormBuilding} label="Select Building (optional)" />
+              <Text style={styles.label}>Role *</Text>
+              <View style={styles.roleOptions}>
+                {ROLES.map((r) => (
+                  <TouchableOpacity
+                    key={r}
+                    style={[styles.roleOption, form.role === r && { backgroundColor: ROLE_COLORS[r], borderColor: ROLE_COLORS[r] }]}
+                    onPress={() => setForm({ ...form, role: r })}
+                  >
+                    <Text style={[styles.roleOptionText, form.role === r && { color: Colors.white }]}>
+                      {r.charAt(0).toUpperCase() + r.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
 
-            <Text style={styles.label}>Flat No.</Text>
-            <TextInput style={styles.input} value={form.flat_no} onChangeText={(v) => setForm({ ...form, flat_no: v })} placeholder="e.g. A-101" placeholderTextColor={Colors.textMuted} />
+              <Text style={styles.label}>Assign to Building</Text>
+              <BuildingDropdown buildings={buildings} loading={buildingsLoading} selected={formBuilding} onSelect={setFormBuilding} label="Select Building (optional)" />
 
-            <TouchableOpacity style={styles.submitBtn} onPress={createUser} disabled={submitting}>
-              {submitting ? <ActivityIndicator color="#fff" /> : (
-                <Text style={styles.submitBtnText}>
-                  Create {form.role === 'pramukh' ? 'Pramukh' : 'User'}
-                </Text>
-              )}
-            </TouchableOpacity>
-            <View style={{ height: 32 }} />
-          </ScrollView>
-        </View>
+              <Text style={styles.label}>Flat No.</Text>
+              <TextInput style={styles.input} value={form.flat_no} onChangeText={(v) => setForm({ ...form, flat_no: v })} placeholder="e.g. 101" placeholderTextColor={Colors.textMuted} />
+
+              <TouchableOpacity style={styles.submitBtn} onPress={createUser} disabled={submitting}>
+                {submitting ? <ActivityIndicator color="#fff" /> : (
+                  <Text style={styles.submitBtnText}>
+                    Create {form.role === 'pramukh' ? 'Pramukh' : 'User'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <MemberDetailModal
@@ -331,7 +340,10 @@ const styles = StyleSheet.create({
   deleteBtn: { padding: 6 },
   emptyBox: { alignItems: 'center', paddingTop: 48, gap: 10 },
   empty: { color: Colors.textMuted, fontSize: 15 },
-  modal: { flex: 1, backgroundColor: Colors.white, padding: 20 },
+  modal: { flex: 1, backgroundColor: Colors.white, paddingHorizontal: 20 },
+  modalRoot: { flex: 1, backgroundColor: Colors.white },
+  modalScroll: { flex: 1 },
+  modalScrollContent: { paddingBottom: 40 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, paddingTop: 8 },
   modalTitle: { fontSize: 20, fontWeight: '800', color: Colors.text },
   label: { fontSize: 13, fontWeight: '600', color: Colors.text, marginBottom: 6, marginTop: 14 },

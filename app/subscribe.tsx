@@ -12,6 +12,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import { addBreadcrumb, clearBreadcrumbs } from '../utils/crashBreadcrumbs';
 import * as WebBrowser from 'expo-web-browser';
+import { ModuleHeader } from '../components/ModuleHeader';
 
 const ICONS = ['calendar-outline', 'star-outline', 'infinite-outline', 'ribbon-outline', 'trophy-outline'] as const;
 const COL_CYCLE = [Colors.primary, '#F59E0B', Colors.success, '#8B5CF6', '#EC4899'];
@@ -448,13 +449,7 @@ export default function SubscribeScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Subscription</Text>
-        <View style={{ width: 36 }} />
-      </View>
+      <ModuleHeader title="Subscription" />
 
       {/* Tabs */}
       <View style={styles.tabBar}>

@@ -12,6 +12,7 @@ import { useRouter , useFocusEffect } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import BuildingDropdown from '../components/BuildingDropdown';
+import { ModuleHeader, ModuleHeaderIconButton } from '../components/ModuleHeader';
 import { useBuildings } from '../hooks/useBuildings';
 import type { Building } from '../hooks/useBuildings';
 
@@ -193,17 +194,10 @@ export default function HelplineScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={Colors.white} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t('helplineNumbers')}</Text>
-        {canManage ? (
-          <TouchableOpacity onPress={() => setShowAdd(true)} style={styles.addBtn}>
-            <Ionicons name="add" size={24} color={Colors.white} />
-          </TouchableOpacity>
-        ) : <View style={{ width: 36 }} />}
-      </View>
+      <ModuleHeader
+        title={t('helplineNumbers')}
+        rightAction={canManage ? <ModuleHeaderIconButton icon="add" onPress={() => setShowAdd(true)} /> : undefined}
+      />
 
       {isAdmin && (
         <View style={styles.filterBar}>

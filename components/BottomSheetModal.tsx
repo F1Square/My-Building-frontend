@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal,
-  Dimensions, Pressable,
+  Dimensions, Pressable, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -38,7 +38,10 @@ export default function BottomSheetModal({ visible, onClose, title, subtitle, ch
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={sheetStyles.overlay}>
+      <KeyboardAvoidingView
+        style={sheetStyles.overlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
         <Pressable style={sheetStyles.backdrop} onPress={onClose} />
         <View style={[sheetStyles.sheet, { maxHeight: SHEET_MAX_HEIGHT, paddingBottom: Math.max(insets.bottom, 20) }]}>
           <View style={sheetStyles.handle} />
@@ -62,7 +65,7 @@ export default function BottomSheetModal({ visible, onClose, title, subtitle, ch
             {children}
           </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

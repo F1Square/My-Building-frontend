@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
@@ -16,6 +16,7 @@ import api from '../utils/api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ModuleHeader } from '../components/ModuleHeader';
+import BottomSheetModal from '../components/BottomSheetModal';
 
 const CATEGORIES = ['General', 'Water', 'Electricity', 'Cleanliness', 'Security', 'Parking', 'Noise', 'Other'];
 
@@ -36,7 +37,28 @@ const STATUS_META: Record<string, { label: string; color: string; bg: string; ic
   resolved:    { label: 'Resolved',    color: '#16A34A', bg: '#F0FDF4', icon: 'checkmark-circle' },
 };
 
-const SECTION_ORDER = ['open', 'in_progress', 'resolved'];
+function CategoryChips({
+  selected,
+  onSelect,
+}: {
+  selected: string;
+  onSelect: (cat: string) => void;
+}) {
+  return (
+    <View style={styles.chipRow}>
+      {CATEGORIES.map(cat => (
+        <TouchableOpacity
+          key={cat}
+          style={[styles.chip, selected === cat && styles.chipActive]}
+          onPress={() => onSelect(cat)}
+        >
+          <Ionicons name={CAT_ICONS[cat] as any} size={14} color={selected === cat ? Colors.white : Colors.textMuted} />
+          <Text style={[styles.chipText, selected === cat && styles.chipTextActive]}>{cat}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
 
 export default function ComplaintsScreen() {
   const { user, hasActiveSubscription } = useAuth();
@@ -60,8 +82,6 @@ export default function ComplaintsScreen() {
   // Subscription gate — admin is always unlocked
   const isLocked = !isAdmin && !hasActiveSubscription;
 
-  const getEndpoint = () => isMyView ? '/complaints/my' : '/complaints/building';
-
   const screenTitle = isMyView ? 'My Complaints' : 'Society Complaints';
 
   const [complaints, setComplaints] = useState<any[]>([]);
@@ -70,8 +90,9 @@ export default function ComplaintsScreen() {
 
   const [showAdd, setShowAdd] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({ title: '', description: '', category: 'General', photo_url: '' });
+  const [form, setForm] = useState({ title: '', description: '', category: 'General' });
   const [imageUri, setImageUri] = useState<string | null>(null);
+  const photoBase64Ref = useRef('');
 
   const [selectedComplaint, setSelectedComplaint] = useState<any>(null);
   const [showDetail, setShowDetail] = useState(false);
@@ -83,8 +104,33 @@ export default function ComplaintsScreen() {
   const [updateForm, setUpdateForm] = useState({ status: 'open', remark: '' });
   const [updating, setUpdating] = useState(false);
 
+  const getEndpoint = useCallback(
+    () => (isMyView ? '/complaints/my' : '/complaints/building'),
+    [isMyView],
+  );
+
+  const fetchComplaints = useCallback(async () => {
+    if (!user?.building_id) {
+      setComplaints([]);
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+    try {
+      const res = await api.get(getEndpoint());
+      const data = Array.isArray(res.data) ? res.data : [];
+      setComplaints(data);
+      const cacheKey = isMyView ? 'complaints_my_cache' : 'complaints_building_cache';
+      AsyncStorage.setItem(cacheKey, JSON.stringify(data)).catch(() => {});
+    } catch (e: any) {
+      Alert.alert('Error', e.response?.data?.error || e.message || 'Failed to load');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [user?.building_id, getEndpoint, isMyView]);
+
   useFocusEffect(useCallback(() => {
-    // Load cached data first for instant display
     const cacheKey = isMyView ? 'complaints_my_cache' : 'complaints_building_cache';
     AsyncStorage.getItem(cacheKey).then(cached => {
       if (cached) {
@@ -98,12 +144,11 @@ export default function ComplaintsScreen() {
       }
     }).catch(() => {});
 
-    // Then fetch fresh data after navigation animation completes
     InteractionManager.runAfterInteractions(() => {
       fetchComplaints();
     });
     logEvent(isMyView ? 'open_my_complaints' : 'open_society_complaints', 'complaints');
-  }, []));
+  }, [isMyView, fetchComplaints, logEvent]));
 
   // Cleanup function to reset modal states
   useEffect(() => {
@@ -122,26 +167,19 @@ export default function ComplaintsScreen() {
     }
   }, [showDetail]);
 
-  const fetchComplaints = async () => {
-    if (!user?.building_id) {
-      setComplaints([]); setLoading(false); setRefreshing(false); return;
+  const statusCounts = useMemo(() => {
+    let open = 0;
+    let in_progress = 0;
+    let resolved = 0;
+    for (const c of complaints) {
+      if (c.status === 'open') open += 1;
+      else if (c.status === 'in_progress') in_progress += 1;
+      else if (c.status === 'resolved') resolved += 1;
     }
-    try {
-      const res = await api.get(getEndpoint());
-      const data = Array.isArray(res.data) ? res.data : [];
-      setComplaints(data);
-      // Cache the result for instant display on next visit
-      const cacheKey = isMyView ? 'complaints_my_cache' : 'complaints_building_cache';
-      AsyncStorage.setItem(cacheKey, JSON.stringify(data)).catch(() => {});
-    } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || e.message || 'Failed to load');
-    } finally { setLoading(false); setRefreshing(false); }
-  };
+    return { open, in_progress, resolved };
+  }, [complaints]);
 
-  // Build sections grouped by status
-  const totalOpen = complaints.filter(c => c.status === 'open').length;
-  const totalInProgress = complaints.filter(c => c.status === 'in_progress').length;
-  const totalResolved = complaints.filter(c => c.status === 'resolved').length;
+  const { open: totalOpen, in_progress: totalInProgress, resolved: totalResolved } = statusCounts;
 
   // Filtered list for active tab — memoized so tab switch is instant
   const filteredComplaints = useMemo(
@@ -152,24 +190,31 @@ export default function ComplaintsScreen() {
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      base64: true, quality: 0.6,
+      base64: true,
+      quality: 0.5,
     });
     if (!result.canceled && result.assets[0]) {
       setImageUri(result.assets[0].uri);
-      setForm(f => ({ ...f, photo_url: `data:image/jpeg;base64,${result.assets[0].base64}` }));
+      photoBase64Ref.current = result.assets[0].base64
+        ? `data:image/jpeg;base64,${result.assets[0].base64}`
+        : '';
     }
   };
 
   const resetForm = () => {
-    setForm({ title: '', description: '', category: 'General', photo_url: '' });
+    setForm({ title: '', description: '', category: 'General' });
     setImageUri(null);
+    photoBase64Ref.current = '';
   };
 
   const submitComplaint = async () => {
     if (!form.title.trim()) return Alert.alert('Error', 'Title is required');
     setSubmitting(true);
     try {
-      await api.post('/complaints', form);
+      await api.post('/complaints', {
+        ...form,
+        photo_url: photoBase64Ref.current || undefined,
+      });
       logEvent('complaint_submitted', 'complaints', { title: form.title, category: form.category });
       resetForm(); setShowAdd(false);
       fetchComplaints();
@@ -180,11 +225,11 @@ export default function ComplaintsScreen() {
     } finally { setSubmitting(false); }
   };
 
-  const openUpdate = (c: any) => {
+  const openUpdate = useCallback((c: any) => {
     setSelectedComplaint(c);
     setUpdateForm({ status: c.status, remark: c.remark || '' });
     setShowUpdate(true);
-  };
+  }, []);
 
   const submitUpdate = async () => {
     if (!selectedComplaint) return;
@@ -200,19 +245,6 @@ export default function ComplaintsScreen() {
     } catch (e: any) {
       Alert.alert('Error', e.response?.data?.error || 'Failed to update');
     } finally { setUpdating(false); }
-  };
-
-  const renderSectionHeader = ({ section }: { section: any }) => {
-    const meta = STATUS_META[section.status];
-    return (
-      <View style={[styles.sectionHeader, { backgroundColor: meta.bg }]}>
-        <View style={[styles.sectionDot, { backgroundColor: meta.color }]} />
-        <Text style={[styles.sectionTitle, { color: meta.color }]}>{meta.label}</Text>
-        <View style={[styles.sectionCount, { backgroundColor: meta.color }]}>
-          <Text style={styles.sectionCountText}>{section.data.length}</Text>
-        </View>
-      </View>
-    );
   };
 
   const renderItem = useCallback(({ item }: { item: any }) => {
@@ -277,17 +309,7 @@ export default function ComplaintsScreen() {
         ) : null}
       </TouchableOpacity>
     );
-  }, [isSocietyView, showUpdateButton, openUpdate]);
-
-  const ListHeader = () => (
-    <View style={styles.summaryRow}>
-      <SummaryCard count={totalOpen} label="Open" color="#EF4444" icon="alert-circle" />
-      <SummaryCard count={totalInProgress} label="In Progress" color="#D97706" icon="time" />
-      <SummaryCard count={totalResolved} label="Resolved" color="#16A34A" icon="checkmark-circle" />
-    </View>
-  );
-
-  
+  }, [isSocietyView, showUpdateButton, openUpdate, router]);
 
   return (
     <View style={styles.container}>
@@ -347,6 +369,10 @@ export default function ComplaintsScreen() {
             data={filteredComplaints}
             keyExtractor={i => i.id}
             renderItem={renderItem}
+            removeClippedSubviews
+            windowSize={7}
+            maxToRenderPerBatch={10}
+            initialNumToRender={8}
             contentContainerStyle={{ paddingBottom: 100, paddingTop: 8 }}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchComplaints(); }} tintColor={Colors.primary} />}
             ListEmptyComponent={
@@ -379,82 +405,63 @@ export default function ComplaintsScreen() {
       )}
 
       {/* ── Add Complaint Modal ── */}
-      <Modal visible={showAdd} animationType="slide" transparent>
-        <View style={styles.overlay}>
-          <View style={styles.sheet}>
-            <View style={styles.sheetHandle} />
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>New Complaint</Text>
-              <TouchableOpacity onPress={() => { setShowAdd(false); resetForm(); }} style={styles.closeBtn}>
-                <Ionicons name="close" size={20} color={Colors.text} />
-              </TouchableOpacity>
+      <BottomSheetModal
+        visible={showAdd}
+        onClose={() => { setShowAdd(false); resetForm(); }}
+        title="New Complaint"
+      >
+        <Text style={styles.label}>Title *</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="e.g. Water leakage in corridor"
+          value={form.title}
+          onChangeText={text => setForm(f => ({ ...f, title: text }))}
+          placeholderTextColor={Colors.textMuted}
+        />
+
+        <Text style={styles.label}>Category</Text>
+        <CategoryChips
+          selected={form.category}
+          onSelect={cat => setForm(f => ({ ...f, category: cat }))}
+        />
+
+        <Text style={styles.label}>Description</Text>
+        <TextInput
+          style={[styles.input, styles.textArea]}
+          placeholder="Describe the issue in detail..."
+          value={form.description}
+          onChangeText={text => setForm(f => ({ ...f, description: text }))}
+          multiline
+          numberOfLines={4}
+          placeholderTextColor={Colors.textMuted}
+        />
+
+        <Text style={styles.label}>Attach Photo (optional)</Text>
+        <TouchableOpacity style={styles.photoPicker} onPress={pickImage}>
+          {imageUri ? (
+            <Image source={{ uri: imageUri }} style={styles.photoPreview} />
+          ) : (
+            <View style={styles.photoPlaceholder}>
+              <Ionicons name="image-outline" size={32} color={Colors.textMuted} />
+              <Text style={styles.photoPlaceholderText}>Tap to select photo</Text>
             </View>
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-              <Text style={styles.label}>Title *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. Water leakage in corridor"
-                value={form.title}
-                onChangeText={t => setForm(f => ({ ...f, title: t }))}
-                placeholderTextColor={Colors.textMuted}
-              />
+          )}
+        </TouchableOpacity>
 
-              <Text style={styles.label}>Category</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
-                <View style={{ flexDirection: 'row', gap: 8, paddingRight: 8 }}>
-                  {CATEGORIES.map(cat => (
-                    <TouchableOpacity
-                      key={cat}
-                      style={[styles.chip, form.category === cat && styles.chipActive]}
-                      onPress={() => setForm(f => ({ ...f, category: cat }))}
-                    >
-                      <Ionicons name={CAT_ICONS[cat] as any} size={14} color={form.category === cat ? Colors.white : Colors.textMuted} />
-                      <Text style={[styles.chipText, form.category === cat && styles.chipTextActive]}>{cat}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </ScrollView>
-
-              <Text style={styles.label}>Description</Text>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                placeholder="Describe the issue in detail..."
-                value={form.description}
-                onChangeText={t => setForm(f => ({ ...f, description: t }))}
-                multiline
-                numberOfLines={4}
-                placeholderTextColor={Colors.textMuted}
-              />
-
-              <Text style={styles.label}>Attach Photo (optional)</Text>
-              <TouchableOpacity style={styles.photoPicker} onPress={pickImage}>
-                {imageUri ? (
-                  <Image source={{ uri: imageUri }} style={styles.photoPreview} />
-                ) : (
-                  <View style={styles.photoPlaceholder}>
-                    <Ionicons name="image-outline" size={32} color={Colors.textMuted} />
-                    <Text style={styles.photoPlaceholderText}>Tap to select photo</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.submitBtn, submitting && { opacity: 0.6 }]}
-                onPress={submitComplaint}
-                disabled={submitting}
-              >
-                {submitting
-                  ? <ActivityIndicator color={Colors.white} />
-                  : <>
-                      <Ionicons name="send-outline" size={18} color={Colors.white} />
-                      <Text style={styles.submitBtnText}>Submit Complaint</Text>
-                    </>
-                }
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+        <TouchableOpacity
+          style={[styles.submitBtn, submitting && { opacity: 0.6 }]}
+          onPress={submitComplaint}
+          disabled={submitting}
+        >
+          {submitting
+            ? <ActivityIndicator color={Colors.white} />
+            : <>
+                <Ionicons name="send-outline" size={18} color={Colors.white} />
+                <Text style={styles.submitBtnText}>Submit Complaint</Text>
+              </>
+          }
+        </TouchableOpacity>
+      </BottomSheetModal>
 
       {/* ── Detail Modal ── */}
       <Modal visible={showDetail} animationType="slide" transparent>
@@ -465,9 +472,8 @@ export default function ComplaintsScreen() {
               <Text style={styles.sheetTitle}>Complaint Detail</Text>
               <TouchableOpacity 
                 onPress={() => {
-                  console.log('Detail modal close button pressed');
-                  setImageViewerUri(null); // Clear image viewer first
-                  setShowDetail(false);    // Then close detail modal
+                  setImageViewerUri(null);
+                  setShowDetail(false);
                 }} 
                 style={styles.closeBtn}
               >
@@ -541,9 +547,8 @@ export default function ComplaintsScreen() {
                     <TouchableOpacity
                       style={styles.submitBtn}
                       onPress={() => { 
-                        console.log('Update button pressed, closing modals');
-                        setImageViewerUri(null); // Clear image viewer first
-                        setShowDetail(false);    // Close detail modal
+                        setImageViewerUri(null);
+                        setShowDetail(false);
                         openUpdate(selectedComplaint); 
                       }}
                     >
@@ -570,70 +575,50 @@ export default function ComplaintsScreen() {
       </Modal>
 
       {/* ── Pramukh Update Modal ── */}
-      <Modal visible={showUpdate} animationType="slide" transparent>
-        <View style={styles.overlay}>
-          <View style={[styles.sheet, { maxHeight: '65%' }]}>
-            <View style={styles.sheetHandle} />
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Update Status</Text>
-              <TouchableOpacity onPress={() => setShowUpdate(false)} style={styles.closeBtn}>
-                <Ionicons name="close" size={20} color={Colors.text} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-              <Text style={styles.label}>Set Status</Text>
-              <View style={styles.statusGrid}>
-                {(['open', 'in_progress', 'resolved'] as const).map(s => {
-                  const m = STATUS_META[s];
-                  const active = updateForm.status === s;
-                  return (
-                    <TouchableOpacity
-                      key={s}
-                      style={[styles.statusTile, active && { backgroundColor: m.color, borderColor: m.color }]}
-                      onPress={() => setUpdateForm(f => ({ ...f, status: s }))}
-                    >
-                      <Ionicons name={m.icon as any} size={22} color={active ? '#fff' : m.color} />
-                      <Text style={[styles.statusTileText, active && { color: '#fff' }]}>{m.label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              <Text style={styles.label}>Remark (optional)</Text>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                placeholder="Add a resolution note or remark..."
-                value={updateForm.remark}
-                onChangeText={t => setUpdateForm(f => ({ ...f, remark: t }))}
-                multiline
-                numberOfLines={3}
-                placeholderTextColor={Colors.textMuted}
-              />
+      <BottomSheetModal
+        visible={showUpdate}
+        onClose={() => setShowUpdate(false)}
+        title="Update Status"
+      >
+        <Text style={styles.label}>Set Status</Text>
+        <View style={styles.statusGrid}>
+          {(['open', 'in_progress', 'resolved'] as const).map(s => {
+            const m = STATUS_META[s];
+            const active = updateForm.status === s;
+            return (
               <TouchableOpacity
-                style={[styles.submitBtn, updating && { opacity: 0.6 }]}
-                onPress={submitUpdate}
-                disabled={updating}
+                key={s}
+                style={[styles.statusTile, active && { backgroundColor: m.color, borderColor: m.color }]}
+                onPress={() => setUpdateForm(f => ({ ...f, status: s }))}
               >
-                {updating
-                  ? <ActivityIndicator color={Colors.white} />
-                  : <Text style={styles.submitBtnText}>{t('saveChanges')}</Text>
-                }
+                <Ionicons name={m.icon as any} size={22} color={active ? '#fff' : m.color} />
+                <Text style={[styles.statusTileText, active && { color: '#fff' }]}>{m.label}</Text>
               </TouchableOpacity>
-            </ScrollView>
-          </View>
+            );
+          })}
         </View>
-      </Modal>
-    </View>
-  );
-}
 
-function SummaryCard({ count, label, color, icon }: { count: number; label: string; color: string; icon: string }) {
-  
-  return (
-    <View style={[styles.summaryCard, { borderTopColor: color }]}>
-      <Ionicons name={icon as any} size={20} color={color} />
-      <Text style={[styles.summaryCount, { color }]}>{count}</Text>
-      <Text style={styles.summaryLabel}>{label}</Text>
+        <Text style={styles.label}>Remark (optional)</Text>
+        <TextInput
+          style={[styles.input, styles.textArea]}
+          placeholder="Add a resolution note or remark..."
+          value={updateForm.remark}
+          onChangeText={text => setUpdateForm(f => ({ ...f, remark: text }))}
+          multiline
+          numberOfLines={3}
+          placeholderTextColor={Colors.textMuted}
+        />
+        <TouchableOpacity
+          style={[styles.submitBtn, updating && { opacity: 0.6 }]}
+          onPress={submitUpdate}
+          disabled={updating}
+        >
+          {updating
+            ? <ActivityIndicator color={Colors.white} />
+            : <Text style={styles.submitBtnText}>{t('saveChanges')}</Text>
+          }
+        </TouchableOpacity>
+      </BottomSheetModal>
     </View>
   );
 }
@@ -814,6 +799,12 @@ const styles = StyleSheet.create({
     zIndex: -1
   },
 
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     paddingHorizontal: 14, paddingVertical: 8,

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef, type RefObject } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
@@ -14,6 +14,7 @@ import BuildingDropdown from '../components/BuildingDropdown';
 import type { Building } from '../hooks/useBuildings';
 import { useBuildings } from '../hooks/useBuildings';
 import { ModuleHeader, ModuleHeaderIconButton } from '../components/ModuleHeader';
+import BottomSheetModal from '../components/BottomSheetModal';
 
 const CATEGORIES = ['General', 'Water', 'Electricity', 'Cleanliness', 'Security', 'Parking', 'Noise', 'Other'];
 
@@ -32,6 +33,35 @@ const STATUS_META: Record<string, { label: string; color: string; bg: string; ic
 
 const SECTION_ORDER = ['open', 'in_progress', 'resolved'];
 
+function CategoryChips({
+  selected,
+  onSelect,
+  compact,
+}: {
+  selected: string;
+  onSelect: (cat: string) => void;
+  compact?: boolean;
+}) {
+  return (
+    <View style={styles.chipRow}>
+      {CATEGORIES.map(cat => (
+        <TouchableOpacity
+          key={cat}
+          style={[styles.chip, selected === cat && styles.chipActive]}
+          onPress={() => onSelect(cat)}
+        >
+          <Ionicons
+            name={CAT_ICONS[cat] as any}
+            size={compact ? 13 : 14}
+            color={selected === cat ? Colors.white : Colors.textMuted}
+          />
+          <Text style={[styles.chipText, selected === cat && styles.chipTextActive]}>{cat}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+
 export default function AdminComplaintsScreen() {
   const { buildings } = useBuildings(true);
   const router = useRouter();
@@ -43,9 +73,10 @@ export default function AdminComplaintsScreen() {
 
   // Add modal
   const [showAdd, setShowAdd] = useState(false);
-  const [addForm, setAddForm] = useState({ title: '', description: '', category: 'General', photo_url: '' });
+  const [addForm, setAddForm] = useState({ title: '', description: '', category: 'General' });
   const [addBuilding, setAddBuilding] = useState<Building | null>(null);
   const [addImageUri, setAddImageUri] = useState<string | null>(null);
+  const addPhotoBase64Ref = useRef('');
   const [submitting, setSubmitting] = useState(false);
 
   // Edit modal
@@ -53,6 +84,7 @@ export default function AdminComplaintsScreen() {
   const [editTarget, setEditTarget] = useState<any>(null);
   const [editForm, setEditForm] = useState({ title: '', description: '', category: 'General', status: 'open', remark: '', photo_url: '' });
   const [editImageUri, setEditImageUri] = useState<string | null>(null);
+  const editPhotoBase64Ref = useRef('');
   const [saving, setSaving] = useState(false);
 
   // Detail modal
@@ -75,9 +107,19 @@ export default function AdminComplaintsScreen() {
   };
 
   // Sections grouped by status
-  const totalOpen = complaints.filter(c => c.status === 'open').length;
-  const totalInProgress = complaints.filter(c => c.status === 'in_progress').length;
-  const totalResolved = complaints.filter(c => c.status === 'resolved').length;
+  const statusCounts = useMemo(() => {
+    let open = 0;
+    let in_progress = 0;
+    let resolved = 0;
+    for (const c of complaints) {
+      if (c.status === 'open') open += 1;
+      else if (c.status === 'in_progress') in_progress += 1;
+      else if (c.status === 'resolved') resolved += 1;
+    }
+    return { open, in_progress, resolved };
+  }, [complaints]);
+
+  const { open: totalOpen, in_progress: totalInProgress, resolved: totalResolved } = statusCounts;
   const filteredComplaints = useMemo(
     () => complaints.filter(c => c.status === activeStatus),
     [complaints, activeStatus]
@@ -85,14 +127,16 @@ export default function AdminComplaintsScreen() {
 
   const pickImage = async (
     setter: (uri: string | null) => void,
-    formSetter: (fn: (f: any) => any) => void
+    base64Ref: RefObject<string>,
   ) => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'], base64: true, quality: 0.6,
+      mediaTypes: ['images'], base64: true, quality: 0.5,
     });
     if (!result.canceled && result.assets[0]) {
       setter(result.assets[0].uri);
-      formSetter(f => ({ ...f, photo_url: `data:image/jpeg;base64,${result.assets[0].base64}` }));
+      base64Ref.current = result.assets[0].base64
+        ? `data:image/jpeg;base64,${result.assets[0].base64}`
+        : '';
     }
   };
 
@@ -101,8 +145,13 @@ export default function AdminComplaintsScreen() {
     if (!addBuilding) return Alert.alert('Error', 'Select a building');
     setSubmitting(true);
     try {
-      await api.post('/complaints/admin', { ...addForm, building_id: addBuilding.id });
-      setAddForm({ title: '', description: '', category: 'General', photo_url: '' });
+      await api.post('/complaints/admin', {
+        ...addForm,
+        building_id: addBuilding.id,
+        photo_url: addPhotoBase64Ref.current || undefined,
+      });
+      setAddForm({ title: '', description: '', category: 'General' });
+      addPhotoBase64Ref.current = '';
       setAddBuilding(null); setAddImageUri(null); setShowAdd(false);
       fetchComplaints();
     } catch (e: any) {
@@ -117,6 +166,7 @@ export default function AdminComplaintsScreen() {
       category: item.category || 'General', status: item.status,
       remark: item.remark || '', photo_url: item.photo_url || '',
     });
+    editPhotoBase64Ref.current = item.photo_url || '';
     setEditImageUri(item.photo_url || null);
     setShowEdit(true);
   };
@@ -125,7 +175,10 @@ export default function AdminComplaintsScreen() {
     if (!editTarget) return;
     setSaving(true);
     try {
-      await api.put(`/complaints/admin/${editTarget.id}`, editForm);
+      await api.put(`/complaints/admin/${editTarget.id}`, {
+        ...editForm,
+        photo_url: editPhotoBase64Ref.current || editForm.photo_url || undefined,
+      });
       setShowEdit(false); fetchComplaints();
     } catch (e: any) {
       Alert.alert('Error', e.response?.data?.error || 'Failed');
@@ -338,149 +391,113 @@ export default function AdminComplaintsScreen() {
 
 
       {/* ── Add Modal ── */}
-      <Modal visible={showAdd} animationType="slide" transparent>
-        <View style={styles.overlay}>
-          <View style={styles.sheet}>
-            <View style={styles.sheetHandle} />
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Add Complaint</Text>
-              <TouchableOpacity onPress={() => { setShowAdd(false); setAddImageUri(null); }} style={styles.closeBtn}>
-                <Ionicons name="close" size={20} color={Colors.text} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-              <Text style={styles.label}>Building *</Text>
-              <BuildingDropdown buildings={buildings} selected={addBuilding} onSelect={setAddBuilding} placeholder="Select building" />
-              <View style={{ height: 18 }} />
-              <Text style={styles.label}>Title *</Text>
-              <TextInput
-                style={styles.input} placeholder="Complaint title"
-                value={addForm.title} onChangeText={t => setAddForm(f => ({ ...f, title: t }))}
-                placeholderTextColor={Colors.textMuted}
-              />
-              <Text style={styles.label}>Category</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 18 }}>
-                <View style={{ flexDirection: 'row', gap: 8, paddingRight: 8 }}>
-                  {CATEGORIES.map(cat => (
-                    <TouchableOpacity
-                      key={cat}
-                      style={[styles.chip, addForm.category === cat && styles.chipActive]}
-                      onPress={() => setAddForm(f => ({ ...f, category: cat }))}
-                    >
-                      <Ionicons name={CAT_ICONS[cat] as any} size={13} color={addForm.category === cat ? Colors.white : Colors.textMuted} />
-                      <Text style={[styles.chipText, addForm.category === cat && styles.chipTextActive]}>{cat}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </ScrollView>
-              <Text style={styles.label}>Description</Text>
-              <TextInput
-                style={[styles.input, styles.textArea]} placeholder="Details..."
-                value={addForm.description} onChangeText={t => setAddForm(f => ({ ...f, description: t }))}
-                multiline numberOfLines={3} placeholderTextColor={Colors.textMuted}
-              />
-              <Text style={styles.label}>Photo (optional)</Text>
-              <TouchableOpacity style={styles.photoPicker} onPress={() => pickImage(setAddImageUri, setAddForm)}>
-                {addImageUri
-                  ? <Image source={{ uri: addImageUri }} style={styles.photoPreview} />
-                  : <View style={styles.photoPlaceholder}>
-                      <Ionicons name="image-outline" size={30} color={Colors.textMuted} />
-                      <Text style={styles.photoPlaceholderText}>Tap to attach photo</Text>
-                    </View>
-                }
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.submitBtn, submitting && { opacity: 0.6 }]} onPress={submitAdd} disabled={submitting}>
-                {submitting
-                  ? <ActivityIndicator color={Colors.white} />
-                  : <Text style={styles.submitBtnText}>Create Complaint</Text>}
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      <BottomSheetModal
+        visible={showAdd}
+        onClose={() => { setShowAdd(false); setAddImageUri(null); addPhotoBase64Ref.current = ''; }}
+        title="Add Complaint"
+      >
+        <Text style={styles.label}>Building *</Text>
+        <BuildingDropdown buildings={buildings} selected={addBuilding} onSelect={setAddBuilding} placeholder="Select building" />
+        <View style={{ height: 18 }} />
+        <Text style={styles.label}>Title *</Text>
+        <TextInput
+          style={styles.input} placeholder="Complaint title"
+          value={addForm.title} onChangeText={text => setAddForm(f => ({ ...f, title: text }))}
+          placeholderTextColor={Colors.textMuted}
+        />
+        <Text style={styles.label}>Category</Text>
+        <CategoryChips
+          selected={addForm.category}
+          onSelect={cat => setAddForm(f => ({ ...f, category: cat }))}
+          compact
+        />
+        <Text style={styles.label}>Description</Text>
+        <TextInput
+          style={[styles.input, styles.textArea]} placeholder="Details..."
+          value={addForm.description} onChangeText={text => setAddForm(f => ({ ...f, description: text }))}
+          multiline numberOfLines={3} placeholderTextColor={Colors.textMuted}
+        />
+        <Text style={styles.label}>Photo (optional)</Text>
+        <TouchableOpacity style={styles.photoPicker} onPress={() => pickImage(setAddImageUri, addPhotoBase64Ref)}>
+          {addImageUri
+            ? <Image source={{ uri: addImageUri }} style={styles.photoPreview} />
+            : <View style={styles.photoPlaceholder}>
+                <Ionicons name="image-outline" size={30} color={Colors.textMuted} />
+                <Text style={styles.photoPlaceholderText}>Tap to attach photo</Text>
+              </View>
+          }
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.submitBtn, submitting && { opacity: 0.6 }]} onPress={submitAdd} disabled={submitting}>
+          {submitting
+            ? <ActivityIndicator color={Colors.white} />
+            : <Text style={styles.submitBtnText}>Create Complaint</Text>}
+        </TouchableOpacity>
+      </BottomSheetModal>
 
       {/* ── Edit Modal ── */}
-      <Modal visible={showEdit} animationType="slide" transparent>
-        <View style={styles.overlay}>
-          <View style={styles.sheet}>
-            <View style={styles.sheetHandle} />
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Edit Complaint</Text>
-              <TouchableOpacity onPress={() => setShowEdit(false)} style={styles.closeBtn}>
-                <Ionicons name="close" size={20} color={Colors.text} />
+      <BottomSheetModal
+        visible={showEdit}
+        onClose={() => setShowEdit(false)}
+        title="Edit Complaint"
+      >
+        <Text style={styles.label}>Title</Text>
+        <TextInput
+          style={styles.input} value={editForm.title}
+          onChangeText={text => setEditForm(f => ({ ...f, title: text }))}
+          placeholderTextColor={Colors.textMuted}
+        />
+        <Text style={styles.label}>Category</Text>
+        <CategoryChips
+          selected={editForm.category}
+          onSelect={cat => setEditForm(f => ({ ...f, category: cat }))}
+          compact
+        />
+        <Text style={styles.label}>Description</Text>
+        <TextInput
+          style={[styles.input, styles.textArea]} value={editForm.description}
+          onChangeText={text => setEditForm(f => ({ ...f, description: text }))}
+          multiline numberOfLines={3} placeholderTextColor={Colors.textMuted}
+        />
+        <Text style={styles.label}>Status</Text>
+        <View style={styles.statusGrid}>
+          {(['open', 'in_progress', 'resolved'] as const).map(s => {
+            const m = STATUS_META[s];
+            const active = editForm.status === s;
+            return (
+              <TouchableOpacity
+                key={s}
+                style={[styles.statusTile, active && { backgroundColor: m.color, borderColor: m.color }]}
+                onPress={() => setEditForm(f => ({ ...f, status: s }))}
+              >
+                <Ionicons name={m.icon as any} size={20} color={active ? '#fff' : m.color} />
+                <Text style={[styles.statusTileText, active && { color: '#fff' }]}>{m.label}</Text>
               </TouchableOpacity>
-            </View>
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-              <Text style={styles.label}>Title</Text>
-              <TextInput
-                style={styles.input} value={editForm.title}
-                onChangeText={t => setEditForm(f => ({ ...f, title: t }))}
-                placeholderTextColor={Colors.textMuted}
-              />
-              <Text style={styles.label}>Category</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 18 }}>
-                <View style={{ flexDirection: 'row', gap: 8, paddingRight: 8 }}>
-                  {CATEGORIES.map(cat => (
-                    <TouchableOpacity
-                      key={cat}
-                      style={[styles.chip, editForm.category === cat && styles.chipActive]}
-                      onPress={() => setEditForm(f => ({ ...f, category: cat }))}
-                    >
-                      <Ionicons name={CAT_ICONS[cat] as any} size={13} color={editForm.category === cat ? Colors.white : Colors.textMuted} />
-                      <Text style={[styles.chipText, editForm.category === cat && styles.chipTextActive]}>{cat}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </ScrollView>
-              <Text style={styles.label}>Description</Text>
-              <TextInput
-                style={[styles.input, styles.textArea]} value={editForm.description}
-                onChangeText={t => setEditForm(f => ({ ...f, description: t }))}
-                multiline numberOfLines={3} placeholderTextColor={Colors.textMuted}
-              />
-              <Text style={styles.label}>Status</Text>
-              <View style={styles.statusGrid}>
-                {(['open', 'in_progress', 'resolved'] as const).map(s => {
-                  const m = STATUS_META[s];
-                  const active = editForm.status === s;
-                  return (
-                    <TouchableOpacity
-                      key={s}
-                      style={[styles.statusTile, active && { backgroundColor: m.color, borderColor: m.color }]}
-                      onPress={() => setEditForm(f => ({ ...f, status: s }))}
-                    >
-                      <Ionicons name={m.icon as any} size={20} color={active ? '#fff' : m.color} />
-                      <Text style={[styles.statusTileText, active && { color: '#fff' }]}>{m.label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-              <Text style={styles.label}>Remark</Text>
-              <TextInput
-                style={[styles.input, styles.textArea]} value={editForm.remark}
-                onChangeText={t => setEditForm(f => ({ ...f, remark: t }))}
-                multiline numberOfLines={3} placeholder="Add remark..."
-                placeholderTextColor={Colors.textMuted}
-              />
-              <Text style={styles.label}>Photo</Text>
-              <TouchableOpacity style={styles.photoPicker} onPress={() => pickImage(setEditImageUri, setEditForm)}>
-                {editImageUri
-                  ? <Image source={{ uri: editImageUri }} style={styles.photoPreview} />
-                  : <View style={styles.photoPlaceholder}>
-                      <Ionicons name="image-outline" size={30} color={Colors.textMuted} />
-                      <Text style={styles.photoPlaceholderText}>Tap to change photo</Text>
-                    </View>
-                }
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.submitBtn, saving && { opacity: 0.6 }]} onPress={submitEdit} disabled={saving}>
-                {saving
-                  ? <ActivityIndicator color={Colors.white} />
-                  : <Text style={styles.submitBtnText}>{t('saveChanges')}</Text>}
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
+            );
+          })}
         </View>
-      </Modal>
+        <Text style={styles.label}>Remark</Text>
+        <TextInput
+          style={[styles.input, styles.textArea]} value={editForm.remark}
+          onChangeText={text => setEditForm(f => ({ ...f, remark: text }))}
+          multiline numberOfLines={3} placeholder="Add remark..."
+          placeholderTextColor={Colors.textMuted}
+        />
+        <Text style={styles.label}>Photo</Text>
+        <TouchableOpacity style={styles.photoPicker} onPress={() => pickImage(setEditImageUri, editPhotoBase64Ref)}>
+          {editImageUri
+            ? <Image source={{ uri: editImageUri }} style={styles.photoPreview} />
+            : <View style={styles.photoPlaceholder}>
+                <Ionicons name="image-outline" size={30} color={Colors.textMuted} />
+                <Text style={styles.photoPlaceholderText}>Tap to change photo</Text>
+              </View>
+          }
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.submitBtn, saving && { opacity: 0.6 }]} onPress={submitEdit} disabled={saving}>
+          {saving
+            ? <ActivityIndicator color={Colors.white} />
+            : <Text style={styles.submitBtnText}>{t('saveChanges')}</Text>}
+        </TouchableOpacity>
+      </BottomSheetModal>
 
       {/* ── Detail Modal ── */}
       <Modal visible={showDetail} animationType="slide" transparent>
@@ -695,6 +712,12 @@ const styles = StyleSheet.create({
   },
   textArea: { height: 90, textAlignVertical: 'top' },
 
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 18,
+  },
   chip: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     paddingHorizontal: 14, paddingVertical: 8,

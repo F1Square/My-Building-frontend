@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Language, T } from '../constants/translations';
+import api from '../utils/api';
 
 type LanguageContextType = {
   language: Language;
@@ -20,70 +21,91 @@ const LanguageContext = createContext<LanguageContextType>({
   t: (key) => key,
 });
 
+function isValidLang(v: string | null | undefined): v is Language {
+  return v === 'hi' || v === 'gu' || v === 'en';
+}
+
+async function syncLanguageToServer(lang: Language) {
+  try {
+    await api.post('/auth/language', { app_language: lang });
+  } catch (error) {
+    console.warn('Failed to sync app language to server:', error);
+  }
+}
+
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [language, setLang] = useState<Language>('en');
   const [hasChosen, setHasChosen] = useState(false);
-  // Start as true — stays true until we've fully resolved the language state
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const initRequestIdRef = useRef(0);
 
-  // On app start — load device-level language only
-  // hasChosen stays false until initForUser is called
   useEffect(() => {
     AsyncStorage.getItem('app_language')
       .then((v) => {
-        if (v === 'hi' || v === 'gu' || v === 'en') setLang(v);
-        // Don't set loading=false here — wait for initForUser or no-user path
+        if (isValidLang(v)) setLang(v);
       })
       .catch((error) => {
         console.error('Error reading app language from storage:', error);
       });
   }, []);
 
-  // Called from _layout when user becomes available (login or restore from storage)
-  // Keeps loading=true until done so the router never sees a stale hasChosen=false
   const initForUser = useCallback(async (userId: string) => {
     const requestId = ++initRequestIdRef.current;
     setLoading(true);
 
     try {
-      // Special case: no user logged in (logout state)
       if (userId === '__no_user__') {
-        // Check if device-level language exists
         const deviceLang = await AsyncStorage.getItem('app_language');
         if (requestId !== initRequestIdRef.current) return;
-        if (deviceLang === 'hi' || deviceLang === 'gu' || deviceLang === 'en') {
+        if (isValidLang(deviceLang)) {
           setLang(deviceLang);
-          // Device language exists, so user has chosen before
           setHasChosen(true);
         } else {
           setHasChosen(false);
         }
+        setCurrentUserId(null);
         setLoading(false);
         return;
       }
 
       setCurrentUserId(userId);
       const key = `app_language_user_${userId}`;
-      const v = await AsyncStorage.getItem(key);
+      const localLang = await AsyncStorage.getItem(key);
       if (requestId !== initRequestIdRef.current) return;
 
-      if (v === 'hi' || v === 'gu' || v === 'en') {
-        // User has already picked a language before — skip picker
-        setLang(v);
-        setHasChosen(true);
-      } else {
-        // Fresh user — they must go through the language picker.
-        // Pre-load the device-level language so the picker has a sensible
-        // default highlighted, but do NOT mark hasChosen = true.
+      let resolvedLang: Language | null = isValidLang(localLang) ? localLang : null;
+      let chosen = Boolean(resolvedLang);
+
+      if (!resolvedLang) {
+        try {
+          const res = await api.get('/auth/me');
+          const serverLang = res.data?.user?.app_language;
+          if (isValidLang(serverLang)) {
+            resolvedLang = serverLang;
+            chosen = true;
+            await AsyncStorage.setItem(key, serverLang);
+          }
+        } catch (error) {
+          console.warn('Could not load app language from server:', error);
+        }
+      }
+
+      if (!resolvedLang) {
         const deviceLang = await AsyncStorage.getItem('app_language');
         if (requestId !== initRequestIdRef.current) return;
-        if (deviceLang === 'hi' || deviceLang === 'gu' || deviceLang === 'en') {
-          setLang(deviceLang);
+        if (isValidLang(deviceLang)) {
+          resolvedLang = deviceLang;
+        } else {
+          resolvedLang = 'en';
         }
-        setHasChosen(false);
+        chosen = false;
       }
+
+      if (requestId !== initRequestIdRef.current) return;
+      setLang(resolvedLang);
+      setHasChosen(chosen);
+      await syncLanguageToServer(resolvedLang);
     } catch (error) {
       console.error('Error initializing language state:', error);
       setHasChosen(false);
@@ -100,9 +122,9 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
       if (currentUserId) {
         await AsyncStorage.setItem(`app_language_user_${currentUserId}`, lang);
       }
+      await syncLanguageToServer(lang);
     } catch (error) {
       console.error('Error saving language preference:', error);
-      // Still update state even if storage fails
       setLang(lang);
       setHasChosen(true);
     }
@@ -112,7 +134,11 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     const bundle = T[language] ?? T.en;
     return bundle[key] ?? T.en[key] ?? key;
   }, [language]);
-  const contextValue = useMemo(() => ({ language, hasChosen, loading, setLanguage, initForUser, t }), [language, hasChosen, loading, setLanguage, initForUser, t]);
+
+  const contextValue = useMemo(
+    () => ({ language, hasChosen, loading, setLanguage, initForUser, t }),
+    [language, hasChosen, loading, setLanguage, initForUser, t],
+  );
 
   return (
     <LanguageContext.Provider value={contextValue}>

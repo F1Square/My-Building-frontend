@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
   Modal, FlatList, Platform,
@@ -14,6 +14,8 @@ import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import { cacheManager, CACHE_PRESETS } from '../utils/CacheManager';
 import { ModuleHeader, ModuleHeaderIconButton } from '../components/ModuleHeader';
+import { ExpenseDatePicker } from '../components/ExpenseDatePicker';
+import { localDateString } from '../utils/expenseDate';
 
 const LANGUAGES = [
   { key: 'english', label: 'English', flag: '🇬🇧' },
@@ -24,34 +26,19 @@ const LANGUAGES = [
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const FULL_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-function formatDate(d: Date) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
+function todayStr() { return localDateString(); }
 
-function todayStr() { return formatDate(new Date()); }
-
-// Escape values that get injected into the WebView HTML / JS strings, so a
-// malicious file URL or watermark string can't break out of the script.
+// Escape values injected into the WebView HTML / JS strings.
 function escapeForJs(s: string) {
   return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/</g, '\\u003c');
 }
 
 /**
- * Build a self-contained HTML page that renders the given PDF using PDF.js,
- * burns a watermark into each page, and locks down user gestures (no
- * selection, no long-press menu, no right-click).
- *
- * Rendering pages as canvas pixels (instead of the platform's PDF viewer)
- * means there's no underlying PDF the user can save through the WebView UI
- * and no selectable/copyable text. Combined with FLAG_SECURE on Android via
- * expo-screen-capture, this materially raises the bar for content leakage.
+ * Build a self-contained HTML page that renders the given PDF using PDF.js
+ * and locks down user gestures (no selection, no long-press menu, no right-click).
  */
-function buildPdfHtml(pdfUrl: string, watermark: string) {
+function buildPdfHtml(pdfUrl: string) {
   const safeUrl = escapeForJs(pdfUrl);
-  const safeMark = escapeForJs(watermark);
   return `<!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, maximum-scale=4.0">
 <style>
@@ -75,7 +62,6 @@ function buildPdfHtml(pdfUrl: string, watermark: string) {
       var post=function(m){try{window.ReactNativeWebView.postMessage(JSON.stringify(m));}catch(_){} };
       if(!window.pdfjsLib){post({type:'error',message:'pdfjs failed to load'});return;}
       pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-      var WM='${safeMark}';
       pdfjsLib.getDocument({url:'${safeUrl}',disableRange:true,disableStream:true}).promise.then(function(pdf){
         var viewer=document.getElementById('viewer');
         var bar=document.getElementById('bar');
@@ -95,17 +81,6 @@ function buildPdfHtml(pdfUrl: string, watermark: string) {
             viewer.appendChild(canvas);
             var ctx=canvas.getContext('2d');
             page.render({canvasContext:ctx,viewport:vp}).promise.then(function(){
-              ctx.save();
-              ctx.translate(vp.width/2,vp.height/2);
-              ctx.rotate(-Math.PI/8);
-              ctx.font='bold '+(36*dpr)+'px sans-serif';
-              ctx.fillStyle='rgba(59,95,192,0.16)';
-              ctx.textAlign='center';
-              ctx.fillText(WM,0,0);
-              ctx.font='bold '+(20*dpr)+'px sans-serif';
-              ctx.fillText(WM,-vp.width/3,-vp.height/4);
-              ctx.fillText(WM,vp.width/3,vp.height/4);
-              ctx.restore();
               bar.style.width=((i/pdf.numPages)*100)+'%';
               post({type:'progress',page:i,total:pdf.numPages});
               i++;next();
@@ -153,10 +128,6 @@ export default function NewspaperScreen() {
   const [uploading, setUploading] = useState(false);
   const [recentEditions, setRecentEditions] = useState<any[]>([]);
   const [pdfLoadFailed, setPdfLoadFailed] = useState(false);
-
-  // Watermark text drawn on every rendered page — picks the most identifying
-  // info we have so that a leaked screenshot/photo can be traced.
-  const watermark = (user?.email || user?.phone || user?.name || 'My Building') + ' · ' + selectedDate;
 
   // Lock down screen capture while this screen is in focus. Android gets
   // FLAG_SECURE (true block); iOS can only listen and warn since Apple
@@ -245,14 +216,23 @@ export default function NewspaperScreen() {
 
   useFocusEffect(useCallback(() => {
     fetchAvailableDates();
-    if (!isAdmin) fetchEdition();
-    else fetchRecentEditions();
-  }, [language, selectedDate]));
+    if (isAdmin) fetchRecentEditions();
+    else fetchEdition();
+  }, [fetchAvailableDates, fetchEdition, fetchRecentEditions, isAdmin]));
 
   const handleDateSelect = (date: string) => {
     setSelectedDate(date);
     setShowCalendar(false);
   };
+
+  const editionsForTab = useMemo(
+    () =>
+      recentEditions.filter((e) => {
+        const editionDate = String(e.date || '').slice(0, 10);
+        return e.language === language && editionDate === selectedDate;
+      }),
+    [recentEditions, language, selectedDate],
+  );
 
   const submitUpload = async () => {
     if (!uploadFile) return Alert.error('Error', 'Please select a PDF file', 4000);
@@ -266,8 +246,12 @@ export default function NewspaperScreen() {
       Alert.success('Saved', 'Newspaper edition saved successfully', 4000);
       setUploadFile(null);
       setShowUpload(false);
+      await cacheManager.invalidate('newspaper:*');
       fetchRecentEditions();
       fetchAvailableDates();
+      if (uploadDate === selectedDate && uploadLang === language && !isAdmin) {
+        fetchEdition();
+      }
     } catch (e: any) {
       Alert.error('Error', e.response?.data?.error || 'Failed to save', 4000);
     } finally {
@@ -281,8 +265,10 @@ export default function NewspaperScreen() {
       { text: 'Delete', style: 'destructive', onPress: async () => {
         try {
           await api.delete(`/newspapers/${id}`);
+          await cacheManager.invalidate('newspaper:*');
           fetchRecentEditions();
           fetchAvailableDates();
+          if (!isAdmin) fetchEdition();
         } catch (e: any) {
           Alert.error('Error', e.response?.data?.error || 'Failed', 4000);
         }
@@ -346,10 +332,8 @@ export default function NewspaperScreen() {
     );
   };
 
-  // Memo the rendered HTML so the WebView doesn't re-mount on unrelated
-  // re-renders (the WM/url combo is what should drive a reload).
   const viewerHtml = editionUrl && editionKind === 'pdf'
-    ? buildPdfHtml(editionUrl, watermark)
+    ? buildPdfHtml(editionUrl)
     : null;
 
   return (
@@ -358,7 +342,15 @@ export default function NewspaperScreen() {
       <ModuleHeader
         title="📰 Newspaper"
         rightAction={isAdmin ? (
-          <ModuleHeaderIconButton icon="cloud-upload-outline" onPress={() => setShowUpload(true)} />
+          <ModuleHeaderIconButton
+            icon="cloud-upload-outline"
+            onPress={() => {
+              setUploadDate(todayStr());
+              setUploadLang(language);
+              setUploadFile(null);
+              setShowUpload(true);
+            }}
+          />
         ) : undefined}
       />
 
@@ -399,14 +391,16 @@ export default function NewspaperScreen() {
       ) : isAdmin ? (
         // Admin: show recent editions list
         <FlatList
-          data={recentEditions}
+          data={editionsForTab}
           keyExtractor={i => i.id}
           contentContainerStyle={{ padding: 16 }}
           ListEmptyComponent={
             <View style={styles.empty}>
               <Ionicons name="newspaper-outline" size={52} color={Colors.border} />
-              <Text style={styles.emptyTitle}>No editions uploaded yet</Text>
-              <Text style={styles.emptyText}>Tap the upload button to add today's newspaper</Text>
+              <Text style={styles.emptyTitle}>No edition for this date</Text>
+              <Text style={styles.emptyText}>
+                No {LANGUAGES.find(l => l.key === language)?.label} PDF for {selectedDate}. Upload one or pick another date / language.
+              </Text>
             </View>
           }
           renderItem={({ item }) => (
@@ -433,9 +427,9 @@ export default function NewspaperScreen() {
       ) : notAvailable ? (
         <View style={styles.empty}>
           <Ionicons name="newspaper-outline" size={52} color={Colors.border} />
-          <Text style={styles.emptyTitle}>No Newspaper Today</Text>
+          <Text style={styles.emptyTitle}>No Newspaper for this language</Text>
           <Text style={styles.emptyText}>
-            The newspaper for this date hasn't been uploaded yet. Check back later or try a different date.
+            No {LANGUAGES.find(l => l.key === language)?.label || language} edition for this date. Try another date or language tab.
           </Text>
         </View>
       ) : viewerHtml ? (
@@ -471,17 +465,8 @@ export default function NewspaperScreen() {
               } catch (_) {}
             }}
           />
-          {/* Diagonal RN-side watermark as a second layer of deterrent —
-              even if a tampered build bypasses the canvas-baked one, this
-              floats above the WebView and is captured by any photo. */}
-          <View pointerEvents="none" style={styles.watermarkOverlay}>
-            <Text style={styles.watermarkText} numberOfLines={1}>{watermark}</Text>
-          </View>
         </View>
       ) : editionUrl && editionKind === 'external' ? (
-        // Third-party newspaper website (URL pattern) — render in a sandboxed
-        // WebView. We can't burn watermarks into someone else's HTML, but
-        // we still keep capture protection on.
         <WebView
           originWhitelist={['*']}
           source={{ uri: editionUrl }}
@@ -525,14 +510,11 @@ export default function NewspaperScreen() {
             <View style={styles.sheetHandle} />
             <Text style={styles.sheetTitle}>Upload Newspaper</Text>
 
-            <Text style={styles.inputLabel}>Date</Text>
-            <TouchableOpacity style={styles.inputBox} onPress={() => {
-              setShowUpload(false);
-              setTimeout(() => setShowCalendar(true), 300);
-            }}>
-              <Ionicons name="calendar-outline" size={16} color={Colors.primary} />
-              <Text style={styles.inputText}>{uploadDate}</Text>
-            </TouchableOpacity>
+            <ExpenseDatePicker
+              label="Date"
+              value={uploadDate}
+              onChange={setUploadDate}
+            />
 
             <Text style={styles.inputLabel}>Language</Text>
             <View style={styles.langRow}>
@@ -614,22 +596,6 @@ const styles = StyleSheet.create({
     top: 0, left: 0, right: 0, bottom: 0,
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: '#1f2937',
-  },
-  watermarkOverlay: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0,
-    paddingTop: 6,
-    alignItems: 'center',
-    pointerEvents: 'none' as any,
-  },
-  watermarkText: {
-    color: 'rgba(255,255,255,0.18)',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-    textShadowColor: 'rgba(0,0,0,0.35)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
   },
   upgradeBtn: { backgroundColor: Colors.primary, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12, marginTop: 8 },
   upgradeBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },

@@ -18,9 +18,11 @@ interface ExpenseDatePickerProps {
   value: string;
   onChange: (value: string) => void;
   label?: string;
+  /** YYYY-MM-DD — dates before this are disabled (e.g. opening balance as-of). */
+  minDate?: string | null;
 }
 
-export function ExpenseDatePicker({ value, onChange, label = 'Date' }: ExpenseDatePickerProps) {
+export function ExpenseDatePicker({ value, onChange, label = 'Date', minDate }: ExpenseDatePickerProps) {
   const [open, setOpen] = useState(false);
   const now = new Date();
   const initial = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -28,6 +30,7 @@ export function ExpenseDatePicker({ value, onChange, label = 'Date' }: ExpenseDa
   const [month, setMonth] = useState(initial ? +initial[2] : now.getMonth() + 1);
 
   const todayStr = localDateString();
+  const minStr = minDate && /^\d{4}-\d{2}-\d{2}/.test(minDate) ? minDate.slice(0, 10) : null;
 
   const prevMonth = () => {
     if (month === 1) { setMonth(12); setYear(y => y - 1); }
@@ -50,6 +53,8 @@ export function ExpenseDatePicker({ value, onChange, label = 'Date' }: ExpenseDa
     onChange(ds);
     setOpen(false);
   };
+
+  const todayDisabled = Boolean(minStr && todayStr < minStr);
 
   return (
     <View>
@@ -80,7 +85,11 @@ export function ExpenseDatePicker({ value, onChange, label = 'Date' }: ExpenseDa
               </TouchableOpacity>
             </View>
 
-            <TouchableOpacity style={styles.todayBtn} onPress={() => pick(todayStr)}>
+            <TouchableOpacity
+              style={[styles.todayBtn, todayDisabled && { opacity: 0.4 }]}
+              onPress={() => !todayDisabled && pick(todayStr)}
+              disabled={todayDisabled}
+            >
               <Ionicons name="today-outline" size={16} color={Colors.primary} />
               <Text style={styles.todayBtnText}>Today</Text>
             </TouchableOpacity>
@@ -96,18 +105,20 @@ export function ExpenseDatePicker({ value, onChange, label = 'Date' }: ExpenseDa
                   const isSel = ds === value;
                   const isToday = ds === todayStr;
                   const isFuture = ds > todayStr;
+                  const isBeforeMin = Boolean(minStr && ds < minStr);
+                  const disabled = isFuture || isBeforeMin;
                   return (
                     <TouchableOpacity
                       key={col}
                       style={[styles.cell, isSel && styles.cellSel, isToday && !isSel && styles.cellToday]}
-                      onPress={() => !isFuture && pick(ds)}
-                      disabled={isFuture}
+                      onPress={() => !disabled && pick(ds)}
+                      disabled={disabled}
                     >
                       <Text style={[
                         styles.dayTxt,
                         isSel && styles.dayTxtSel,
                         isToday && !isSel && styles.dayTxtToday,
-                        isFuture && styles.dayTxtFuture,
+                        disabled && styles.dayTxtFuture,
                       ]}>
                         {day}
                       </Text>

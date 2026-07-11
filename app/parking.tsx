@@ -1,13 +1,15 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput,
-  Modal, ActivityIndicator, RefreshControl, ScrollView
+  Modal, ActivityIndicator, RefreshControl, ScrollView, Pressable,
+  KeyboardAvoidingView, Platform, Animated, Easing,
 } from 'react-native';
 import { Alert } from '../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import { useBuildings } from '../hooks/useBuildings';
@@ -16,8 +18,14 @@ import type { Building } from '../hooks/useBuildings';
 import { useActivityLog } from '../hooks/useActivityLog';
 import ParkingReportDetailModal, { ParkingReport } from '../components/ParkingReportDetailModal';
 import { ModuleHeader, ModuleHeaderIconButton, ModuleHeaderTextButton } from '../components/ModuleHeader';
+import { useKeyboardPad } from '../hooks/useKeyboardPad';
 
 type Tab = 'vehicles' | 'reports';
+
+function formatWingFlat(user?: { wing?: string | null; flat_no?: string | null } | null) {
+  if (!user?.flat_no) return '';
+  return user.wing ? `${user.wing}-${user.flat_no}` : String(user.flat_no);
+}
 
 function VehicleDropdown({ vehicles, selected, onSelect, isAdmin, hasBuilding }: {
   vehicles: any[];
@@ -64,6 +72,7 @@ function VehicleDropdown({ vehicles, selected, onSelect, isAdmin, hasBuilding }:
         <View style={ddStyles.menu}>
           {vehicles.map((v: any) => {
             const active = selected === v.vehicle_number;
+            const wingFlat = formatWingFlat(v.users);
             return (
               <TouchableOpacity
                 key={v.id}
@@ -74,7 +83,9 @@ function VehicleDropdown({ vehicles, selected, onSelect, isAdmin, hasBuilding }:
                 <View style={{ flex: 1 }}>
                   <Text style={[ddStyles.itemText, active && ddStyles.itemTextActive]}>{v.vehicle_number}</Text>
                   {v.users ? (
-                    <Text style={ddStyles.itemSub}>{v.users.name}{v.users.flat_no ? ` · Flat ${v.users.flat_no}` : ''}</Text>
+                    <Text style={ddStyles.itemSub}>
+                      {v.users.name}{wingFlat ? ` · ${wingFlat}` : ''}
+                    </Text>
                   ) : null}
                 </View>
                 {active && <Ionicons name="checkmark-circle" size={18} color={Colors.primary} />}
@@ -119,6 +130,8 @@ export default function ParkingScreen() {
   const { user } = useAuth();
   const router = useRouter();
   const { t } = useLanguage();
+  const insets = useSafeAreaInsets();
+  const keyboardPad = useKeyboardPad();
   const isAdmin = user?.role === 'admin';
   const params = useLocalSearchParams<{ building_id?: string; building_name?: string }>();
 
@@ -186,6 +199,60 @@ export default function ParkingScreen() {
     }
   };
 
+  const closeReportSheet = useCallback(() => {
+    setShowReport(false);
+    setReportForm({ description: '', vehicle_number: '', location: '' });
+    setReportBuilding(null);
+  }, []);
+
+  const reportBackdrop = useRef(new Animated.Value(0)).current;
+  const reportSheetY = useRef(new Animated.Value(48)).current;
+  const reportClosing = useRef(false);
+
+  useEffect(() => {
+    if (!showReport) return;
+    reportClosing.current = false;
+    reportBackdrop.setValue(0);
+    reportSheetY.setValue(56);
+    Animated.parallel([
+      Animated.timing(reportBackdrop, {
+        toValue: 1,
+        duration: 220,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.spring(reportSheetY, {
+        toValue: 0,
+        damping: 22,
+        stiffness: 240,
+        mass: 0.85,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [showReport, reportBackdrop, reportSheetY]);
+
+  const dismissReportSheet = useCallback(() => {
+    if (reportClosing.current) return;
+    reportClosing.current = true;
+    Animated.parallel([
+      Animated.timing(reportBackdrop, {
+        toValue: 0,
+        duration: 180,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(reportSheetY, {
+        toValue: 64,
+        duration: 200,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start(({ finished }) => {
+      if (finished) closeReportSheet();
+      else reportClosing.current = false;
+    });
+  }, [closeReportSheet, reportBackdrop, reportSheetY]);
+
   const submitReport = async () => {
     if (isAdmin && !reportBuilding) return Alert.error('Error', 'Please select a building', 4000);
     const desc = reportForm.description.trim();
@@ -196,24 +263,13 @@ export default function ParkingScreen() {
         ...reportForm,
         ...(isAdmin && reportBuilding ? { building_id: reportBuilding.id } : {}),
       });
-      setShowReport(false);
-      setReportForm({ description: '', vehicle_number: '', location: '' });
-      setReportBuilding(null);
+      dismissReportSheet();
       fetchData();
       Alert.success('Reported', 'Parking report submitted. Pramukh has been notified.', 4000);
     } catch (e: any) {
       Alert.error('Error', e.response?.data?.error || 'Failed to submit report', 4000);
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  const sendReminder = async (vehicleNumber: string) => {
-    try {
-      await api.post('/vehicles/reminder', { vehicle_number: vehicleNumber, message: '' });
-      Alert.success('Sent', 'Parking reminder sent to vehicle owner', 4000);
-    } catch (e: any) {
-      Alert.error('Error', e.response?.data?.error || 'Failed to send reminder', 4000);
     }
   };
 
@@ -248,12 +304,18 @@ export default function ParkingScreen() {
 
   const groupedVehicles = useMemo(() => {
     const map = new Map<string, { user: any, vehicles: any[] }>();
-    const filteredList = vehicles.filter((v) =>
-      !search || 
-      v.vehicle_number.toUpperCase().includes(search.toUpperCase()) ||
-      (v.users?.name && v.users.name.toLowerCase().includes(search.toLowerCase())) ||
-      (v.users?.flat_no && String(v.users.flat_no).toLowerCase().includes(search.toLowerCase()))
-    );
+    const q = search.trim().toLowerCase();
+    const filteredList = vehicles.filter((v) => {
+      if (!q) return true;
+      const wingFlat = formatWingFlat(v.users).toLowerCase();
+      return (
+        v.vehicle_number.toUpperCase().includes(q.toUpperCase()) ||
+        (v.users?.name && v.users.name.toLowerCase().includes(q)) ||
+        (v.users?.wing && String(v.users.wing).toLowerCase().includes(q)) ||
+        (v.users?.flat_no && String(v.users.flat_no).toLowerCase().includes(q)) ||
+        (wingFlat && wingFlat.includes(q))
+      );
+    });
 
     filteredList.forEach(v => {
       const userId = v.users?.id || 'unassigned_' + v.id;
@@ -268,6 +330,7 @@ export default function ParkingScreen() {
 
   const renderUserCard = ({ item }: { item: { user: any, vehicles: any[] } }) => {
     const hasUser = !!item.user;
+    const wingFlat = formatWingFlat(item.user);
     return (
       <View style={styles.card}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
@@ -275,9 +338,9 @@ export default function ParkingScreen() {
             <Ionicons name="person" size={20} color={Colors.primary} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.userName}>{hasUser ? item.user.name : 'Unassigned Vehicle'}</Text>
-            {hasUser && item.user.flat_no && (
-              <Text style={styles.userFlat}>Flat {item.user.flat_no}</Text>
+            <Text style={styles.userName}>{hasUser ? (item.user.name || 'Member') : 'Unassigned Vehicle'}</Text>
+            {hasUser && !!wingFlat && (
+              <Text style={styles.userFlat}>{wingFlat}</Text>
             )}
           </View>
         </View>
@@ -289,21 +352,14 @@ export default function ParkingScreen() {
                 <Text style={styles.vehicleBadgeEmoji}>{v.vehicle_type === 'four_wheeler' ? '🚗' : '🏍️'}</Text>
                 <Text style={styles.vehicleBadgeText}>{v.vehicle_number}</Text>
               </View>
-              {(user?.role === 'pramukh' || isAdmin) && (
+              {isAdmin && (
                 <View style={styles.vehicleActionsRow}>
-                  <TouchableOpacity style={styles.actionIconBtn} onPress={() => sendReminder(v.vehicle_number)}>
-                    <Ionicons name="notifications-outline" size={14} color={Colors.warning} />
+                  <TouchableOpacity style={styles.actionIconBtn} onPress={() => openAdminEdit(v)}>
+                    <Ionicons name="pencil-outline" size={14} color={Colors.primary} />
                   </TouchableOpacity>
-                  {isAdmin && (
-                    <>
-                      <TouchableOpacity style={styles.actionIconBtn} onPress={() => openAdminEdit(v)}>
-                        <Ionicons name="pencil-outline" size={14} color={Colors.primary} />
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.actionIconBtn} onPress={() => adminDeleteVehicle(v.id, v.vehicle_number)}>
-                        <Ionicons name="trash-outline" size={14} color={Colors.danger} />
-                      </TouchableOpacity>
-                    </>
-                  )}
+                  <TouchableOpacity style={styles.actionIconBtn} onPress={() => adminDeleteVehicle(v.id, v.vehicle_number)}>
+                    <Ionicons name="trash-outline" size={14} color={Colors.danger} />
+                  </TouchableOpacity>
                 </View>
               )}
             </View>
@@ -329,7 +385,7 @@ export default function ParkingScreen() {
         <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
       </View>
       <View style={styles.reportFooter}>
-        <Text style={styles.reportBy}>Reported by {item.reported_by || item.users?.name || '—'}</Text>
+        <Text style={styles.reportBy}>Reported by {item.users?.name || item.reported_by || '—'}</Text>
         <Text style={styles.reportTime}>{new Date(item.created_at).toLocaleDateString('en-IN')}</Text>
       </View>
     </TouchableOpacity>
@@ -394,18 +450,29 @@ export default function ParkingScreen() {
 
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} size="large" color={Colors.primary} />
-      ) : (
+      ) : tab === 'vehicles' ? (
         <FlatList
-          data={tab === 'vehicles' ? groupedVehicles : reports}
-          keyExtractor={(i: any) => tab === 'vehicles' ? (i.user?.id || 'u_' + i.vehicles[0].id) : i.id}
-          renderItem={tab === 'vehicles' ? renderUserCard : renderReport}
+          data={groupedVehicles}
+          keyExtractor={(i) => i.user?.id || 'u_' + i.vehicles[0].id}
+          renderItem={renderUserCard}
           contentContainerStyle={{ padding: 16 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} />}
           ListEmptyComponent={
             <Text style={styles.empty}>
-              {isAdmin && !selectedBuilding
-                ? t('selectBuildingToView')
-                : tab === 'vehicles' ? t('noVehicles') : t('noReports')}
+              {isAdmin && !selectedBuilding ? t('selectBuildingToView') : t('noVehicles')}
+            </Text>
+          }
+        />
+      ) : (
+        <FlatList
+          data={reports}
+          keyExtractor={(i) => i.id}
+          renderItem={renderReport}
+          contentContainerStyle={{ padding: 16 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} />}
+          ListEmptyComponent={
+            <Text style={styles.empty}>
+              {isAdmin && !selectedBuilding ? t('selectBuildingToView') : t('noReports')}
             </Text>
           }
         />
@@ -473,79 +540,117 @@ export default function ParkingScreen() {
         )}
       </Modal>
 
-      {/* Report Modal */}
-      <Modal visible={showReport} animationType="slide" presentationStyle="pageSheet">
-        <View style={styles.modal}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>{t('reportMisparking')}</Text>
-            <TouchableOpacity onPress={() => { setShowReport(false); setReportForm({ description: '', vehicle_number: '', location: '' }); setReportBuilding(null); }}>
-              <Ionicons name="close" size={24} color={Colors.text} />
-            </TouchableOpacity>
-          </View>
-          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            {isAdmin && (
-              <>
-                <BuildingDropdown
-                  buildings={buildings}
-                  loading={buildingsLoading}
-                  selected={reportBuilding}
-                  onSelect={(b) => { setReportBuilding(b); setReportForm(f => ({ ...f, vehicle_number: '' })); }}
-                  label="Select Building *"
-                />
-                <View style={{ height: 12 }} />
-              </>
-            )}
+      {/* Report mis-parking — login/register keyboard scroll + smooth sheet transition */}
+      <Modal
+        visible={showReport}
+        transparent
+        animationType="none"
+        onRequestClose={dismissReportSheet}
+        statusBarTranslucent
+      >
+        <View style={styles.reportSheetRoot}>
+          <Animated.View style={[styles.reportSheetBackdrop, { opacity: reportBackdrop }]}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={dismissReportSheet} />
+          </Animated.View>
 
-            <Text style={styles.label}>Description <Text style={{ color: Colors.danger }}>*</Text></Text>
-            <Text style={styles.labelHint}>Describe the issue clearly</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              value={reportForm.description}
-              onChangeText={(v) => setReportForm({ ...reportForm, description: v })}
-              placeholder="e.g. Vehicle blocking the main gate entrance since morning..."
-              multiline
-              numberOfLines={4}
-              placeholderTextColor={Colors.textMuted}
-            />
-
-            {/* Vehicle number dropdown */}
-            <Text style={styles.label}>Vehicle Number</Text>
-            <Text style={styles.labelHint}>Select from registered vehicles in your building</Text>
-            <VehicleDropdown
-              vehicles={(() => {
-                return isAdmin && reportBuilding
-                  ? vehicles.filter((v: any) => v.building_id === reportBuilding.id)
-                  : vehicles;
-              })()}
-              selected={reportForm.vehicle_number}
-              onSelect={(vn) => setReportForm(f => ({ ...f, vehicle_number: vn }))}
-              isAdmin={isAdmin}
-              hasBuilding={!isAdmin || !!reportBuilding}
-            />
-
-            <Text style={styles.label}>Location</Text>
-            <TextInput
-              style={styles.input}
-              value={reportForm.location}
-              onChangeText={(v) => setReportForm({ ...reportForm, location: v })}
-              placeholder="e.g. Near Gate 2, Basement B1"
-              placeholderTextColor={Colors.textMuted}
-            />
-
-            <TouchableOpacity
-              style={[styles.submitBtn, { backgroundColor: Colors.danger }, submitting && { opacity: 0.6 }]}
-              onPress={submitReport}
-              disabled={submitting}
+          <KeyboardAvoidingView
+            style={styles.reportSheetKav}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+          >
+            <Animated.View
+              style={[
+                styles.reportSheet,
+                {
+                  paddingBottom: Math.max(insets.bottom, 12),
+                  transform: [{ translateY: reportSheetY }],
+                },
+              ]}
             >
-              {submitting
-                ? <ActivityIndicator color="#fff" />
-                : <>
-                    <Ionicons name="warning-outline" size={18} color={Colors.white} />
-                    <Text style={styles.submitBtnText}>{t('submitReport')}</Text>
+              <View style={styles.reportSheetHandle} />
+              <View style={styles.reportSheetHeader}>
+                <Text style={styles.reportSheetTitle}>{t('reportMisparking')}</Text>
+                <TouchableOpacity onPress={dismissReportSheet} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Ionicons name="close-circle" size={28} color={Colors.border} />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView
+                style={styles.reportSheetScrollView}
+                contentContainerStyle={[
+                  styles.reportSheetScroll,
+                  { paddingBottom: Math.max(48, keyboardPad + 32) },
+                ]}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="interactive"
+                showsVerticalScrollIndicator
+                bounces
+              >
+                {isAdmin && (
+                  <>
+                    <BuildingDropdown
+                      buildings={buildings}
+                      loading={buildingsLoading}
+                      selected={reportBuilding}
+                      onSelect={(b) => { setReportBuilding(b); setReportForm(f => ({ ...f, vehicle_number: '' })); }}
+                      label="Select Building *"
+                    />
+                    <View style={{ height: 8 }} />
                   </>
-              }
-            </TouchableOpacity>
-          </ScrollView>
+                )}
+
+                <Text style={styles.label}>Description <Text style={{ color: Colors.danger }}>*</Text></Text>
+                <Text style={styles.labelHint}>Describe the issue clearly</Text>
+                <TextInput
+                  style={[styles.input, styles.textArea]}
+                  value={reportForm.description}
+                  onChangeText={(v) => setReportForm({ ...reportForm, description: v })}
+                  placeholder="e.g. Vehicle blocking the main gate entrance since morning..."
+                  multiline
+                  numberOfLines={4}
+                  scrollEnabled={false}
+                  placeholderTextColor={Colors.textMuted}
+                />
+
+                <Text style={styles.label}>Vehicle Number</Text>
+                <Text style={styles.labelHint}>Select from registered vehicles in your building</Text>
+                <VehicleDropdown
+                  vehicles={
+                    isAdmin && reportBuilding
+                      ? vehicles.filter((v: any) => v.building_id === reportBuilding.id)
+                      : vehicles
+                  }
+                  selected={reportForm.vehicle_number}
+                  onSelect={(vn) => setReportForm(f => ({ ...f, vehicle_number: vn }))}
+                  isAdmin={isAdmin}
+                  hasBuilding={!isAdmin || !!reportBuilding}
+                />
+
+                <Text style={styles.label}>Location</Text>
+                <TextInput
+                  style={styles.input}
+                  value={reportForm.location}
+                  onChangeText={(v) => setReportForm({ ...reportForm, location: v })}
+                  placeholder="e.g. Near Gate 2, Basement B1"
+                  placeholderTextColor={Colors.textMuted}
+                />
+
+                <TouchableOpacity
+                  style={[styles.submitBtn, { backgroundColor: Colors.danger }, submitting && { opacity: 0.6 }]}
+                  onPress={submitReport}
+                  disabled={submitting}
+                >
+                  {submitting
+                    ? <ActivityIndicator color="#fff" />
+                    : <>
+                        <Ionicons name="warning-outline" size={18} color={Colors.white} />
+                        <Text style={styles.submitBtnText}>{t('submitReport')}</Text>
+                      </>
+                  }
+                </TouchableOpacity>
+              </ScrollView>
+            </Animated.View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
 
@@ -609,4 +714,35 @@ const styles = StyleSheet.create({
   submitBtnText: { color: Colors.white, fontSize: 16, fontWeight: '700' },
   textArea: { height: 100, textAlignVertical: 'top' },
   labelHint: { fontSize: 12, color: Colors.textMuted, marginBottom: 6, marginTop: -4 },
+  reportSheetRoot: { flex: 1, justifyContent: 'flex-end' },
+  reportSheetBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  reportSheetKav: { flex: 1, justifyContent: 'flex-end' },
+  reportSheet: {
+    backgroundColor: Colors.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '92%',
+    paddingTop: 8,
+  },
+  reportSheetHandle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: Colors.border,
+    marginBottom: 8,
+  },
+  reportSheetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 4,
+  },
+  reportSheetTitle: { fontSize: 18, fontWeight: '800', color: Colors.text, flex: 1, marginRight: 12 },
+  reportSheetScrollView: { flexGrow: 0 },
+  reportSheetScroll: { paddingHorizontal: 20 },
 });

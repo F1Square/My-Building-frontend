@@ -6,6 +6,39 @@ export function localDateString(d = new Date()): string {
   return `${y}-${m}-${day}`;
 }
 
+/** YYYY-MM-DD only (safe for string compare). */
+export function toDateOnly(value?: string | null): string | null {
+  if (!value) return null;
+  const m = String(value).match(/^(\d{4}-\d{2}-\d{2})/);
+  if (m) return m[1];
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return null;
+  return localDateString(d);
+}
+
+/**
+ * Earliest allowed expense entry date after opening balance is set.
+ * Uses opening_balance_as_of from API, else fund created_at.
+ */
+export function openingBalanceMinEntryDate(summary: {
+  opening_balance?: number | null;
+  opening_balance_as_of?: string | null;
+  created_at?: string | null;
+} | null | undefined): string | null {
+  if (!summary || summary.opening_balance === null || summary.opening_balance === undefined) {
+    return null;
+  }
+  return toDateOnly(summary.opening_balance_as_of) || toDateOnly(summary.created_at);
+}
+
+export function isExpenseDateBefore(date: string, minDate: string): boolean {
+  const a = toDateOnly(date);
+  const b = toDateOnly(minDate);
+  if (!a || !b) return false;
+  return a < b;
+}
+
+
 export function parseExpenseDateParts(
   dateStr?: string | null,
   fallbackIso?: string | null,

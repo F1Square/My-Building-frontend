@@ -37,6 +37,8 @@ type PlanRow = {
   months: number | null;
   allow_newspaper_addon: boolean;
   newspaper_addon_paise?: number | null;
+  platform_fee_paise?: number | null;
+  other_fee_paise?: number | null;
   sort_order: number;
   is_active: boolean;
   features?: string[];
@@ -79,6 +81,8 @@ export default function SubscriptionsAdminScreen() {
     months: '',
     allow_newspaper_addon: true,
     newspaper_addon_paise: '',
+    platform_fee_paise: '',
+    other_fee_paise: '',
     sort_order: '0',
     featuresText: '',
   });
@@ -137,6 +141,8 @@ export default function SubscriptionsAdminScreen() {
       months: '',
       allow_newspaper_addon: true,
       newspaper_addon_paise: '',
+      platform_fee_paise: '',
+      other_fee_paise: '',
       sort_order: String((plans[plans.length - 1]?.sort_order ?? 0) + 1),
       featuresText: '',
     });
@@ -154,6 +160,8 @@ export default function SubscriptionsAdminScreen() {
       months: p.months == null ? '' : String(p.months),
       allow_newspaper_addon: !!p.allow_newspaper_addon,
       newspaper_addon_paise: p.newspaper_addon_paise == null ? '' : String(p.newspaper_addon_paise),
+      platform_fee_paise: p.platform_fee_paise == null || p.platform_fee_paise === 0 ? '' : String(p.platform_fee_paise),
+      other_fee_paise: p.other_fee_paise == null || p.other_fee_paise === 0 ? '' : String(p.other_fee_paise),
       sort_order: String(p.sort_order ?? 0),
       featuresText: feats.join('\n'),
     });
@@ -180,6 +188,8 @@ export default function SubscriptionsAdminScreen() {
       months: monthsVal,
       allow_newspaper_addon: planForm.allow_newspaper_addon,
       newspaper_addon_paise: planForm.newspaper_addon_paise.trim() === '' ? null : parseInt(planForm.newspaper_addon_paise, 10),
+      platform_fee_paise: planForm.platform_fee_paise.trim() === '' ? 0 : parseInt(planForm.platform_fee_paise, 10),
+      other_fee_paise: planForm.other_fee_paise.trim() === '' ? 0 : parseInt(planForm.other_fee_paise, 10),
       sort_order: parseInt(planForm.sort_order, 10) || 0,
       features,
       is_active: true,
@@ -307,6 +317,12 @@ export default function SubscriptionsAdminScreen() {
   const renderPlan = ({ item, index }: { item: PlanRow; index: number }) => {
     const ac = accentForPlan(item.slug, index);
     const rupees = (item.amount_paise / 100).toLocaleString('en-IN');
+    const platformFee = Math.round((item.platform_fee_paise || 0) / 100);
+    const otherFee = Math.round((item.other_fee_paise || 0) / 100);
+    const feeBits = [
+      platformFee > 0 ? `Platform ₹${platformFee}` : null,
+      otherFee > 0 ? `Other ₹${otherFee}` : null,
+    ].filter(Boolean).join(' · ');
     return (
       <View style={[styles.card, { opacity: item.is_active ? 1 : 0.55 }]}>
         <View style={styles.cardTop}>
@@ -316,6 +332,7 @@ export default function SubscriptionsAdminScreen() {
           <View style={{ flex: 1 }}>
             <Text style={styles.cardName}>{item.title}</Text>
             <Text style={styles.cardEmail}>{item.slug} · ₹{rupees}{item.months == null ? ' · Lifetime' : ` · ${item.months} mo`}</Text>
+            {!!feeBits && <Text style={styles.cardEmail}>{feeBits}</Text>}
           </View>
           {!item.is_active && (
             <View style={[styles.badge, { backgroundColor: Colors.textMuted + '33' }]}>
@@ -518,7 +535,7 @@ export default function SubscriptionsAdminScreen() {
             <TextInput style={styles.fieldInput} value={planForm.title} onChangeText={(v) => setPlanForm({ ...planForm, title: v })} placeholder="Display name" placeholderTextColor={Colors.textMuted} />
 
             <Text style={styles.fieldLabel}>Amount (paise)</Text>
-            <TextInput style={styles.fieldInput} value={planForm.amount_paise} onChangeText={(v) => setPlanForm({ ...planForm, amount_paise: v })} placeholder="1500 = ₹15" keyboardType="number-pad" placeholderTextColor={Colors.textMuted} />
+            <TextInput style={styles.fieldInput} value={planForm.amount_paise} onChangeText={(v) => setPlanForm({ ...planForm, amount_paise: v })} placeholder="1000 = ₹10" keyboardType="number-pad" placeholderTextColor={Colors.textMuted} />
 
             <Text style={styles.fieldLabel}>Months (empty = lifetime)</Text>
             <TextInput style={styles.fieldInput} value={planForm.months} onChangeText={(v) => setPlanForm({ ...planForm, months: v })} placeholder="1, 12, or leave blank" keyboardType="number-pad" placeholderTextColor={Colors.textMuted} />
@@ -533,6 +550,12 @@ export default function SubscriptionsAdminScreen() {
 
             <Text style={styles.fieldLabel}>Newspaper addon (paise, optional)</Text>
             <TextInput style={styles.fieldInput} value={planForm.newspaper_addon_paise} onChangeText={(v) => setPlanForm({ ...planForm, newspaper_addon_paise: v })} placeholder="300 for ₹3" keyboardType="number-pad" placeholderTextColor={Colors.textMuted} />
+
+            <Text style={styles.fieldLabel}>Platform fee (paise)</Text>
+            <TextInput style={styles.fieldInput} value={planForm.platform_fee_paise} onChangeText={(v) => setPlanForm({ ...planForm, platform_fee_paise: v })} placeholder="0 = none · 500 = ₹5" keyboardType="number-pad" placeholderTextColor={Colors.textMuted} />
+
+            <Text style={styles.fieldLabel}>Other fee (paise)</Text>
+            <TextInput style={styles.fieldInput} value={planForm.other_fee_paise} onChangeText={(v) => setPlanForm({ ...planForm, other_fee_paise: v })} placeholder="0 = none · 200 = ₹2" keyboardType="number-pad" placeholderTextColor={Colors.textMuted} />
 
             <Text style={styles.fieldLabel}>Description</Text>
             <TextInput style={styles.fieldInput} value={planForm.description} onChangeText={(v) => setPlanForm({ ...planForm, description: v })} placeholder="Short line for app" placeholderTextColor={Colors.textMuted} />

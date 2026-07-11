@@ -3,9 +3,9 @@
  *
  * Usage:
  *   import { Alert } from '../utils/alert';
- *   Alert.success('Success', 'Operation completed', 4000);
- *   Alert.error('Error', 'Something went wrong', 4000);
- *   Alert.alert('Title', 'Message'); // toast
+ *   Alert.success('Success', 'Operation completed', 4000); // shows: Operation completed
+ *   Alert.error('Error', 'Something went wrong', 4000);     // shows: Something went wrong
+ *   Alert.alert('Title', 'Message'); // toast (single line)
  *   Alert.alert('Confirm', 'Are you sure?', [{text: 'Cancel'}, {text: 'OK'}]); // native
  */
 
@@ -20,14 +20,10 @@ type AlertButton = {
   style?: 'default' | 'cancel' | 'destructive';
 };
 
-/**
- * Show a toast via Burnt.
- * On Android Burnt wraps ToastAndroid but passes duration in ms (invalid for RN),
- * so we call ToastAndroid with SHORT/LONG directly — same native toast UX.
- */
+
 function burntToast(title: string, message?: string, kind: AlertKind = 'info', durationMs = 3000) {
-  const hasMessage = Boolean(message?.trim());
-  const text = hasMessage ? `${title}\n${message}` : title;
+  const msg = message?.trim();
+  const text = msg || String(title || '').trim() || 'Something went wrong';
 
   if (Platform.OS === 'android') {
     ToastAndroid.show(text, durationMs > 2500 ? ToastAndroid.LONG : ToastAndroid.SHORT);
@@ -40,8 +36,7 @@ function burntToast(title: string, message?: string, kind: AlertKind = 'info', d
     kind === 'error' ? 'error' : kind === 'success' ? 'success' : kind === 'warning' ? 'warning' : 'none';
 
   Burnt.toast({
-    title,
-    message: hasMessage ? message : undefined,
+    title: text,
     preset,
     haptic,
     duration,

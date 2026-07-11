@@ -10,7 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
-import { entryMatchesMonthYear, formatExpenseDate, localDateString, parseExpenseDateParts } from '../utils/expenseDate';
+import { entryMatchesMonthYear, formatExpenseDate, isExpenseDateBefore, localDateString, openingBalanceMinEntryDate, parseExpenseDateParts } from '../utils/expenseDate';
 import { ExpenseDatePicker } from '../components/ExpenseDatePicker';
 import { ModuleHeader, ModuleHeaderIconButton } from '../components/ModuleHeader';
 import BottomSheetModal, { BottomSheetTextInput, DetailRow, sheetStyles } from '../components/BottomSheetModal';
@@ -146,7 +146,12 @@ export default function ExpensesDetailScreen() {
         building_id: buildingId,
         wing: wingName,
       });
-      setSummary((prev: any) => ({ ...prev, opening_balance: val, current_balance: res.data.current_balance }));
+      setSummary((prev: any) => ({
+        ...prev,
+        opening_balance: val,
+        current_balance: res.data.current_balance,
+        opening_balance_as_of: res.data.opening_balance_as_of || prev?.opening_balance_as_of,
+      }));
       setShowSetBalance(false);
       setBalanceInput('');
       ToastAndroid.show('Balance saved', ToastAndroid.SHORT);
@@ -162,7 +167,10 @@ export default function ExpensesDetailScreen() {
   };
 
   const resetEntryForm = () => {
-    setForm({ type: 'outflow', amount: '', description: '', category: '', date: localDateString() });
+    const today = localDateString();
+    const min = openingBalanceMinEntryDate(summary);
+    const date = min && today < min ? min : today;
+    setForm({ type: 'outflow', amount: '', description: '', category: '', date });
     clearFormErrors();
   };
 
@@ -172,6 +180,8 @@ export default function ExpensesDetailScreen() {
     resetEntryForm();
   };
 
+  const minEntryDate = useMemo(() => openingBalanceMinEntryDate(summary), [summary]);
+
   const validateEntryForm = () => {
     setFormError(null);
     const amount = parseFloat(form.amount);
@@ -179,9 +189,14 @@ export default function ExpensesDetailScreen() {
       ? 'Enter a valid amount'
       : null;
     const nextDescError = !form.description.trim() ? 'Description is required' : null;
+    let nextFormError: string | null = null;
+    if (minEntryDate && isExpenseDateBefore(form.date, minEntryDate)) {
+      nextFormError = `Entry date cannot be before opening balance date (${minEntryDate})`;
+    }
     setAmountError(nextAmountError);
     setDescriptionError(nextDescError);
-    return !nextAmountError && !nextDescError;
+    setFormError(nextFormError);
+    return !nextAmountError && !nextDescError && !nextFormError;
   };
 
   const addEntry = async () => {
@@ -642,6 +657,7 @@ export default function ExpensesDetailScreen() {
 
         <ExpenseDatePicker
           value={form.date}
+          minDate={minEntryDate}
           onChange={date => {
             setForm({ ...form, date });
             if (formError) setFormError(null);

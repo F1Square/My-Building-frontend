@@ -37,7 +37,7 @@ export default function ParkingReportDetailModal({ visible, report, onClose }: P
     );
   }
 
-  const reporter = report.reported_by || report.users?.name || '—';
+  const reporter = report.users?.name || report.reported_by || '—';
 
   return (
     <BottomSheetModal

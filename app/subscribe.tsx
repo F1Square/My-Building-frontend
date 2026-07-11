@@ -17,6 +17,10 @@ import { ModuleHeader } from '../components/ModuleHeader';
 const ICONS = ['calendar-outline', 'star-outline', 'infinite-outline', 'ribbon-outline', 'trophy-outline'] as const;
 const COL_CYCLE = [Colors.primary, '#F59E0B', Colors.success, '#8B5CF6', '#EC4899'];
 
+/** UI list price (struck through) vs sale price for classic plans. */
+const PLAN_LIST_RUPEES: Record<string, number> = { monthly: 15, yearly: 180 };
+const PLAN_SALE_RUPEES: Record<string, number> = { monthly: 10, yearly: 120 };
+
 type CatalogPlan = {
   id: string;
   slug: string;
@@ -26,6 +30,9 @@ type CatalogPlan = {
   months: number | null;
   allow_newspaper_addon: boolean;
   newspaper_addon_paise: number | null;
+  platform_fee_paise?: number | null;
+  other_fee_paise?: number | null;
+  compare_at_paise?: number | null;
   sort_order: number;
   features: string[];
 };
@@ -113,10 +120,25 @@ export default function SubscribeScreen() {
     return catalogPlans.map((p, i) => {
       const addP = p.newspaper_addon_paise;
       const addRupee = addP != null ? Math.round(addP / 100) : (p.months === 12 ? 36 : 3);
+      const platformFeeRupees = Math.round((p.platform_fee_paise || 0) / 100);
+      const otherFeeRupees = Math.round((p.other_fee_paise || 0) / 100);
+      const fromApi = Math.round(p.amount_paise / 100);
+      const saleFixed = PLAN_SALE_RUPEES[p.slug];
+      const listFixed = PLAN_LIST_RUPEES[p.slug];
+      // Prefer sale price for known plans so UI always shows ₹10 / ₹120
+      const amountRupees = saleFixed ?? fromApi;
+      const compareAtRupees =
+        listFixed != null && listFixed > amountRupees
+          ? listFixed
+          : (p.compare_at_paise != null && p.compare_at_paise > p.amount_paise
+            ? Math.round(p.compare_at_paise / 100)
+            : null);
       return {
         key: p.slug,
         title: p.title,
-        price: `₹${(p.amount_paise / 100).toLocaleString('en-IN')}`,
+        price: `₹${amountRupees.toLocaleString('en-IN')}`,
+        amountRupees,
+        compareAtRupees,
         period: p.months == null ? 'one-time' : p.months === 12 ? '/ year' : '/ month',
         desc: p.description || '',
         icon: ICONS[i % ICONS.length],
@@ -126,9 +148,12 @@ export default function SubscribeScreen() {
         months: p.months,
         allowNewspaper: !!p.allow_newspaper_addon && p.months != null,
         newspaperAddonRupees: addRupee,
+        platformFeeRupees,
+        otherFeeRupees,
       };
     });
   }, [catalogPlans]);
+
   const { subscription, hasActiveSubscription, refreshSubscription } = useAuth();
   const router = useRouter();
   const { t } = useLanguage();
@@ -139,6 +164,15 @@ export default function SubscribeScreen() {
   const [promoLoading, setPromoLoading] = useState(false);
   const [includeNewspaper, setIncludeNewspaper] = useState(false);
   const [newspaperAddonLoading, setNewspaperAddonLoading] = useState(false);
+
+  const checkoutTotalRupees = useCallback((plan: (typeof displayPlans)[number]) => {
+    let total = promoResult?.final_amount != null
+      ? Number(promoResult.final_amount)
+      : plan.amountRupees;
+    if (includeNewspaper && plan.allowNewspaper) total += plan.newspaperAddonRupees;
+    total += plan.platformFeeRupees + plan.otherFeeRupees;
+    return Math.max(1, Math.round(total));
+  }, [promoResult, includeNewspaper]);
   const processGuardRef = useRef(0);
   const checkoutActiveRef = useRef(false);
   const lastFocusRefreshRef = useRef(0);
@@ -384,24 +418,31 @@ export default function SubscribeScreen() {
     }
   };
 
-  // Disable newspaper add-on
-  const disableNewspaperAddon = async () => {
-    Alert.alert('Disable Newspaper', 'Are you sure you want to disable the newspaper add-on?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Disable', style: 'destructive', onPress: async () => {
-          setNewspaperAddonLoading(true);
-          try {
-            await api.post('/subscriptions/newspaper-addon', { enable: false });
-            await refreshSubscription();
-          } catch (e: any) {
-            Alert.error('Error', e.response?.data?.error || 'Failed', 4000);
-          } finally {
-            setNewspaperAddonLoading(false);
-          }
-        }
-      },
-    ]);
+  // Disable full subscription plan + newspaper add-on
+  const disablePlan = () => {
+    Alert.alert(
+      'Disable plan',
+      'This will disable your subscription and newspaper access. You can subscribe again anytime.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Disable',
+          style: 'destructive',
+          onPress: async () => {
+            setNewspaperAddonLoading(true);
+            try {
+              await api.post('/subscriptions/cancel');
+              await refreshSubscription();
+              Alert.success('Plan disabled', 'Your subscription and newspaper access are now off.', 4000);
+            } catch (e: any) {
+              Alert.error('Error', e.response?.data?.error || 'Failed to disable plan', 4000);
+            } finally {
+              setNewspaperAddonLoading(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   const applyPromo = async () => {
@@ -427,7 +468,7 @@ export default function SubscribeScreen() {
   const planLabel = currentCat?.title || (isLifetime ? 'Lifetime Plan' : isYearly ? 'Yearly Plan' : subscription?.plan ? subscription.plan : 'Plan');
   const planPrice = currentCat
     ? `₹${(currentCat.amount_paise / 100).toLocaleString('en-IN')}${isLifetime ? '' : isYearly ? '/yr' : '/mo'}`
-    : isLifetime ? '₹1,500' : isYearly ? '₹180/yr' : '₹15/mo';
+    : isLifetime ? '₹1,500' : isYearly ? '₹120/yr' : '₹10/mo';
   const planIcon = isLifetime ? 'infinite-outline' : isYearly ? 'star-outline' : 'calendar-outline';
   const planColor = isLifetime ? Colors.success : isYearly ? '#F59E0B' : Colors.primary;
 
@@ -516,6 +557,16 @@ export default function SubscribeScreen() {
                       </Text>
                     </TouchableOpacity>
                   )}
+
+                  <TouchableOpacity
+                    onPress={disablePlan}
+                    style={styles.planDisableBtn}
+                    disabled={newspaperAddonLoading}
+                  >
+                    {newspaperAddonLoading
+                      ? <ActivityIndicator size="small" color={Colors.danger} />
+                      : <Text style={styles.addonDisableBtnText}>Disable plan</Text>}
+                  </TouchableOpacity>
                 </View>
 
                 {/* Newspaper Add-On Card */}
@@ -538,9 +589,6 @@ export default function SubscribeScreen() {
                   {subscription?.newspaper_addon ? (
                     <View style={styles.addonActiveInfo}>
                       <Text style={styles.addonStatusText}>✓ Access unlocked until your plan expires</Text>
-                      <TouchableOpacity onPress={disableNewspaperAddon} style={styles.addonDisableBtnFull}>
-                        {newspaperAddonLoading ? <ActivityIndicator size="small" color={Colors.danger} /> : <Text style={styles.addonDisableBtnText}>Disable plan</Text>}
-                      </TouchableOpacity>
                     </View>
                   ) : (
                     <View style={styles.addonOptionsGrid}>
@@ -684,7 +732,14 @@ export default function SubscribeScreen() {
                       <Text style={styles.planDesc}>{plan.desc}</Text>
                     </View>
                     <View style={styles.planPriceBox}>
-                      <Text style={[styles.planPrice, { color: plan.color }]}>{plan.price}</Text>
+                      <View style={styles.planPriceRow}>
+                        {plan.compareAtRupees != null && (
+                          <Text style={styles.planPriceWas}>
+                            ₹{plan.compareAtRupees.toLocaleString('en-IN')}
+                          </Text>
+                        )}
+                        <Text style={[styles.planPrice, { color: plan.color }]}>{plan.price}</Text>
+                      </View>
                       <Text style={styles.planPeriod}>{plan.period}</Text>
                     </View>
                   </View>
@@ -697,6 +752,23 @@ export default function SubscribeScreen() {
                       </View>
                     ))}
                   </View>
+
+                  {(plan.platformFeeRupees > 0 || plan.otherFeeRupees > 0) && (
+                    <View style={styles.feeBox}>
+                      {plan.platformFeeRupees > 0 && (
+                        <View style={styles.feeRow}>
+                          <Text style={styles.feeLabel}>Platform fee</Text>
+                          <Text style={styles.feeValue}>₹{plan.platformFeeRupees.toLocaleString('en-IN')}</Text>
+                        </View>
+                      )}
+                      {plan.otherFeeRupees > 0 && (
+                        <View style={styles.feeRow}>
+                          <Text style={styles.feeLabel}>Other fee</Text>
+                          <Text style={styles.feeValue}>₹{plan.otherFeeRupees.toLocaleString('en-IN')}</Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
 
                   {isCurrent ? (
                     <View style={[styles.currentBtn, { borderColor: plan.color }]}>
@@ -717,10 +789,10 @@ export default function SubscribeScreen() {
                       {loading === plan.key
                         ? <ActivityIndicator color={Colors.white} />
                         : <Text style={styles.subscribeBtnText}>
-                          {hasActiveSubscription ? `Upgrade — ${plan.price}` : `Subscribe — ${plan.price}`}
-                          {includeNewspaper && plan.allowNewspaper ? ` + ₹${plan.newspaperAddonRupees} newspaper` : ''}
-                          {promoResult && promoResult.final_amount !== undefined
-                            ? ` → ₹${promoResult.final_amount}` : ''}
+                          {hasActiveSubscription ? 'Upgrade' : 'Subscribe'}
+                          {' — '}
+                          ₹{checkoutTotalRupees(plan).toLocaleString('en-IN')}
+                          {includeNewspaper && plan.allowNewspaper ? ' (incl. newspaper)' : ''}
                         </Text>}
                     </TouchableOpacity>
                   )}
@@ -762,6 +834,13 @@ const styles = StyleSheet.create({
   infoText: { fontSize: 14, color: Colors.text },
   upgradeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 12, borderWidth: 1.5, borderColor: Colors.success, borderRadius: 12, paddingVertical: 12 },
   upgradeBtnText: { fontSize: 14, fontWeight: '700', color: Colors.success },
+  planDisableBtn: {
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    paddingTop: 12,
+    alignItems: 'center',
+  },
   noSubCard: { backgroundColor: Colors.white, borderRadius: 18, padding: 32, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
   noSubTitle: { fontSize: 18, fontWeight: '800', color: Colors.text, marginBottom: 8 },
   noSubDesc: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', lineHeight: 22, marginBottom: 20 },
@@ -779,7 +858,15 @@ const styles = StyleSheet.create({
   planTitle: { fontSize: 16, fontWeight: '800', color: Colors.text },
   planDesc: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
   planPriceBox: { alignItems: 'flex-end' },
-  planPrice: { fontSize: 20, fontWeight: '800' },
+  planPriceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
+  planPriceWas: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.textMuted,
+    textDecorationLine: 'line-through',
+    textDecorationStyle: 'solid',
+  },
+  planPrice: { fontSize: 22, fontWeight: '800' },
   planPeriod: { fontSize: 11, color: Colors.textMuted },
   featureList: { gap: 8, marginBottom: 16 },
   featureRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -834,5 +921,18 @@ const styles = StyleSheet.create({
   addonActiveInfo: { alignItems: 'center', paddingTop: 8 },
   addonStatusText: { fontSize: 13, color: Colors.success, fontWeight: '600', marginBottom: 12 },
   addonDisableBtnFull: { width: '100%', borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 12, alignItems: 'center' },
+  feeBox: {
+    backgroundColor: Colors.bg,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: 4,
+  },
+  feeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  feeLabel: { fontSize: 12, color: Colors.textMuted, fontWeight: '600' },
+  feeValue: { fontSize: 13, color: Colors.text, fontWeight: '700' },
 });
 

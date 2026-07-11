@@ -170,10 +170,7 @@ export default function NewspaperScreen() {
         try {
           sub = ScreenCapture.addScreenshotListener(() => {
             if (!active) return;
-            Alert.alert(
-              'Screenshot Detected',
-              'Please do not screenshot or share newspaper content. This is for personal reading only.'
-            );
+            Alert.warning('Screenshot Detected', 'Please do not screenshot or share newspaper content. This is for personal reading only.', 4000);
           });
         } catch (_) {}
       }
@@ -258,7 +255,7 @@ export default function NewspaperScreen() {
   };
 
   const submitUpload = async () => {
-    if (!uploadFile) return Alert.alert('Error', 'Please select a PDF file');
+    if (!uploadFile) return Alert.error('Error', 'Please select a PDF file', 4000);
     setUploading(true);
     try {
       const formData = new FormData();
@@ -266,13 +263,13 @@ export default function NewspaperScreen() {
       formData.append('language', uploadLang);
       formData.append('file', { uri: uploadFile.uri, name: uploadFile.name, type: uploadFile.mimeType } as any);
       await api.post('/newspapers', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-      Alert.alert('Saved', 'Newspaper edition saved successfully');
+      Alert.success('Saved', 'Newspaper edition saved successfully', 4000);
       setUploadFile(null);
       setShowUpload(false);
       fetchRecentEditions();
       fetchAvailableDates();
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to save');
+      Alert.error('Error', e.response?.data?.error || 'Failed to save', 4000);
     } finally {
       setUploading(false);
     }
@@ -287,7 +284,7 @@ export default function NewspaperScreen() {
           fetchRecentEditions();
           fetchAvailableDates();
         } catch (e: any) {
-          Alert.alert('Error', e.response?.data?.error || 'Failed');
+          Alert.error('Error', e.response?.data?.error || 'Failed', 4000);
         }
       }},
     ]);

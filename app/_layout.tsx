@@ -4,9 +4,10 @@ import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-rout
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { LanguageProvider, useLanguage } from '../context/LanguageContext';
 import { CacheProvider } from '../context/CacheContext';
-import { ToastProvider } from '../context/ToastContext';
 import { ActivityIndicator, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { Colors } from '../constants/colors';
 import NoInternetOverlay from '../components/NoInternetOverlay';
 import { OfflineIndicator } from '../components/OfflineIndicator';
@@ -21,11 +22,10 @@ import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
     shouldShowBanner: true,
     shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
   }),
 });
 
@@ -388,19 +388,21 @@ export default function RootLayout() {
 
   return (
     <ErrorBoundary>
-      <SafeAreaProvider>
-        <CacheProvider>
-          <LanguageProvider>
-            <AuthProvider>
-              <ToastProvider>
-                <OfflineIndicator />
-                <RootNavigator />
-                <NoInternetOverlay />
-              </ToastProvider>
-            </AuthProvider>
-          </LanguageProvider>
-        </CacheProvider>
-      </SafeAreaProvider>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          <BottomSheetModalProvider>
+            <CacheProvider>
+              <LanguageProvider>
+                <AuthProvider>
+                  <OfflineIndicator />
+                  <RootNavigator />
+                  <NoInternetOverlay />
+                </AuthProvider>
+              </LanguageProvider>
+            </CacheProvider>
+          </BottomSheetModalProvider>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
     </ErrorBoundary>
   );
 }

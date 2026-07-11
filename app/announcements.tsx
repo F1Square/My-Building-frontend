@@ -69,7 +69,7 @@ export default function AnnouncementsScreen() {
       await cacheManager.set(cacheKey, res.data, CACHE_PRESETS.buildingWide);
       setAnnouncements(res.data);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to load');
+      Alert.error('Error', e.response?.data?.error || 'Failed to load', 4000);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -79,8 +79,8 @@ export default function AnnouncementsScreen() {
   useEffect(() => { fetchAnnouncements(); }, [selectedBuilding]);
 
   const postAnnouncement = async () => {
-    if (!form.title.trim() || !form.body.trim()) return Alert.alert('Error', 'Title and body are required');
-    if (isAdmin && !selectedBuilding) return Alert.alert('Error', 'Please select a building first');
+    if (!form.title.trim() || !form.body.trim()) return Alert.error('Error', 'Title and body are required', 4000);
+    if (isAdmin && !selectedBuilding) return Alert.error('Error', 'Please select a building first', 4000);
     setSubmitting(true);
     try {
       const payload: any = { ...form };
@@ -89,9 +89,9 @@ export default function AnnouncementsScreen() {
       setShowAdd(false);
       setForm({ title: '', body: '', priority: 'normal' });
       fetchAnnouncements();
-      Alert.alert('Posted', 'Announcement posted and members notified');
+      Alert.success('Posted', 'Announcement posted and members notified', 4000);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to post');
+      Alert.error('Error', e.response?.data?.error || 'Failed to post', 4000);
     } finally {
       setSubmitting(false);
     }

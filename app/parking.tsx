@@ -160,7 +160,7 @@ export default function ParkingScreen() {
       setVehicles(vRes.data);
       setReports(rRes.data);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to load');
+      Alert.error('Error', e.response?.data?.error || 'Failed to load', 4000);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -171,25 +171,25 @@ export default function ParkingScreen() {
   useEffect(() => { fetchData(); logEvent('open_parking', 'vehicles'); }, [selectedBuilding]);
 
   const addVehicle = async () => {
-    if (!vehicleForm.vehicle_number.trim()) return Alert.alert('Error', 'Vehicle number is required');
+    if (!vehicleForm.vehicle_number.trim()) return Alert.error('Error', 'Vehicle number is required', 4000);
     setSubmitting(true);
     try {
       await api.post('/vehicles', vehicleForm);
       setShowAddVehicle(false);
       setVehicleForm({ vehicle_number: '', vehicle_type: 'two_wheeler' });
       fetchData();
-      Alert.alert('Added', 'Vehicle registered successfully');
+      Alert.success('Added', 'Vehicle registered successfully', 4000);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to add vehicle');
+      Alert.error('Error', e.response?.data?.error || 'Failed to add vehicle', 4000);
     } finally {
       setSubmitting(false);
     }
   };
 
   const submitReport = async () => {
-    if (isAdmin && !reportBuilding) return Alert.alert('Error', 'Please select a building');
+    if (isAdmin && !reportBuilding) return Alert.error('Error', 'Please select a building', 4000);
     const desc = reportForm.description.trim();
-    if (!desc) return Alert.alert('Error', 'Description is required');
+    if (!desc) return Alert.error('Error', 'Description is required', 4000);
     setSubmitting(true);
     try {
       await api.post('/vehicles/report', {
@@ -200,9 +200,9 @@ export default function ParkingScreen() {
       setReportForm({ description: '', vehicle_number: '', location: '' });
       setReportBuilding(null);
       fetchData();
-      Alert.alert('Reported', 'Parking report submitted. Pramukh has been notified.');
+      Alert.success('Reported', 'Parking report submitted. Pramukh has been notified.', 4000);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to submit report');
+      Alert.error('Error', e.response?.data?.error || 'Failed to submit report', 4000);
     } finally {
       setSubmitting(false);
     }
@@ -211,9 +211,9 @@ export default function ParkingScreen() {
   const sendReminder = async (vehicleNumber: string) => {
     try {
       await api.post('/vehicles/reminder', { vehicle_number: vehicleNumber, message: '' });
-      Alert.alert('Sent', 'Parking reminder sent to vehicle owner');
+      Alert.success('Sent', 'Parking reminder sent to vehicle owner', 4000);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to send reminder');
+      Alert.error('Error', e.response?.data?.error || 'Failed to send reminder', 4000);
     }
   };
 
@@ -224,7 +224,7 @@ export default function ParkingScreen() {
         try {
           await api.delete(`/vehicles/admin/${id}`);
           setVehicles(prev => prev.filter(v => v.id !== id));
-        } catch (e: any) { Alert.alert('Error', e.response?.data?.error || 'Failed'); }
+        } catch (e: any) { Alert.error('Error', e.response?.data?.error || 'Failed', 4000); }
       }},
     ]);
   };
@@ -242,7 +242,7 @@ export default function ParkingScreen() {
       setVehicles(prev => prev.map(v => v.id === showEditVehicle.id ? { ...v, ...res.data.vehicle } : v));
       setShowEditVehicle(null);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed');
+      Alert.error('Error', e.response?.data?.error || 'Failed', 4000);
     } finally { setSubmitting(false); }
   };
 

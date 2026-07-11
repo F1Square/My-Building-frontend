@@ -110,7 +110,7 @@ export default function VisitorsScreen() {
       await cacheManager.set(cacheKey, res.data, CACHE_PRESETS.userSpecific);
       setVisitors(res.data);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to load visitors');
+      Alert.error('Error', e.response?.data?.error || 'Failed to load visitors', 4000);
     } finally {
       setListLoading(false);
       setRefreshing(false);
@@ -144,7 +144,7 @@ export default function VisitorsScreen() {
   // Admin: Upload QR photo
   const handleUploadQRPhoto = async () => {
     if (!selectedQRBuilding) {
-      Alert.alert('Error', 'Please select a society first');
+      Alert.error('Error', 'Please select a society first', 4000);
       return;
     }
 
@@ -179,7 +179,7 @@ export default function VisitorsScreen() {
       ToastAndroid.show('QR photo uploaded successfully', ToastAndroid.SHORT);
     } catch (error: any) {
       const errorMsg = error.response?.data?.error || 'Failed to upload QR photo';
-      Alert.alert('Upload Error', errorMsg);
+      Alert.error('Upload Error', errorMsg, 4000);
     } finally {
       setUploadingQR(false);
     }
@@ -188,7 +188,7 @@ export default function VisitorsScreen() {
   // Share QR photo
   const shareQR = async () => {
     if (!qrPhoto) {
-      Alert.alert('No QR Photo', 'No QR photo uploaded for this society');
+      Alert.error('No QR Photo', 'No QR photo uploaded for this society', 4000);
       return;
     }
     setShowQRShareModal(true);

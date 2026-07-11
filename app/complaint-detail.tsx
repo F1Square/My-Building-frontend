@@ -108,7 +108,7 @@ export default function ComplaintDetailScreen() {
       setShowUpdate(false);
       setDetailItem({ ...detailItem, status: updateForm.status, remark: updateForm.remark });
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to update');
+      Alert.error('Error', e.response?.data?.error || 'Failed to update', 4000);
     } finally { setUpdating(false); }
   };
 
@@ -120,7 +120,7 @@ export default function ComplaintDetailScreen() {
       setShowEdit(false);
       setDetailItem({ ...detailItem, ...editForm });
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed');
+      Alert.error('Error', e.response?.data?.error || 'Failed', 4000);
     } finally { setUpdating(false); }
   };
 
@@ -133,7 +133,7 @@ export default function ComplaintDetailScreen() {
           try {
             await api.delete(`/complaints/admin/${detailItem.id}`);
             router.back();
-          } catch (e: any) { Alert.alert('Error', e.response?.data?.error || 'Failed'); }
+          } catch (e: any) { Alert.error('Error', e.response?.data?.error || 'Failed', 4000); }
         },
       },
     ]);

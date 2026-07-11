@@ -48,7 +48,7 @@ export default function HelpSupportDetailScreen() {
       setTicket(res.data.ticket);
       setMessages(res.data.messages || []);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to load ticket');
+      Alert.error('Error', e.response?.data?.error || 'Failed to load ticket', 4000);
     } finally {
       setLoading(false);
     }
@@ -64,7 +64,7 @@ export default function HelpSupportDetailScreen() {
       setReply('');
       await fetchDetail();
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to send reply');
+      Alert.error('Error', e.response?.data?.error || 'Failed to send reply', 4000);
     } finally {
       setSending(false);
     }
@@ -77,7 +77,7 @@ export default function HelpSupportDetailScreen() {
       await api.patch(`/support-tickets/${id}/status`, { status });
       await fetchDetail();
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to update status');
+      Alert.error('Error', e.response?.data?.error || 'Failed to update status', 4000);
     } finally {
       setUpdating(false);
     }

@@ -12,6 +12,7 @@ import api from '../utils/api';
 import BuildingDropdown from '../components/BuildingDropdown';
 import { useBuildings, type Building } from '../hooks/useBuildings';
 import { ModuleHeader } from '../components/ModuleHeader';
+import { useMarkNotificationsRead } from '../hooks/useMarkNotificationsRead';
 
 type Wing = {
   wing: string;
@@ -24,6 +25,8 @@ export default function ExpensesWingSelectScreen() {
   const isAdmin = user?.role === 'admin';
   const isPramukh = user?.role === 'pramukh';
   const canManage = isPramukh || isAdmin;
+
+  useMarkNotificationsRead(['expense']);
 
   const { buildings, loading: buildingsLoading } = useBuildings(isAdmin);
   const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null);
@@ -150,14 +153,6 @@ export default function ExpensesWingSelectScreen() {
           renderItem={renderWing}
           contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchWings(); }} />}
-          ListHeaderComponent={
-            <View style={styles.infoBox}>
-              <Ionicons name="information-circle-outline" size={18} color={Colors.primary} />
-              <Text style={styles.infoText}>
-                Select a wing to view and manage its expenses separately
-              </Text>
-            </View>
-          }
         />
       )}
     </View>

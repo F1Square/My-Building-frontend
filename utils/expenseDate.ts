@@ -46,3 +46,44 @@ export function formatExpenseDate(
     year: 'numeric',
   });
 }
+
+/** India FY: 1 Apr → 31 Mar */
+export function indiaFinancialYearStartYear(d = new Date()): number {
+  return d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1;
+}
+
+export type ExpenseExportPreset = 'this_month' | 'last_6_months' | 'current_fy' | 'last_fy';
+
+export function expenseExportRange(
+  preset: ExpenseExportPreset,
+  today = new Date(),
+): { from: string; to: string; label: string } {
+  const to = localDateString(today);
+
+  if (preset === 'this_month') {
+    const from = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+    return { from, to, label: 'This month' };
+  }
+
+  if (preset === 'last_6_months') {
+    const start = new Date(today.getFullYear(), today.getMonth() - 5, 1);
+    return { from: localDateString(start), to, label: 'Last 6 months' };
+  }
+
+  const fyStart = indiaFinancialYearStartYear(today);
+  if (preset === 'current_fy') {
+    const fyEnd = `${fyStart + 1}-03-31`;
+    return {
+      from: `${fyStart}-04-01`,
+      to: to < fyEnd ? to : fyEnd,
+      label: `FY ${fyStart}-${String(fyStart + 1).slice(2)}`,
+    };
+  }
+
+  const lastStart = fyStart - 1;
+  return {
+    from: `${lastStart}-04-01`,
+    to: `${lastStart + 1}-03-31`,
+    label: `FY ${lastStart}-${String(lastStart + 1).slice(2)}`,
+  };
+}

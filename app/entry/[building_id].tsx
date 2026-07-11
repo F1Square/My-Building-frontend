@@ -28,7 +28,7 @@ export default function EntryFormScreen() {
 
   const takePhoto = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') return Alert.alert('Permission needed', 'Camera permission is required');
+    if (status !== 'granted') return Alert.warning('Permission needed', 'Camera permission is required', 4000);
     const result = await ImagePicker.launchCameraAsync({ quality: 0.7, base64: false });
     if (!result.canceled) setPhoto(result.assets[0].uri);
   };
@@ -37,10 +37,10 @@ export default function EntryFormScreen() {
 
   const handleSubmit = async () => {
     if (!form.name.trim() || !form.phone.trim() || !form.flat_no.trim())
-      return Alert.alert('Required', 'Name, phone and flat number are required');
+      return Alert.warning('Required', 'Name, phone and flat number are required', 4000);
     if (!PHONE_RE.test(form.phone.trim()))
-      return Alert.alert('Invalid Phone', 'Enter a valid 10-digit Indian mobile number starting with 6, 7, 8 or 9');
-    if (!photo) return Alert.alert('Required', 'Please take a live photo');
+      return Alert.error('Invalid Phone', 'Enter a valid 10-digit Indian mobile number starting with 6, 7, 8 or 9', 4000);
+    if (!photo) return Alert.warning('Required', 'Please take a live photo', 4000);
 
     setSubmitting(true);
     try {
@@ -53,7 +53,7 @@ export default function EntryFormScreen() {
       });
       setSubmitted(true);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to submit. Please try again.');
+      Alert.error('Error', e.response?.data?.error || 'Failed to submit. Please try again.', 4000);
     } finally {
       setSubmitting(false);
     }

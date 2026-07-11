@@ -70,7 +70,7 @@ export default function QRPhotoManager({ building_id, userRole, onSuccess }: Pro
 
   const handleUploadPhoto = async () => {
     if (!isAdmin) {
-      Alert.alert('Access Denied', 'Only admins can upload QR photos');
+      Alert.error('Access Denied', 'Only admins can upload QR photos', 4000);
       return;
     }
 
@@ -106,7 +106,7 @@ export default function QRPhotoManager({ building_id, userRole, onSuccess }: Pro
       onSuccess?.();
     } catch (error: any) {
       const errorMsg = error.response?.data?.error || 'Failed to upload QR photo';
-      Alert.alert('Upload Error', errorMsg);
+      Alert.error('Upload Error', errorMsg, 4000);
     } finally {
       setUploading(false);
     }

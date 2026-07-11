@@ -63,7 +63,7 @@ export default function UsersScreen() {
       const res = await api.get('/buildings/admin/users', { params });
       setUsers(res.data);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to load users');
+      Alert.error('Error', e.response?.data?.error || 'Failed to load users', 4000);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -74,7 +74,7 @@ export default function UsersScreen() {
 
   const createUser = async () => {
     if (!form.name.trim() || !form.email.trim() || !form.password || !form.role)
-      return Alert.alert('Error', 'Name, email, password and role are required');
+      return Alert.error('Error', 'Name, email, password and role are required', 4000);
     setSubmitting(true);
     try {
       await api.post('/buildings/admin/users', {
@@ -85,9 +85,9 @@ export default function UsersScreen() {
       setForm({ name: '', email: '', phone: '', password: '', role: 'user', flat_no: '' });
       setFormBuilding(null);
       fetchUsers();
-      Alert.alert('Done', 'User created successfully');
+      Alert.success('Done', 'User created successfully', 4000);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to create user');
+      Alert.error('Error', e.response?.data?.error || 'Failed to create user', 4000);
     } finally {
       setSubmitting(false);
     }

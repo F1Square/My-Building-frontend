@@ -1,15 +1,18 @@
-import React from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal,
-  Dimensions, Pressable, KeyboardAvoidingView, Platform,
+  View, Text, StyleSheet, TouchableOpacity, Modal, Pressable,
 } from 'react-native';
+import BottomSheet, {
+  BottomSheetScrollView,
+  BottomSheetTextInput,
+} from '@gorhom/bottom-sheet';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/colors';
 
-const { height: SCREEN_H } = Dimensions.get('window');
-export const SHEET_MAX_HEIGHT = SCREEN_H * 0.88;
-export const SCROLL_MAX_HEIGHT = SCREEN_H * 0.72;
+/** Re-export for forms inside the sheet (keyboard-aware). */
+export { BottomSheetTextInput };
 
 type Props = {
   visible: boolean;
@@ -17,6 +20,10 @@ type Props = {
   title: string;
   subtitle?: string;
   children: React.ReactNode;
+  /** Override height — default ['90%', '100%'] for forms; use e.g. ['42%'] for short sheets. */
+  snapPoints?: (string | number)[];
+  /** @deprecated Kept for callers — Gorhom handles keyboard. */
+  avoidKeyboard?: boolean;
 };
 
 export function DetailRow({ icon, label, value, isLast }: { icon: string; label: string; value: string; isLast?: boolean }) {
@@ -33,70 +40,110 @@ export function DetailRow({ icon, label, value, isLast }: { icon: string; label:
   );
 }
 
-export default function BottomSheetModal({ visible, onClose, title, subtitle, children }: Props) {
+/**
+ * App bottom sheet.
+ *
+ * RN Modal handles open/close via `visible` (reliable with Expo Router).
+ * Gorhom BottomSheet provides keyboard-aware scroll + BottomSheetTextInput.
+ */
+export default function BottomSheetModal({
+  visible,
+  onClose,
+  title,
+  subtitle,
+  children,
+  snapPoints: snapPointsProp,
+}: Props) {
   const insets = useSafeAreaInsets();
+  const snapPoints = useMemo(
+    () => snapPointsProp ?? ['90%', '100%'],
+    [snapPointsProp],
+  );
+
+  const handleChange = useCallback((index: number) => {
+    if (index === -1) onClose();
+  }, [onClose]);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={sheetStyles.overlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <Pressable style={sheetStyles.backdrop} onPress={onClose} />
-        <View style={[sheetStyles.sheet, { maxHeight: SHEET_MAX_HEIGHT, paddingBottom: Math.max(insets.bottom, 20) }]}>
-          <View style={sheetStyles.handle} />
-          <View style={sheetStyles.modalHeader}>
-            <View style={{ flex: 1, marginRight: 12 }}>
-              <Text style={sheetStyles.modalTitle}>{title}</Text>
-              {subtitle ? <Text style={sheetStyles.modalSub} numberOfLines={1}>{subtitle}</Text> : null}
-            </View>
-            <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Ionicons name="close-circle" size={28} color={Colors.border} />
-            </TouchableOpacity>
-          </View>
-          <ScrollView
-            style={sheetStyles.modalScroll}
-            contentContainerStyle={sheetStyles.modalScrollContent}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator
-            nestedScrollEnabled
-            bounces
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+      statusBarTranslucent
+    >
+      {/* Gesture root inside Modal — required for Gorhom gestures on Android */}
+      <GestureHandlerRootView style={sheetStyles.flex}>
+        <View style={sheetStyles.flex}>
+          <Pressable style={sheetStyles.backdrop} onPress={onClose} />
+          <BottomSheet
+            index={0}
+            snapPoints={snapPoints}
+            enablePanDownToClose
+            enableDynamicSizing={false}
+            onClose={onClose}
+            onChange={handleChange}
+            keyboardBehavior="extend"
+            keyboardBlurBehavior="restore"
+            android_keyboardInputMode="adjustResize"
+            handleIndicatorStyle={sheetStyles.handleIndicator}
+            backgroundStyle={sheetStyles.background}
+            topInset={insets.top}
           >
-            {children}
-          </ScrollView>
+            <BottomSheetScrollView
+              contentContainerStyle={[
+                sheetStyles.modalScrollContent,
+                { paddingBottom: Math.max(insets.bottom, 120) },
+              ]}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator
+            >
+              <View style={sheetStyles.header}>
+                <View style={{ flex: 1, marginRight: 12 }}>
+                  <Text style={sheetStyles.modalTitle}>{title}</Text>
+                  {subtitle ? (
+                    <Text style={sheetStyles.modalSub} numberOfLines={1}>{subtitle}</Text>
+                  ) : null}
+                </View>
+                <TouchableOpacity onPress={onClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Ionicons name="close-circle" size={28} color={Colors.border} />
+                </TouchableOpacity>
+              </View>
+              {children}
+            </BottomSheetScrollView>
+          </BottomSheet>
         </View>
-      </KeyboardAvoidingView>
+      </GestureHandlerRootView>
     </Modal>
   );
 }
 
 export const sheetStyles = StyleSheet.create({
-  overlay: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
-  sheet: {
+  flex: { flex: 1 },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  background: {
     backgroundColor: Colors.white,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    width: '100%',
   },
-  handle: {
+  handleIndicator: {
     width: 40,
     height: 4,
-    borderRadius: 2,
     backgroundColor: Colors.border,
-    alignSelf: 'center',
-    marginBottom: 12,
   },
-  modalHeader: {
+  header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 8,
+    marginBottom: 12,
   },
-  modalScroll: { maxHeight: SCROLL_MAX_HEIGHT },
-  modalScrollContent: { paddingBottom: 16 },
+  modalScrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 4,
+  },
   modalTitle: { fontSize: 18, fontWeight: '800', color: Colors.text },
   modalSub: { fontSize: 13, color: Colors.textMuted, marginTop: 2 },
   detailRow: {
@@ -156,3 +203,6 @@ export const sheetStyles = StyleSheet.create({
   },
   bodyText: { fontSize: 15, color: Colors.text, lineHeight: 24 },
 });
+
+export const SHEET_MAX_HEIGHT = 0;
+export const SCROLL_MAX_HEIGHT = 0;

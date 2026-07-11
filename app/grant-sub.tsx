@@ -56,7 +56,7 @@ export default function GrantSubScreen() {
             })),
         );
       } catch {
-        Alert.error('Error', 'Failed to load users or plans');
+        Alert.error('Error', 'Failed to load users or plans', 4000);
       } finally {
         setUsersLoading(false);
       }
@@ -82,9 +82,9 @@ export default function GrantSubScreen() {
   }, [canIncludeNewspaper, form.include_newspaper]);
 
   const grant = async () => {
-    if (!form.user_id) return Alert.error('Error', 'Select a user');
-    if (!form.remark.trim()) return Alert.error('Error', 'Remark is required — add who is handling this');
-    if (grantMode === 'plan' && !form.plan) return Alert.error('Error', 'Select a plan');
+    if (!form.user_id) return Alert.error('Error', 'Select a user', 4000);
+    if (!form.remark.trim()) return Alert.error('Error', 'Remark is required — add who is handling this', 4000);
+    if (grantMode === 'plan' && !form.plan) return Alert.error('Error', 'Select a plan', 4000);
 
     setSubmitting(true);
     try {
@@ -93,9 +93,8 @@ export default function GrantSubScreen() {
           user_id: form.user_id,
           remark: form.remark.trim(),
         });
-        Alert.alert('Done', 'Newspaper add-on granted', [
-          { text: 'OK', onPress: () => router.back() },
-        ]);
+        Alert.success('Done', 'Newspaper add-on granted', 4000);
+        router.back();
       } else {
         await api.post('/subscriptions/grant', {
           user_id: form.user_id,
@@ -107,10 +106,11 @@ export default function GrantSubScreen() {
         const msg = canIncludeNewspaper && form.include_newspaper
           ? 'Subscription granted with newspaper add-on'
           : 'Subscription granted';
-        Alert.alert('Done', msg, [{ text: 'OK', onPress: () => router.back() }]);
+        Alert.success('Done', msg, 4000);
+        router.back();
       }
     } catch (e: any) {
-      Alert.error('Error', e.response?.data?.error || 'Failed');
+      Alert.error('Error', e.response?.data?.error || 'Failed', 4000);
     } finally {
       setSubmitting(false);
     }

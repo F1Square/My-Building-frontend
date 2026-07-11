@@ -75,7 +75,7 @@ export default function BuildingsScreen() {
       const r = await api.get('/buildings');
       setBuildings(r.data);
     } catch (e: any) {
-      Alert.error('Error', e.response?.data?.error || 'Failed to load');
+      Alert.error('Error', e.response?.data?.error || 'Failed to load', 4000);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -115,9 +115,9 @@ export default function BuildingsScreen() {
               await api.delete(`/buildings/${b.id}`);
               fetchBuildings(true);
               closeModal();
-              Alert.success('Success', 'Building and all associated data deleted');
+              Alert.success('Success', 'Building and all associated data deleted', 4000);
             } catch (e: any) {
-              Alert.error('Error', e.response?.data?.error || 'Failed to delete');
+              Alert.error('Error', e.response?.data?.error || 'Failed to delete', 4000);
             } finally {
               setSubmitting(false);
             }
@@ -135,7 +135,7 @@ export default function BuildingsScreen() {
       const r = await api.get(`/buildings/members/${b.id}`);
       setMembers(r.data);
     } catch (e: any) {
-      Alert.error('Error', e.response?.data?.error || 'Failed');
+      Alert.error('Error', e.response?.data?.error || 'Failed', 4000);
     } finally {
       setMembersLoading(false);
     }
@@ -163,7 +163,7 @@ export default function BuildingsScreen() {
   const copyBuildingCode = async (buildingId: string, buildingName: string) => {
     const code = getBuildingCode(buildingId);
     if (await copyToClipboard(code)) {
-      Alert.success('Copied!', `Building code for "${buildingName}" copied: ${code}`);
+      Alert.success('Copied!', `Building code for "${buildingName}" copied: ${code}`, 4000);
     }
   };
 

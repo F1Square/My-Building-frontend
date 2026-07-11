@@ -102,7 +102,7 @@ export default function AdminComplaintsScreen() {
       const res = await api.get(url);
       setComplaints(Array.isArray(res.data) ? res.data : []);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to load');
+      Alert.error('Error', e.response?.data?.error || 'Failed to load', 4000);
     } finally { setLoading(false); setRefreshing(false); }
   };
 
@@ -141,8 +141,8 @@ export default function AdminComplaintsScreen() {
   };
 
   const submitAdd = async () => {
-    if (!addForm.title.trim()) return Alert.alert('Error', 'Title is required');
-    if (!addBuilding) return Alert.alert('Error', 'Select a building');
+    if (!addForm.title.trim()) return Alert.error('Error', 'Title is required', 4000);
+    if (!addBuilding) return Alert.error('Error', 'Select a building', 4000);
     setSubmitting(true);
     try {
       await api.post('/complaints/admin', {
@@ -155,7 +155,7 @@ export default function AdminComplaintsScreen() {
       setAddBuilding(null); setAddImageUri(null); setShowAdd(false);
       fetchComplaints();
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed');
+      Alert.error('Error', e.response?.data?.error || 'Failed', 4000);
     } finally { setSubmitting(false); }
   };
 
@@ -181,7 +181,7 @@ export default function AdminComplaintsScreen() {
       });
       setShowEdit(false); fetchComplaints();
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed');
+      Alert.error('Error', e.response?.data?.error || 'Failed', 4000);
     } finally { setSaving(false); }
   };
 
@@ -191,7 +191,7 @@ export default function AdminComplaintsScreen() {
       {
         text: 'Delete', style: 'destructive', onPress: async () => {
           try { await api.delete(`/complaints/admin/${id}`); fetchComplaints(); }
-          catch (e: any) { Alert.alert('Error', e.response?.data?.error || 'Failed'); }
+          catch (e: any) { Alert.error('Error', e.response?.data?.error || 'Failed', 4000); }
         },
       },
     ]);

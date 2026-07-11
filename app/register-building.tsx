@@ -179,11 +179,12 @@ export default function RegisterBuildingScreen() {
         ...form,
         referral_code: refCode || undefined,
       });
-      Alert.alert(
+      Alert.success(
         'Submitted!',
         'Your building registration request has been received. Our admin will review and set up your society.',
-        [{ text: 'OK', onPress: () => router.back() }]
+        4000,
       );
+      router.back();
     } catch (e: any) {
       Alert.alert('Error', e.response?.data?.error || 'Failed to submit');
     } finally {

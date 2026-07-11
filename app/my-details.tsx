@@ -228,7 +228,7 @@ export default function MyDetailsScreen() {
       setEditing(false);
       setToastMsg('Your details have been updated');
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to save');
+      Alert.error('Error', e.response?.data?.error || 'Failed to save', 4000);
     } finally {
       setSaving(false);
     }

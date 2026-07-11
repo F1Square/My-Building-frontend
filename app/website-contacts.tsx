@@ -45,7 +45,7 @@ export default function WebsiteContactsScreen() {
       const res = await api.get('/contacts');
       setContacts(res.data);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to load');
+      Alert.error('Error', e.response?.data?.error || 'Failed to load', 4000);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -61,7 +61,7 @@ export default function WebsiteContactsScreen() {
       setContacts(prev => prev.map(c => c.id === id ? { ...c, status } : c));
       if (selected?.id === id) setSelected(prev => prev ? { ...prev, status } : null);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to update');
+      Alert.error('Error', e.response?.data?.error || 'Failed to update', 4000);
     } finally {
       setUpdating(false);
     }

@@ -1,9 +1,9 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  TextInput, ActivityIndicator, RefreshControl, Linking, ScrollView,
+  ActivityIndicator, RefreshControl, Linking, Keyboard, Platform,
 } from 'react-native';
 import { Alert } from '../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,7 +11,8 @@ import { useFocusEffect } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import BuildingDropdown from '../components/BuildingDropdown';
-import BottomSheetModal from '../components/BottomSheetModal';
+import BottomSheetModal, { BottomSheetTextInput } from '../components/BottomSheetModal';
+import HorizontalChipScroll, { chipStyles } from '../components/HorizontalChipScroll';
 import { ModuleHeader, ModuleHeaderIconButton } from '../components/ModuleHeader';
 import { useBuildings } from '../hooks/useBuildings';
 import type { Building } from '../hooks/useBuildings';
@@ -91,6 +92,42 @@ function FieldError({ message }: { message?: string }) {
   );
 }
 
+/** Profession chips — same horizontal scroller as Help & Support categories. */
+function ProfessionChips({
+  selected,
+  onSelect,
+}: {
+  selected: string;
+  onSelect: (profession: string) => void;
+}) {
+  return (
+    <HorizontalChipScroll>
+      {PROFESSION_SUGGESTIONS.map((item) => {
+        const active = selected === item;
+        const color = getProfessionColor(item);
+        return (
+          <TouchableOpacity
+            key={item}
+            style={[
+              chipStyles.chip,
+              active && { backgroundColor: color, borderColor: color },
+            ]}
+            onPress={() => onSelect(item)}
+            activeOpacity={0.75}
+          >
+            <Ionicons
+              name={getProfessionIcon(item) as any}
+              size={14}
+              color={active ? Colors.white : color}
+            />
+            <Text style={[chipStyles.chipText, active && chipStyles.chipTextOn]}>{item}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </HorizontalChipScroll>
+  );
+}
+
 export default function HelplineScreen() {
   const { user } = useAuth();
   const { t } = useLanguage();
@@ -108,11 +145,31 @@ export default function HelplineScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState<HelplineForm>({ profession: '', name: '', phone: '' });
   const [addErrors, setAddErrors] = useState<FormErrors>({});
-  const [addProfessionOpen, setAddProfessionOpen] = useState(false);
   const [editItem, setEditItem] = useState<any | null>(null);
   const [editForm, setEditForm] = useState<HelplineForm>({ profession: '', name: '', phone: '' });
   const [editErrors, setEditErrors] = useState<FormErrors>({});
-  const [editProfessionOpen, setEditProfessionOpen] = useState(false);
+  const [formKeyboardPad, setFormKeyboardPad] = useState(0);
+
+  const sheetOpen = showAdd || !!editItem;
+
+  // Helpline-only: spacer so the existing sheet body can scroll phone above the IME
+  useEffect(() => {
+    if (!sheetOpen) {
+      setFormKeyboardPad(0);
+      return;
+    }
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      const next = Math.round(e.endCoordinates.height);
+      setFormKeyboardPad((prev) => (prev === next ? prev : next));
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => setFormKeyboardPad(0));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [sheetOpen]);
 
   const activeBuildingId = isAdmin ? selectedBuilding?.id : user?.building_id;
 
@@ -127,7 +184,7 @@ export default function HelplineScreen() {
       const res = await api.get('/helpline', { params });
       setHelplines(res.data);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to load');
+      Alert.error('Error', e.response?.data?.error || 'Failed to load', 4000);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -139,12 +196,20 @@ export default function HelplineScreen() {
   const resetAddForm = () => {
     setForm({ profession: '', name: '', phone: '' });
     setAddErrors({});
-    setAddProfessionOpen(false);
   };
 
   const openAdd = () => {
     resetAddForm();
     setShowAdd(true);
+  };
+
+  const clearFieldError = (
+    setErrors: React.Dispatch<React.SetStateAction<FormErrors>>,
+    field: keyof FormErrors,
+  ) => {
+    setErrors((prev) => (prev[field] || prev.general
+      ? { ...prev, [field]: undefined, general: undefined }
+      : prev));
   };
 
   const addHelpline = async () => {
@@ -183,7 +248,6 @@ export default function HelplineScreen() {
       phone: item.phone || '',
     });
     setEditErrors({});
-    setEditProfessionOpen(false);
   };
 
   const updateHelpline = async () => {
@@ -203,14 +267,14 @@ export default function HelplineScreen() {
       setEditItem(null);
       fetchHelplines();
     } catch (e: any) {
-      setEditErrors({ general: e.response?.data?.error || 'Failed to update helpline number' });
+      setEditErrors({ general: e.response?.data?.error || 'Failed to update' });
     } finally {
       setSubmitting(false);
     }
   };
 
   const deleteHelpline = (id: string, name: string) => {
-    Alert.alert('Delete', `Remove ${name} from helpline?`, [
+    Alert.alert('Delete', `Remove "${name}" from helpline?`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete', style: 'destructive', onPress: async () => {
@@ -218,7 +282,7 @@ export default function HelplineScreen() {
             await api.delete(`/helpline/${id}`);
             fetchHelplines();
           } catch (e: any) {
-            Alert.alert('Error', e.response?.data?.error || 'Failed');
+            Alert.error('Error', e.response?.data?.error || 'Failed to delete', 4000);
           }
         },
       },
@@ -226,101 +290,61 @@ export default function HelplineScreen() {
   };
 
   const callNumber = (phone: string) => {
-    Linking.openURL(`tel:${phone}`).catch(() => {
-      void Alert.alert('Error', 'Cannot make call');
-      return 0;
-    });
+    Linking.openURL(`tel:${phone}`);
   };
 
   const renderItem = ({ item }: { item: any }) => {
     const color = getProfessionColor(item.profession);
     return (
-    <View style={styles.card}>
-      <View style={styles.cardLeft}>
-        <View style={[styles.iconBox, { backgroundColor: color + '18' }]}>
-          <Ionicons name={getProfessionIcon(item.profession) as any} size={22} color={color} />
+      <View style={styles.card}>
+        <View style={styles.cardLeft}>
+          <View style={[styles.iconBox, { backgroundColor: color + '18' }]}>
+            <Ionicons name={getProfessionIcon(item.profession) as any} size={22} color={color} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardName}>{item.name}</Text>
+            <Text style={styles.cardProfession}>{item.profession}</Text>
+            <Text style={styles.cardPhone}>{item.phone}</Text>
+          </View>
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.cardName}>{item.name}</Text>
-          <Text style={styles.cardProfession}>{item.profession}</Text>
-          <Text style={styles.cardPhone}>{item.phone}</Text>
+        <View style={styles.cardActions}>
+          <TouchableOpacity
+            style={[styles.callBtn, { backgroundColor: Colors.success + '15' }]}
+            onPress={() => callNumber(item.phone)}
+          >
+            <Ionicons name="call" size={18} color={Colors.success} />
+          </TouchableOpacity>
+          {canManage && (
+            <TouchableOpacity
+              style={[styles.callBtn, { backgroundColor: Colors.primary + '15' }]}
+              onPress={() => openEdit(item)}
+            >
+              <Ionicons name="pencil-outline" size={18} color={Colors.primary} />
+            </TouchableOpacity>
+          )}
+          {canManage && (
+            <TouchableOpacity
+              style={[styles.callBtn, { backgroundColor: Colors.danger + '15' }]}
+              onPress={() => deleteHelpline(item.id, item.name)}
+            >
+              <Ionicons name="trash-outline" size={18} color={Colors.danger} />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
-      <View style={styles.cardActions}>
-        <TouchableOpacity
-          style={[styles.callBtn, { backgroundColor: Colors.success + '15' }]}
-          onPress={() => callNumber(item.phone)}
-        >
-          <Ionicons name="call" size={18} color={Colors.success} />
-        </TouchableOpacity>
-        {canManage && (
-          <TouchableOpacity
-            style={[styles.callBtn, { backgroundColor: Colors.primary + '15' }]}
-            onPress={() => openEdit(item)}
-          >
-            <Ionicons name="pencil-outline" size={18} color={Colors.primary} />
-          </TouchableOpacity>
-        )}
-        {canManage && (
-          <TouchableOpacity
-            style={[styles.callBtn, { backgroundColor: Colors.danger + '15' }]}
-            onPress={() => deleteHelpline(item.id, item.name)}
-          >
-            <Ionicons name="trash-outline" size={18} color={Colors.danger} />
-          </TouchableOpacity>
-        )}
-      </View>
-    </View>
     );
   };
-
-  const renderProfessionOptions = (
-    selected: string,
-    onSelect: (profession: string) => void,
-  ) => (
-    <ScrollView
-      style={styles.inlinePicker}
-      nestedScrollEnabled
-      keyboardShouldPersistTaps="handled"
-      showsVerticalScrollIndicator
-    >
-      {PROFESSION_SUGGESTIONS.map((item) => {
-        const active = selected === item;
-        return (
-          <TouchableOpacity
-            key={item}
-            style={[styles.pickerItem, active && styles.pickerItemActive]}
-            onPress={() => onSelect(item)}
-            activeOpacity={0.7}
-          >
-            <Ionicons name={getProfessionIcon(item) as any} size={18} color={getProfessionColor(item)} />
-            <Text style={[styles.pickerItemText, active && styles.pickerItemTextActive]}>{item}</Text>
-            {active ? <Ionicons name="checkmark-circle" size={18} color={Colors.primary} /> : null}
-          </TouchableOpacity>
-        );
-      })}
-    </ScrollView>
-  );
 
   const renderHelplineForm = (
     values: HelplineForm,
     errors: FormErrors,
+    setErrors: React.Dispatch<React.SetStateAction<FormErrors>>,
     onChange: (patch: Partial<HelplineForm>) => void,
-    professionOpen: boolean,
-    onToggleProfession: () => void,
-    onSelectProfession: (profession: string) => void,
     onSubmit: () => void,
     submitLabel: string,
     showBuildingPicker: boolean,
   ) => (
     <>
-      {!!errors.general && (
-        <View style={styles.generalErrorBox}>
-          <Ionicons name="alert-circle" size={18} color={Colors.danger} />
-          <Text style={styles.generalErrorText}>{errors.general}</Text>
-        </View>
-      )}
-
       {showBuildingPicker && (
         <>
           <Text style={styles.label}>Society *</Text>
@@ -335,24 +359,23 @@ export default function HelplineScreen() {
       )}
 
       <Text style={styles.label}>{t('profession')} *</Text>
-      <TouchableOpacity
-        style={[styles.select, errors.profession && styles.inputError]}
-        onPress={onToggleProfession}
-        activeOpacity={0.7}
-      >
-        <Text style={[styles.selectText, !values.profession && { color: Colors.textMuted }]}>
-          {values.profession || t('selectProfession')}
-        </Text>
-        <Ionicons name={professionOpen ? 'chevron-up' : 'chevron-down'} size={16} color={Colors.textMuted} />
-      </TouchableOpacity>
-      {professionOpen && renderProfessionOptions(values.profession, onSelectProfession)}
+      <ProfessionChips
+        selected={values.profession}
+        onSelect={(profession) => {
+          onChange({ profession });
+          clearFieldError(setErrors, 'profession');
+        }}
+      />
       <FieldError message={errors.profession} />
 
       <Text style={styles.label}>Contact Name *</Text>
-      <TextInput
-        style={[styles.input, errors.name && styles.inputError]}
+      <BottomSheetTextInput
+        style={[styles.input, errors.name ? styles.inputError : null]}
         value={values.name}
-        onChangeText={(name) => onChange({ name })}
+        onChangeText={(name) => {
+          onChange({ name });
+          clearFieldError(setErrors, 'name');
+        }}
         placeholder="e.g. Ramesh Kumar"
         placeholderTextColor={Colors.textMuted}
         autoCapitalize="words"
@@ -360,10 +383,13 @@ export default function HelplineScreen() {
       <FieldError message={errors.name} />
 
       <Text style={styles.label}>Phone Number *</Text>
-      <TextInput
-        style={[styles.input, errors.phone && styles.inputError]}
+      <BottomSheetTextInput
+        style={[styles.input, errors.phone ? styles.inputError : null]}
         value={values.phone}
-        onChangeText={(phone) => onChange({ phone })}
+        onChangeText={(phone) => {
+          onChange({ phone });
+          clearFieldError(setErrors, 'phone');
+        }}
         placeholder="e.g. 9876543210"
         keyboardType="phone-pad"
         maxLength={10}
@@ -371,11 +397,25 @@ export default function HelplineScreen() {
       />
       <FieldError message={errors.phone} />
 
-      <TouchableOpacity style={styles.submitBtn} onPress={onSubmit} disabled={submitting}>
+      {errors.general ? (
+        <View style={styles.formErrorBanner}>
+          <Ionicons name="alert-circle" size={16} color={Colors.danger} />
+          <Text style={styles.errorText}>{errors.general}</Text>
+        </View>
+      ) : null}
+
+      <TouchableOpacity
+        style={[styles.submitBtn, submitting && { opacity: 0.6 }]}
+        onPress={onSubmit}
+        disabled={submitting}
+      >
         {submitting
           ? <ActivityIndicator color={Colors.white} />
           : <Text style={styles.submitBtnText}>{submitLabel}</Text>}
       </TouchableOpacity>
+
+      {/* Helpline-only: scroll room inside the sheet when keyboard is open */}
+      {formKeyboardPad > 0 ? <View style={{ height: formKeyboardPad }} collapsable={false} /> : null}
     </>
   );
 
@@ -438,23 +478,8 @@ export default function HelplineScreen() {
         {renderHelplineForm(
           form,
           addErrors,
-          (patch) => {
-            setForm((f) => ({ ...f, ...patch }));
-            setAddErrors((prev) => ({
-              ...prev,
-              ...(patch.profession !== undefined ? { profession: undefined } : {}),
-              ...(patch.name !== undefined ? { name: undefined } : {}),
-              ...(patch.phone !== undefined ? { phone: undefined } : {}),
-              general: undefined,
-            }));
-          },
-          addProfessionOpen,
-          () => setAddProfessionOpen((open) => !open),
-          (profession) => {
-            setForm((f) => ({ ...f, profession }));
-            setAddErrors((prev) => ({ ...prev, profession: undefined }));
-            setAddProfessionOpen(false);
-          },
+          setAddErrors,
+          (patch) => setForm((f) => ({ ...f, ...patch })),
           addHelpline,
           'Add Helpline',
           isAdmin,
@@ -463,29 +488,14 @@ export default function HelplineScreen() {
 
       <BottomSheetModal
         visible={!!editItem}
-        onClose={() => { setEditItem(null); setEditProfessionOpen(false); }}
+        onClose={() => setEditItem(null)}
         title={t('editHelpline')}
       >
         {renderHelplineForm(
           editForm,
           editErrors,
-          (patch) => {
-            setEditForm((f) => ({ ...f, ...patch }));
-            setEditErrors((prev) => ({
-              ...prev,
-              ...(patch.profession !== undefined ? { profession: undefined } : {}),
-              ...(patch.name !== undefined ? { name: undefined } : {}),
-              ...(patch.phone !== undefined ? { phone: undefined } : {}),
-              general: undefined,
-            }));
-          },
-          editProfessionOpen,
-          () => setEditProfessionOpen((open) => !open),
-          (profession) => {
-            setEditForm((f) => ({ ...f, profession }));
-            setEditErrors((prev) => ({ ...prev, profession: undefined }));
-            setEditProfessionOpen(false);
-          },
+          setEditErrors,
+          (patch) => setEditForm((f) => ({ ...f, ...patch })),
           updateHelpline,
           t('saveChanges'),
           false,
@@ -529,39 +539,23 @@ const styles = StyleSheet.create({
     fontSize: 15, color: Colors.text, backgroundColor: Colors.bg, marginBottom: 4,
   },
   inputError: { borderColor: Colors.danger, backgroundColor: '#FEF2F2' },
-  select: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    borderWidth: 1.5, borderColor: Colors.border, borderRadius: 12, padding: 14,
-    backgroundColor: Colors.bg, marginBottom: 4,
-  },
-  selectText: { fontSize: 15, color: Colors.text, flex: 1, marginRight: 8 },
   buildingReadonly: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     borderWidth: 1.5, borderColor: Colors.border, borderRadius: 12, padding: 14,
     backgroundColor: Colors.bg, marginBottom: 4,
   },
   buildingReadonlyText: { fontSize: 15, color: Colors.text, flex: 1, fontWeight: '600' },
-  inlinePicker: {
-    borderWidth: 1.5, borderColor: Colors.border, borderRadius: 12,
-    backgroundColor: Colors.white, marginBottom: 8, overflow: 'hidden',
-    maxHeight: 220,
+  errorRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginBottom: 12, marginTop: 2,
   },
-  pickerItem: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: 14, paddingVertical: 12,
-    borderBottomWidth: 1, borderBottomColor: Colors.border,
+  formErrorBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#FEF2F2', borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 10,
+    marginTop: 8, marginBottom: 4, borderWidth: 1, borderColor: '#FECACA',
   },
-  pickerItemActive: { backgroundColor: Colors.primary + '10' },
-  pickerItemText: { fontSize: 15, color: Colors.text, flex: 1 },
-  pickerItemTextActive: { color: Colors.primary, fontWeight: '700' },
-  errorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12, marginTop: 2 },
-  errorText: { fontSize: 13, color: Colors.danger, flex: 1 },
-  generalErrorBox: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
-    backgroundColor: '#FEF2F2', borderRadius: 12, padding: 12, marginBottom: 12,
-    borderWidth: 1, borderColor: '#FECACA',
-  },
-  generalErrorText: { fontSize: 13, color: Colors.danger, flex: 1, lineHeight: 18 },
+  errorText: { fontSize: 13, color: Colors.danger, flex: 1, fontWeight: '500' },
   submitBtn: {
     backgroundColor: Colors.primary, borderRadius: 12, padding: 15,
     alignItems: 'center', marginTop: 16, marginBottom: 8,

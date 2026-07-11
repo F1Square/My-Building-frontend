@@ -1,89 +1,133 @@
 /**
- * Modern alert replacement using Toast notifications
- * Drop-in replacement for React Native's Alert.alert
- * 
+ * App alert API — Burnt toasts for messages, native Alert for confirmations.
+ *
  * Usage:
  *   import { Alert } from '../utils/alert';
- *   Alert.success('Success', 'Operation completed successfully');
- *   Alert.error('Error', 'Something went wrong');
- *   Alert.alert('Title', 'Message'); // Uses toast for simple messages
- *   Alert.alert('Confirm', 'Are you sure?', [{text: 'Cancel'}, {text: 'OK'}]); // Uses native alert for confirmations
+ *   Alert.success('Success', 'Operation completed', 4000);
+ *   Alert.error('Error', 'Something went wrong', 4000);
+ *   Alert.alert('Title', 'Message'); // toast
+ *   Alert.alert('Confirm', 'Are you sure?', [{text: 'Cancel'}, {text: 'OK'}]); // native
  */
 
-import { setToastInstance } from './modernAlert';
-import { determineAlertType } from './alertPatch';
+import * as Burnt from 'burnt';
+import { Alert as RNAlert, Platform, ToastAndroid } from 'react-native';
+import { determineAlertType, isDismissOnlyButtons } from './alertPatch';
 
-// Re-export from modernAlert for backward compatibility
-export { setToastInstance };
-
-// Import and re-export ModernAlert as Alert for drop-in replacement
-import { ModernAlert } from './modernAlert';
-
-/**
- * Smart alert system that chooses between toast and native alerts
- * Drop-in replacement for React Native Alert
- */
-export const Alert = {
-  /**
-   * Show a success toast
-   */
-  success: ModernAlert.success,
-
-  /**
-   * Show an error toast
-   */
-  error: ModernAlert.error,
-
-  /**
-   * Show a warning toast
-   */
-  warning: ModernAlert.warning,
-
-  /**
-   * Show an info toast
-   */
-  info: ModernAlert.info,
-
-  /**
-   * Show a confirmation dialog (uses native alert)
-   */
-  confirm: ModernAlert.confirm,
-
-  /**
-   * Show a critical alert (uses native alert for confirmations, toast for simple messages)
-   */
-  alert: (
-    title: string,
-    message?: string,
-    buttons?: Array<{ text: string; onPress?: () => void; style?: 'default' | 'cancel' | 'destructive' }>
-  ) => {
-    if (buttons && buttons.length > 0) {
-      return ModernAlert.alert(title, message, buttons);
-    }
-    const type = determineAlertType(title, message);
-    switch (type) {
-      case 'success': return ModernAlert.success(title, message);
-      case 'error': return ModernAlert.error(title, message);
-      case 'warning': return ModernAlert.warning(title, message);
-      default: return ModernAlert.info(title, message);
-    }
-  },
-
-  /**
-   * Convenience method for delete confirmations
-   */
-  deleteConfirm: ModernAlert.deleteConfirm,
-
-  /**
-   * Convenience method for subscription/upgrade prompts
-   */
-  subscriptionRequired: ModernAlert.subscriptionRequired,
-
-  /**
-   * Convenience method for permission requests
-   */
-  permissionRequired: ModernAlert.permissionRequired,
+type AlertKind = 'success' | 'error' | 'warning' | 'info';
+type AlertButton = {
+  text: string;
+  onPress?: () => void;
+  style?: 'default' | 'cancel' | 'destructive';
 };
 
-// Legacy exports for backward compatibility
-export const showAlert = ModernAlert.info;
+/**
+ * Show a toast via Burnt.
+ * On Android Burnt wraps ToastAndroid but passes duration in ms (invalid for RN),
+ * so we call ToastAndroid with SHORT/LONG directly — same native toast UX.
+ */
+function burntToast(title: string, message?: string, kind: AlertKind = 'info', durationMs = 3000) {
+  const hasMessage = Boolean(message?.trim());
+  const text = hasMessage ? `${title}\n${message}` : title;
+
+  if (Platform.OS === 'android') {
+    ToastAndroid.show(text, durationMs > 2500 ? ToastAndroid.LONG : ToastAndroid.SHORT);
+    return;
+  }
+
+  const duration = Math.max(1, Math.round(durationMs / 1000));
+  const preset = kind === 'error' ? 'error' : kind === 'success' ? 'done' : 'none';
+  const haptic =
+    kind === 'error' ? 'error' : kind === 'success' ? 'success' : kind === 'warning' ? 'warning' : 'none';
+
+  Burnt.toast({
+    title,
+    message: hasMessage ? message : undefined,
+    preset,
+    haptic,
+    duration,
+  });
+}
+
+function showNativeAlert(
+  title: string,
+  message?: string,
+  buttons?: AlertButton[],
+): Promise<number> {
+  return new Promise((resolve) => {
+    RNAlert.alert(
+      title,
+      message || '',
+      buttons?.map((btn, index) => ({
+        text: btn.text,
+        onPress: () => {
+          btn.onPress?.();
+          resolve(index);
+        },
+        style: btn.style || 'default',
+      })) || [{ text: 'OK', onPress: () => resolve(0) }],
+    );
+  });
+}
+
+export const Alert = {
+  success: (title: string, message?: string, durationMs?: number) => {
+    burntToast(title, message, 'success', durationMs ?? 3000);
+  },
+
+  error: (title: string, message?: string, durationMs?: number) => {
+    burntToast(title, message, 'error', durationMs ?? 3500);
+  },
+
+  warning: (title: string, message?: string, durationMs?: number) => {
+    burntToast(title, message, 'warning', durationMs ?? 3000);
+  },
+
+  info: (title: string, message?: string, durationMs?: number) => {
+    burntToast(title, message, 'info', durationMs ?? 3000);
+  },
+
+  confirm: (title: string, message?: string, buttons?: AlertButton[]) =>
+    showNativeAlert(title, message, buttons),
+
+  alert: (title: string, message?: string, buttons?: AlertButton[]) => {
+    if (buttons && buttons.length > 0) {
+      if (isDismissOnlyButtons(buttons)) {
+        burntToast(title, message, determineAlertType(title, message));
+        buttons[0]?.onPress?.();
+        return;
+      }
+      return showNativeAlert(title, message, buttons);
+    }
+    return burntToast(title, message, determineAlertType(title, message));
+  },
+
+  deleteConfirm: (itemName?: string, extraMessage?: string) => {
+    const message = itemName
+      ? `Delete "${itemName}"?${extraMessage ? ` ${extraMessage}` : ''}`
+      : extraMessage || 'Delete this item?';
+    return showNativeAlert('Delete', message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive' },
+    ]);
+  },
+
+  subscriptionRequired: (featureName?: string, action?: string) => {
+    const message = featureName
+      ? `The ${featureName} requires an active subscription.${action ? ` ${action}` : ''}`
+      : 'This feature requires an active subscription.';
+    return showNativeAlert('Subscription Required', message, [
+      { text: 'Not Now', style: 'cancel' },
+      { text: 'View Plans', style: 'default' },
+    ]);
+  },
+
+  permissionRequired: (permissionName: string, reason?: string) => {
+    const message = reason || `Allow ${permissionName} to use this feature`;
+    return showNativeAlert('Permission Required', message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Allow', style: 'default' },
+    ]);
+  },
+};
+
+export const showAlert = Alert.info;

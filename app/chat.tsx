@@ -20,6 +20,8 @@ const POLL_ACTIVE_MS = 3000; // 3s when conversation is active
 const POLL_BG_MS = 30000;    // 30s when app is backgrounded
 const NEAR_BOTTOM_PX = 80;
 const ACTIVE_WINDOW_MS = 60000; // Consider "active" if msg received in last 60s
+/** Extra lift so Android IME suggestion/autocomplete strip does not cover the input */
+const ANDROID_IME_EXTRA = 20;
 
 // Sender color palette for avatar backgrounds
 const SENDER_COLORS = [
@@ -132,6 +134,7 @@ export default function ChatScreen() {
   const keyboardOpeningRef = useRef(false);
   const showJumpRef = useRef(false);
   const initialScrollDoneRef = useRef(false);
+  const [androidKeyboardPad, setAndroidKeyboardPad] = useState(0);
 
   /* ── Helpers ──────────────────────────────────────────────────────────── */
 
@@ -269,13 +272,26 @@ export default function ChatScreen() {
     return () => sub.remove();
   }, [pollNewMessages, scheduleNextPoll]);
 
-  /* ── Keyboard: scroll to latest when typing (OS handles input lift on both platforms) ─ */
+  /* ── Keyboard: lift input on Android; scroll to latest when typing ─ */
   useEffect(() => {
+    if (Platform.OS !== 'android' && Platform.OS !== 'ios') return;
+
+    const applyAndroidPad = (height: number) => {
+      if (height <= 0) {
+        setAndroidKeyboardPad(0);
+        return;
+      }
+      // height includes keys; +EXTRA clears the suggestion bar above the keyboard
+      const next = Math.max(0, Math.round(height) - Math.round(insets.bottom) + ANDROID_IME_EXTRA);
+      setAndroidKeyboardPad((prev) => (prev === next ? prev : next));
+    };
+
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
 
-    const showSub = Keyboard.addListener(showEvent, () => {
+    const showSub = Keyboard.addListener(showEvent, (e) => {
       keyboardOpeningRef.current = true;
+      if (Platform.OS === 'android') applyAndroidPad(e.endCoordinates.height);
       if (stickToBottomRef.current) {
         const delay = Platform.OS === 'ios' ? 60 : 120;
         setTimeout(() => {
@@ -288,9 +304,21 @@ export default function ChatScreen() {
     });
     const hideSub = Keyboard.addListener(hideEvent, () => {
       keyboardOpeningRef.current = false;
+      if (Platform.OS === 'android') setAndroidKeyboardPad(0);
     });
-    return () => { showSub.remove(); hideSub.remove(); };
-  }, [scrollToBottom]);
+    // Suggestion bar can appear after show — refresh pad when IME frame changes
+    const frameSub = Platform.OS === 'android'
+      ? Keyboard.addListener('keyboardDidChangeFrame', (e) => {
+          applyAndroidPad(e.endCoordinates.height);
+        })
+      : null;
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+      frameSub?.remove();
+    };
+  }, [scrollToBottom, insets.bottom]);
 
   /* ── Focus lifecycle ─────────────────────────────────────────────────── */
   useFocusEffect(
@@ -390,7 +418,8 @@ export default function ChatScreen() {
   // Header height so iOS KeyboardAvoidingView lifts content exactly once (no double gap).
   const headerHeight = Math.max(insets.top, 20) + 12 + 14 + 42;
   const keyboardVerticalOffset = Platform.OS === 'ios' ? headerHeight : 0;
-  const inputBarPaddingBottom = Math.max(insets.bottom, 8);
+  // When keyboard is open on Android, drop nav-bar padding on the bar (already accounted in pad).
+  const inputBarPaddingBottom = androidKeyboardPad > 0 ? 8 : Math.max(insets.bottom, 8);
 
   /* ─── UI ──────────────────────────────────────────────────────────────── */
   return (
@@ -413,7 +442,12 @@ export default function ChatScreen() {
 
       {/* ── Chat Content ────────────────────────────────────────────────── */}
       <KeyboardAvoidingView
-        style={s.chatWrapper}
+        style={[
+          s.chatWrapper,
+          Platform.OS === 'android' && androidKeyboardPad > 0
+            ? { paddingBottom: androidKeyboardPad }
+            : null,
+        ]}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={keyboardVerticalOffset}
       >

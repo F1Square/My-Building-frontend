@@ -33,7 +33,7 @@ export function normalizeDialPhone(phone: string | null | undefined): string | n
 export async function openWhatsApp(phone: string | null | undefined): Promise<void> {
   const normalized = normalizeWhatsAppPhone(phone);
   if (!normalized) {
-    Alert.alert('Invalid number', 'This phone number cannot be opened in WhatsApp.');
+    Alert.error('Invalid number', 'This phone number cannot be opened in WhatsApp.', 4000);
     return;
   }
 
@@ -51,16 +51,13 @@ export async function openWhatsApp(phone: string | null | undefined): Promise<vo
     }
   }
 
-  Alert.alert(
-    'Could not open WhatsApp',
-    'Please check that WhatsApp is installed and the phone number is valid.',
-  );
+  Alert.error('Could not open WhatsApp', 'Please check that WhatsApp is installed and the phone number is valid.', 4000);
 }
 
 export async function openPhoneDialer(phone: string | null | undefined): Promise<void> {
   const normalized = normalizeDialPhone(phone);
   if (!normalized) {
-    Alert.alert('Invalid number', 'This phone number cannot be used for calling.');
+    Alert.error('Invalid number', 'This phone number cannot be used for calling.', 4000);
     return;
   }
 
@@ -68,6 +65,6 @@ export async function openPhoneDialer(phone: string | null | undefined): Promise
   try {
     await Linking.openURL(tel);
   } catch {
-    Alert.alert('Could not start call', 'Please check the phone number and try again.');
+    Alert.error('Could not start call', 'Please check the phone number and try again.', 4000);
   }
 }

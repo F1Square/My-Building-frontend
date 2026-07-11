@@ -29,7 +29,9 @@ const GATED_ROUTES = [
 const TYPE_TO_ROUTE: Record<string, string> = {
   bill: '/maintenance', payment: '/maintenance', reminder: '/maintenance',
   visitor: '/visitors', announcement: '/announcements',
-  announcement_urgent: '/announcements_urgent',
+  announcement_urgent: '/announcements',
+  complaint: '/complaints?view=society',
+  expense: '/expenses',
   meeting: '/meetings', join_request: '/join-requests',
   join_response: '/join-requests', parking_report: '/parking',
 };
@@ -110,14 +112,10 @@ export default function HomeScreen() {
 
   const handleModuleTap = (route: string, titleKey: string) => {
     if (route === '/newspaper' && user?.role !== 'admin' && !hasNewspaperAddon) {
-      Alert.alert(
-        t('subscriptionRequired'),
-        'The Newspaper module requires an active subscription with the Newspaper add-on.',
-        [
+      Alert.alert(t('subscriptionRequired'), 'The Newspaper module requires an active subscription with the Newspaper add-on.', [
           { text: t('notNow'), style: 'cancel' },
           { text: t('viewPlans'), onPress: () => router.push('/subscribe' as any) },
-        ]
-      );
+        ]);
       return;
     }
     if (needsSubscription && GATED_ROUTES.includes(route)) {

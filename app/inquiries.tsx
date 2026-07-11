@@ -27,7 +27,7 @@ export default function InquiriesScreen() {
       const res = await api.get('/inquiries', { params });
       setInquiries(res.data);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to load');
+      Alert.error('Error', e.response?.data?.error || 'Failed to load', 4000);
     } finally {
       setLoading(false);
       setRefreshing(false);

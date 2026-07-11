@@ -192,10 +192,7 @@ export default function SubscribeScreen() {
     if (paymentAlertShownRef.current) return;
     paymentAlertShownRef.current = true;
     setTab('my-plan');
-    Alert.alert(
-      'Purchase successful',
-      'Your subscription is active. All modules are now unlocked.',
-    );
+    Alert.success('Purchase successful', 'Your subscription is active. All modules are now unlocked.', 4000);
   }, []);
 
   const showPaymentFailed = useCallback((reason?: string | null) => {
@@ -204,7 +201,7 @@ export default function SubscribeScreen() {
     const detail = reason?.trim()
       ? `The payment did not finish (${reason}). You can try again from Explore Plans.`
       : 'The payment did not finish. You can try again from Explore Plans.';
-    Alert.alert('Payment not completed', detail);
+    Alert.error('Payment not completed', detail, 4000);
   }, []);
 
   const processSubscriptionUrl = useCallback(
@@ -356,7 +353,7 @@ export default function SubscribeScreen() {
       await addBreadcrumb('subscription', 'subscribe_plan_flow_done', { plan: planSlug, resultType: result?.type });
     } catch (e: any) {
       await addBreadcrumb('subscription', 'subscribe_plan_error', { message: e?.message, data: e?.response?.data });
-      Alert.alert('Error', e.response?.data?.error || 'Failed to initiate payment');
+      Alert.error('Error', e.response?.data?.error || 'Failed to initiate payment', 4000);
     } finally {
       setLoading(null);
     }
@@ -381,7 +378,7 @@ export default function SubscribeScreen() {
       await addBreadcrumb('subscription', 'newspaper_addon_flow_done', { resultType: result?.type });
     } catch (e: any) {
       await addBreadcrumb('subscription', 'newspaper_addon_error', { message: e?.message, data: e?.response?.data });
-      Alert.alert('Error', e.response?.data?.error || 'Failed to initiate payment');
+      Alert.error('Error', e.response?.data?.error || 'Failed to initiate payment', 4000);
     } finally {
       setNewspaperAddonLoading(false);
     }
@@ -398,7 +395,7 @@ export default function SubscribeScreen() {
             await api.post('/subscriptions/newspaper-addon', { enable: false });
             await refreshSubscription();
           } catch (e: any) {
-            Alert.alert('Error', e.response?.data?.error || 'Failed');
+            Alert.error('Error', e.response?.data?.error || 'Failed', 4000);
           } finally {
             setNewspaperAddonLoading(false);
           }
@@ -415,7 +412,7 @@ export default function SubscribeScreen() {
       const res = await api.post('/promos/validate', { code: promoCode.trim(), plan: planForPromo });
       setPromoResult(res.data);
     } catch (e: any) {
-      Alert.alert('Invalid Code', e.response?.data?.error || 'Promo code not valid');
+      Alert.error('Invalid Code', e.response?.data?.error || 'Promo code not valid', 4000);
       setPromoResult(null);
     } finally { setPromoLoading(false); }
   };

@@ -44,7 +44,7 @@ export default function HelpSupportAdminScreen() {
       const res = await api.get('/support-tickets/admin', { params });
       setTickets(res.data);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to load tickets');
+      Alert.error('Error', e.response?.data?.error || 'Failed to load tickets', 4000);
     } finally {
       setLoading(false);
       setRefreshing(false);

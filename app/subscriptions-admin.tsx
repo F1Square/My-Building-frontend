@@ -96,7 +96,7 @@ export default function SubscriptionsAdminScreen() {
       const res = await api.get('/subscriptions/all', { params });
       setSubs(res.data);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to load');
+      Alert.error('Error', e.response?.data?.error || 'Failed to load', 4000);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -110,7 +110,7 @@ export default function SubscriptionsAdminScreen() {
       const res = await api.get('/subscriptions/plans/admin');
       setPlans(res.data || []);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to load plans');
+      Alert.error('Error', e.response?.data?.error || 'Failed to load plans', 4000);
     } finally {
       setPlansLoading(false);
       setPlansRefreshing(false);
@@ -165,11 +165,11 @@ export default function SubscriptionsAdminScreen() {
     const title = planForm.title.trim();
     const amount_paise = parseInt(planForm.amount_paise, 10);
     if (!slug || !title || Number.isNaN(amount_paise)) {
-      return Alert.alert('Error', 'Slug, title, and amount (paise) are required');
+      return Alert.error('Error', 'Slug, title, and amount (paise) are required', 4000);
     }
     const monthsVal = planForm.months.trim() === '' ? null : parseInt(planForm.months, 10);
     if (monthsVal !== null && (Number.isNaN(monthsVal) || monthsVal < 1)) {
-      return Alert.alert('Error', 'Months must be empty (lifetime) or a positive number');
+      return Alert.error('Error', 'Months must be empty (lifetime) or a positive number', 4000);
     }
     const features = planForm.featuresText.split('\n').map((s) => s.trim()).filter(Boolean);
     const body = {
@@ -188,15 +188,15 @@ export default function SubscriptionsAdminScreen() {
     try {
       if (planModal === 'create') {
         await api.post('/subscriptions/plans/admin', body);
-        Alert.alert('Done', 'Plan created');
+        Alert.success('Done', 'Plan created', 4000);
       } else if (editingPlan) {
         await api.patch(`/subscriptions/plans/admin/${editingPlan.id}`, body);
-        Alert.alert('Done', 'Plan updated');
+        Alert.success('Done', 'Plan updated', 4000);
       }
       setPlanModal(null);
       fetchPlans();
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Save failed');
+      Alert.error('Error', e.response?.data?.error || 'Save failed', 4000);
     } finally {
       setSavingPlan(false);
     }
@@ -213,7 +213,7 @@ export default function SubscriptionsAdminScreen() {
             await api.delete(`/subscriptions/plans/admin/${p.id}`);
             fetchPlans();
           } catch (e: any) {
-            Alert.alert('Error', e.response?.data?.error || 'Failed');
+            Alert.error('Error', e.response?.data?.error || 'Failed', 4000);
           }
         },
       },
@@ -229,9 +229,9 @@ export default function SubscriptionsAdminScreen() {
       setSelected(null);
       setRemark('');
       fetchSubs();
-      Alert.alert('Done', `${plan} subscription granted`);
+      Alert.success('Done', `${plan} subscription granted`, 4000);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed');
+      Alert.error('Error', e.response?.data?.error || 'Failed', 4000);
     } finally {
       setActing(false);
     }
@@ -249,7 +249,7 @@ export default function SubscriptionsAdminScreen() {
             setRemark('');
             fetchSubs();
           } catch (e: any) {
-            Alert.alert('Error', e.response?.data?.error || 'Failed');
+            Alert.error('Error', e.response?.data?.error || 'Failed', 4000);
           } finally {
             setActing(false);
           }

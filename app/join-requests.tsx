@@ -36,10 +36,10 @@ export default function JoinRequestsScreen() {
     setHandlingId(request_id + action);
     try {
       await api.post('/buildings/join/handle', { request_id, action });
-      Alert.alert('Done', `Request ${action}d`);
+      Alert.success('Done', `Request ${action}d`, 4000);
       fetchRequests();
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed');
+      Alert.error('Error', e.response?.data?.error || 'Failed', 4000);
     } finally {
       setHandlingId(null);
     }

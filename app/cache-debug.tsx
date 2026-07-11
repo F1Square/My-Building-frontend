@@ -31,7 +31,7 @@ export default function CacheDebugScreen() {
       { text: 'Clear', style: 'destructive', onPress: async () => {
         await cacheManager.clear();
         await refresh();
-        Alert.alert('Done', 'Cache cleared');
+        Alert.success('Done', 'Cache cleared', 4000);
       }},
     ]);
   };

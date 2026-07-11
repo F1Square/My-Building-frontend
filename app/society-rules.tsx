@@ -100,7 +100,7 @@ export default function SocietyRulesScreen() {
   };
 
   const handleSubmit = async () => {
-    if (!form.title.trim()) return Alert.alert('Error', 'Title is required');
+    if (!form.title.trim()) return Alert.error('Error', 'Title is required', 4000);
     setSubmitting(true);
     try {
       const body: any = {
@@ -119,7 +119,7 @@ export default function SocietyRulesScreen() {
       setShowForm(false);
       fetchRules();
     } catch (e: any) {
-      Alert.alert('Error', e?.response?.data?.error || 'Failed to save rule');
+      Alert.error('Error', e?.response?.data?.error || 'Failed to save rule', 4000);
     } finally { setSubmitting(false); }
   };
 
@@ -131,7 +131,7 @@ export default function SocietyRulesScreen() {
           await api.delete(`/society-rules/${rule.id}`);
           fetchRules();
         } catch (e: any) {
-          Alert.alert('Error', e?.response?.data?.error || 'Failed to delete');
+          Alert.error('Error', e?.response?.data?.error || 'Failed to delete', 4000);
         }
       }},
     ]);

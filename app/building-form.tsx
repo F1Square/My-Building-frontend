@@ -45,7 +45,7 @@ export default function BuildingFormScreen() {
         setBForm(buildingToForm(r.data));
         setTermsAccepted(!!r.data.payment_tc);
       } catch (e: any) {
-        Alert.error('Error', e.response?.data?.error || 'Failed to load building');
+        Alert.error('Error', e.response?.data?.error || 'Failed to load building', 4000);
         router.back();
       } finally {
         if (!cancelled) setLoading(false);
@@ -72,7 +72,7 @@ export default function BuildingFormScreen() {
     try {
       setPaymentTerms(await fetchPaymentTerms());
     } catch {
-      Alert.error('Error', 'Failed to load payment terms');
+      Alert.error('Error', 'Failed to load payment terms', 4000);
       setShowTermsModal(false);
     } finally {
       setTermsLoading(false);
@@ -85,7 +85,7 @@ export default function BuildingFormScreen() {
   };
 
   const saveBuilding = async () => {
-    if (!bForm.name.trim()) return Alert.error('Error', 'Building name is required');
+    if (!bForm.name.trim()) return Alert.error('Error', 'Building name is required', 4000);
     if (onlineSelected && !termsAccepted) {
       openTerms();
       return;
@@ -107,14 +107,14 @@ export default function BuildingFormScreen() {
 
       if (isEdit) {
         await api.put(`/buildings/${building_id}`, payload);
-        Alert.success('Done', 'Building updated');
+        Alert.success('Done', 'Building updated', 4000);
       } else {
         await api.post('/buildings/create', payload);
-        Alert.success('Done', 'Building created');
+        Alert.success('Done', 'Building created', 4000);
       }
       router.back();
     } catch (e: any) {
-      Alert.error('Error', e.response?.data?.error || 'Failed');
+      Alert.error('Error', e.response?.data?.error || 'Failed', 4000);
     } finally {
       setSubmitting(false);
     }

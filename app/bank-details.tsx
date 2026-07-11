@@ -86,9 +86,9 @@ export default function BankDetailsScreen() {
   };
 
   const save = async () => {
-    if (isAdmin && !selectedBuilding) return Alert.alert('Error', 'Please select a building first');
-    if (!details.bank_account || !details.bank_ifsc) return Alert.alert('Error', 'Account number and IFSC are required');
-    if (!details.beneficiary_name) return Alert.alert('Error', 'Beneficiary name is required');
+    if (isAdmin && !selectedBuilding) return Alert.error('Error', 'Please select a building first', 4000);
+    if (!details.bank_account || !details.bank_ifsc) return Alert.error('Error', 'Account number and IFSC are required', 4000);
+    if (!details.beneficiary_name) return Alert.error('Error', 'Beneficiary name is required', 4000);
     
     setSaving(true);
     try {
@@ -97,9 +97,9 @@ export default function BankDetailsScreen() {
       
       await api.post('/buildings/bank-details', payload);
       setEditing(false);
-      Alert.alert('Saved', 'Bank details saved successfully');
+      Alert.success('Saved', 'Bank details saved successfully', 4000);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to save');
+      Alert.error('Error', e.response?.data?.error || 'Failed to save', 4000);
     } finally {
       setSaving(false);
     }

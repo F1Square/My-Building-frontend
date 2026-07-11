@@ -64,7 +64,7 @@ export default function ReferAndEarnScreen() {
         setReferrals(referralsRes.data);
       }
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to load');
+      Alert.error('Error', e.response?.data?.error || 'Failed to load', 4000);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -76,7 +76,7 @@ export default function ReferAndEarnScreen() {
   const copyCode = async () => {
     if (!referralCode) return;
     if (await copyToClipboard(referralCode)) {
-      Alert.alert('Copied!', 'Referral code copied to clipboard.');
+      Alert.success('Copied!', 'Referral code copied to clipboard.', 4000);
     }
   };
 
@@ -96,7 +96,7 @@ export default function ReferAndEarnScreen() {
             await api.post('/refer/admin/grant-subscription', { referral_id: referralId });
             fetchData();
           } catch (e: any) {
-            Alert.alert('Error', e.response?.data?.error || 'Failed');
+            Alert.error('Error', e.response?.data?.error || 'Failed', 4000);
           }
         },
       },
@@ -109,7 +109,7 @@ export default function ReferAndEarnScreen() {
   };
 
   const submitGiftCard = async () => {
-    if (!giftCardInput.trim()) return Alert.alert('Error', 'Enter a gift card code');
+    if (!giftCardInput.trim()) return Alert.error('Error', 'Enter a gift card code', 4000);
     setSubmitting(true);
     try {
       await api.post('/refer/admin/add-gift-card', {
@@ -119,7 +119,7 @@ export default function ReferAndEarnScreen() {
       setGiftCardModal({ visible: false, referralId: '' });
       fetchData();
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed');
+      Alert.error('Error', e.response?.data?.error || 'Failed', 4000);
     } finally {
       setSubmitting(false);
     }

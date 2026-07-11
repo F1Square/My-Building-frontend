@@ -70,7 +70,7 @@ export default function JoinBuildingScreen() {
       await api.post('/buildings/join', { building_code: verifiedBuilding.building_code });
       setSubmitted(true);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to send request');
+      Alert.error('Error', e.response?.data?.error || 'Failed to send request', 4000);
     } finally {
       setSubmitting(false);
     }

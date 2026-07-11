@@ -82,12 +82,9 @@ export default function MyPaymentsScreen() {
     const status = new URLSearchParams(queryPart).get('status');
     await fetch();
     if (status === 'success') {
-      Alert.alert('Payment successful', 'Your payment was recorded.');
+      Alert.success('Payment successful', 'Your payment was recorded.', 4000);
     } else if (status === 'failed') {
-      Alert.alert(
-        'Payment not completed',
-        'The payment did not finish. If your account was debited, refresh this screen.',
-      );
+      Alert.error('Payment not completed', 'The payment did not finish. If your account was debited, refresh this screen.', 4000);
     }
   }, []);
 
@@ -140,7 +137,7 @@ export default function MyPaymentsScreen() {
       });
       fetch();
     } catch (e: any) {
-      Alert.alert('Upload Failed', e.response?.data?.error || 'Could not upload receipt. Please try again.');
+      Alert.error('Upload Failed', e.response?.data?.error || 'Could not upload receipt. Please try again.', 4000);
     } finally {
       setUploadingReceipt(null);
     }
@@ -160,7 +157,7 @@ export default function MyPaymentsScreen() {
       });
 
       if (result.status !== 200) {
-        Alert.alert('Error', 'Failed to download receipt. Please try again.');
+        Alert.error('Error', 'Failed to download receipt. Please try again.', 4000);
         return;
       }
 
@@ -172,10 +169,10 @@ export default function MyPaymentsScreen() {
           UTI: 'com.adobe.pdf',
         });
       } else {
-        Alert.alert('Downloaded', `Receipt saved to: ${result.uri}`);
+        Alert.success('Downloaded', `Receipt saved to: ${result.uri}`, 4000);
       }
     } catch (e: any) {
-      Alert.alert('Error', 'Could not download receipt. Check your connection.');
+      Alert.error('Error', 'Could not download receipt. Check your connection.', 4000);
     } finally {
       setDownloading(null);
     }
@@ -319,7 +316,7 @@ export default function MyPaymentsScreen() {
                     </TouchableOpacity>
                   )}
                   {actions.includes('mark_cash') && (
-                    <TouchableOpacity style={styles.cashBtn} onPress={() => Alert.alert('Cash Payment', 'Please inform your Pramukh about your cash payment.')}>
+                    <TouchableOpacity style={styles.cashBtn} onPress={() => Alert.warning('Cash Payment', 'Please inform your Pramukh about your cash payment.', 4000)}>
                       <Text style={styles.cashBtnText}>Mark as Cash</Text>
                     </TouchableOpacity>
                   )}

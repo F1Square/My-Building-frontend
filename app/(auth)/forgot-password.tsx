@@ -67,13 +67,13 @@ export default function ForgotPasswordScreen() {
 
   const sendOtp = async () => {
     if (loading) return; // Prevent multiple calls
-    if (!email.trim()) return Alert.alert('Error', 'Please enter your email');
-    if (!isValidEmail(email)) return Alert.alert('Error', 'Please enter a valid email address');
+    if (!email.trim()) return Alert.error('Error', 'Please enter your email', 4000);
+    if (!isValidEmail(email)) return Alert.error('Error', 'Please enter a valid email address', 4000);
     
     setLoading(true);
     try {
       await api.post('/auth/forgot-password', { email: email.trim() });
-      Alert.alert('OTP Sent', `A 6-digit OTP has been sent to ${email.trim()}`);
+      Alert.success('OTP Sent', `A 6-digit OTP has been sent to ${email.trim()}`, 4000);
       setStep('otp');
       setResendTimer(60); // Start 60 second countdown
       // Auto-focus first OTP box
@@ -81,7 +81,7 @@ export default function ForgotPasswordScreen() {
         otpRefs.current[0]?.focus();
       }, 300);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to send OTP');
+      Alert.error('Error', e.response?.data?.error || 'Failed to send OTP', 4000);
     } finally {
       setLoading(false);
     }
@@ -150,7 +150,7 @@ export default function ForgotPasswordScreen() {
         passwordRef.current?.focus();
       }, 300);
     } catch (e: any) {
-      Alert.alert('Invalid OTP', e.response?.data?.error || 'OTP verification failed');
+      Alert.error('Invalid OTP', e.response?.data?.error || 'OTP verification failed', 4000);
       // Clear OTP on error
       setOtp(['', '', '', '', '', '']);
       otpRefs.current[0]?.focus();
@@ -162,7 +162,7 @@ export default function ForgotPasswordScreen() {
   const verifyOtp = async () => {
     if (loading) return;
     const otpCode = otp.join('');
-    if (otpCode.length !== 6) return Alert.alert('Error', 'Please enter the 6-digit OTP');
+    if (otpCode.length !== 6) return Alert.error('Error', 'Please enter the 6-digit OTP', 4000);
     await verifyOtpAuto(otpCode);
   };
 
@@ -170,10 +170,10 @@ export default function ForgotPasswordScreen() {
     if (loading) return; // Prevent multiple calls
     
     const failedRule = PASSWORD_RULES.find((r) => !r.test(newPassword));
-    if (failedRule) return Alert.alert('Weak Password', failedRule.label);
+    if (failedRule) return Alert.error('Weak Password', failedRule.label, 4000);
     
     if (newPassword !== confirmPassword) {
-      return Alert.alert('Password Mismatch', 'Passwords do not match. Please try again.');
+      return Alert.error('Password Mismatch', 'Passwords do not match. Please try again.', 4000);
     }
     
     setLoading(true);
@@ -202,7 +202,7 @@ export default function ForgotPasswordScreen() {
         router.replace('/login' as any);
       }, 2000);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to reset password');
+      Alert.error('Error', e.response?.data?.error || 'Failed to reset password', 4000);
     } finally {
       setLoading(false);
     }
@@ -253,7 +253,7 @@ export default function ForgotPasswordScreen() {
 
         <View style={styles.header}>
           <Text style={styles.logo}>🔐</Text>
-          <Text style={styles.title}>Reset Password</Text>
+          <Text style={styles.title}>Forgot Password</Text>
           <Text style={styles.subtitle}>We'll send an OTP to your email</Text>
         </View>
 

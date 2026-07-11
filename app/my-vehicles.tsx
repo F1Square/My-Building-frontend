@@ -48,8 +48,8 @@ export default function MyVehiclesScreen() {
 
   const addVehicle = async () => {
     const num = form.vehicle_number.toUpperCase().replace(/\s/g, '');
-    if (!num) return Alert.alert('Error', 'Vehicle number is required');
-    if (!VEHICLE_RE.test(num)) return Alert.alert('Invalid', 'Enter a valid number e.g. GJ05HR4533');
+    if (!num) return Alert.error('Error', 'Vehicle number is required', 4000);
+    if (!VEHICLE_RE.test(num)) return Alert.error('Invalid', 'Enter a valid number e.g. GJ05HR4533', 4000);
     setSubmitting(true);
     try {
       await api.post('/vehicles', { vehicle_number: num, vehicle_type: form.vehicle_type });
@@ -57,7 +57,7 @@ export default function MyVehiclesScreen() {
       setForm({ vehicle_number: '', vehicle_type: 'two_wheeler' });
       fetch();
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to add vehicle');
+      Alert.error('Error', e.response?.data?.error || 'Failed to add vehicle', 4000);
     } finally { setSubmitting(false); }
   };
 
@@ -69,7 +69,7 @@ export default function MyVehiclesScreen() {
           await api.delete(`/vehicles/${id}`);
           setVehicles(prev => prev.filter(v => v.id !== id));
         } catch (e: any) {
-          Alert.alert('Error', e.response?.data?.error || 'Failed');
+          Alert.error('Error', e.response?.data?.error || 'Failed', 4000);
         }
       }},
     ]);

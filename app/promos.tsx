@@ -37,14 +37,14 @@ export default function PromosScreen() {
       const res = await api.get('/promos');
       setPromos(res.data);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to load');
+      Alert.error('Error', e.response?.data?.error || 'Failed to load', 4000);
     } finally { setLoading(false); setRefreshing(false); }
   };
 
   useFocusEffect(useCallback(() => { fetch(); }, []));
 
   const create = async () => {
-    if (!form.value) return Alert.alert('Error', 'Value is required');
+    if (!form.value) return Alert.error('Error', 'Value is required', 4000);
     setSubmitting(true);
     try {
       await api.post('/promos', {
@@ -58,7 +58,7 @@ export default function PromosScreen() {
       setForm({ type: 'percent', value: '', description: '', expires_at: '', prefix: '' });
       fetch();
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed');
+      Alert.error('Error', e.response?.data?.error || 'Failed', 4000);
     } finally { setSubmitting(false); }
   };
 
@@ -69,7 +69,7 @@ export default function PromosScreen() {
         try {
           await api.delete(`/promos/${id}`);
           setPromos(prev => prev.filter(p => p.id !== id));
-        } catch (e: any) { Alert.alert('Error', e.response?.data?.error || 'Failed'); }
+        } catch (e: any) { Alert.error('Error', e.response?.data?.error || 'Failed', 4000); }
       }},
     ]);
   };

@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput,
+  View, Text, StyleSheet, FlatList, TouchableOpacity,
   Modal, ActivityIndicator, RefreshControl, ScrollView, ToastAndroid,
 } from 'react-native';
 import { Alert } from '../utils/alert';
@@ -13,9 +13,9 @@ import api from '../utils/api';
 import { entryMatchesMonthYear, formatExpenseDate, localDateString, parseExpenseDateParts } from '../utils/expenseDate';
 import { ExpenseDatePicker } from '../components/ExpenseDatePicker';
 import { ModuleHeader, ModuleHeaderIconButton } from '../components/ModuleHeader';
-import * as Print from 'expo-print';
-import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system/legacy';
+import BottomSheetModal, { BottomSheetTextInput, DetailRow, sheetStyles } from '../components/BottomSheetModal';
+import ExpenseExportSheet from '../components/ExpenseExportSheet';
+import HorizontalChipScroll, { chipStyles } from '../components/HorizontalChipScroll';
 
 type Entry = {
   id: string; type: 'inflow' | 'outflow'; amount: number;
@@ -60,6 +60,7 @@ export default function ExpensesDetailScreen() {
   const [showLogs, setShowLogs] = useState(false);
   const [logs, setLogs]         = useState<any[]>([]);
   const [showDetail, setShowDetail] = useState<Entry | null>(null);
+  const [exportFormat, setExportFormat] = useState<'pdf' | 'excel' | null>(null);
 
   // Forms
   const [balanceInput, setBalanceInput] = useState('');
@@ -70,6 +71,9 @@ export default function ExpensesDetailScreen() {
     category: '',
     date: localDateString()
   });
+  const [formError, setFormError] = useState<string | null>(null);
+  const [amountError, setAmountError] = useState<string | null>(null);
+  const [descriptionError, setDescriptionError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [typeFilter, setTypeFilter] = useState<'all' | 'inflow' | 'outflow'>('all');
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
@@ -151,11 +155,37 @@ export default function ExpensesDetailScreen() {
     } finally { setSubmitting(false); }
   };
 
+  const clearFormErrors = () => {
+    setFormError(null);
+    setAmountError(null);
+    setDescriptionError(null);
+  };
+
+  const resetEntryForm = () => {
+    setForm({ type: 'outflow', amount: '', description: '', category: '', date: localDateString() });
+    clearFormErrors();
+  };
+
+  const closeEntrySheet = () => {
+    setShowAdd(false);
+    setShowEdit(null);
+    resetEntryForm();
+  };
+
+  const validateEntryForm = () => {
+    setFormError(null);
+    const amount = parseFloat(form.amount);
+    const nextAmountError = !form.amount.trim() || isNaN(amount) || amount <= 0
+      ? 'Enter a valid amount'
+      : null;
+    const nextDescError = !form.description.trim() ? 'Description is required' : null;
+    setAmountError(nextAmountError);
+    setDescriptionError(nextDescError);
+    return !nextAmountError && !nextDescError;
+  };
+
   const addEntry = async () => {
-    if (!form.amount || !form.description.trim()) {
-      ToastAndroid.show('Amount and description are required', ToastAndroid.SHORT);
-      return;
-    }
+    if (!validateEntryForm()) return;
     setSubmitting(true);
     try {
       const res = await api.post('/expenses/entries', {
@@ -176,33 +206,42 @@ export default function ExpensesDetailScreen() {
         setSelectedYear(parts.year);
       }
       setSummary((prev: any) => ({ ...prev, current_balance: res.data.current_balance }));
-      setShowAdd(false);
-      setForm({ type: 'outflow', amount: '', description: '', category: '', date: localDateString() });
+      closeEntrySheet();
       ToastAndroid.show('Entry added', ToastAndroid.SHORT);
     } catch (e: any) {
-      ToastAndroid.show(e.response?.data?.error || 'Failed to add entry', ToastAndroid.LONG);
+      setFormError(e.response?.data?.error || 'Failed to add entry');
     } finally { setSubmitting(false); }
   };
 
   const saveEdit = async () => {
     if (!showEdit) return;
-    if (!form.amount || !form.description.trim()) {
-      ToastAndroid.show('Amount and description are required', ToastAndroid.SHORT);
-      return;
-    }
+    if (!validateEntryForm()) return;
     setSubmitting(true);
     try {
       const res = await api.patch(`/expenses/entries/${showEdit.id}`, {
         ...form,
+        amount: parseFloat(form.amount),
+        date: form.date?.slice(0, 10) || localDateString(),
         building_id: buildingId,
         wing: wingName,
       });
-      setEntries(prev => prev.map(e => e.id === showEdit.id ? res.data.entry : e));
+      const updated = res.data?.entry;
+      setEntries(prev => prev.map(e => {
+        if (e.id !== showEdit.id) return e;
+        if (!updated) return e;
+        return {
+          ...e,
+          ...updated,
+          date: updated.date || form.date || e.date,
+          added_by_user: updated.added_by_user ?? e.added_by_user,
+          edited_by_user: updated.edited_by_user ?? e.edited_by_user,
+        };
+      }));
       setSummary((prev: any) => ({ ...prev, current_balance: res.data.current_balance }));
-      setShowEdit(null);
+      closeEntrySheet();
       ToastAndroid.show('Entry updated', ToastAndroid.SHORT);
     } catch (e: any) {
-      ToastAndroid.show(e.response?.data?.error || 'Failed to update entry', ToastAndroid.LONG);
+      setFormError(e.response?.data?.error || 'Failed to update entry');
     } finally { setSubmitting(false); }
   };
 
@@ -233,8 +272,24 @@ export default function ExpensesDetailScreen() {
   };
 
   const openEdit = (item: Entry) => {
-    setForm({ type: item.type, amount: String(item.amount), description: item.description, category: item.category || '', date: item.date });
+    const parts = parseExpenseDateParts(item.date, item.created_at);
+    const date = parts
+      ? `${parts.year}-${String(parts.month + 1).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`
+      : localDateString();
+    clearFormErrors();
+    setForm({
+      type: item.type,
+      amount: String(item.amount),
+      description: item.description,
+      category: item.category || '',
+      date,
+    });
     setShowEdit(item);
+  };
+
+  const openAdd = () => {
+    resetEntryForm();
+    setShowAdd(true);
   };
 
   const renderEntry = ({ item }: { item: Entry }) => {
@@ -288,7 +343,25 @@ export default function ExpensesDetailScreen() {
       <ModuleHeader
         title={t('expenses')}
         subtitle={isAdmin && building_name ? `${building_name} • ${wingName}` : wingName}
-        rightAction={canManage ? <ModuleHeaderIconButton icon="add" onPress={() => setShowAdd(true)} /> : undefined}
+        rightAction={
+          <View style={styles.headerActions}>
+            {buildingId ? (
+              <>
+                <ModuleHeaderIconButton
+                  icon="document-text-outline"
+                  onPress={() => setExportFormat('pdf')}
+                  size={20}
+                />
+                <ModuleHeaderIconButton
+                  icon="grid-outline"
+                  onPress={() => setExportFormat('excel')}
+                  size={20}
+                />
+              </>
+            ) : null}
+            {canManage ? <ModuleHeaderIconButton icon="add" onPress={openAdd} /> : null}
+          </View>
+        }
       />
 
       {loading ? (
@@ -390,158 +463,208 @@ export default function ExpensesDetailScreen() {
         </>
       )}
 
-      {/* ── Entry Detail Modal ── */}
-      <Modal visible={!!showDetail} animationType="slide" presentationStyle="pageSheet">
-        {showDetail && (() => {
-          const isIn = showDetail.type === 'inflow';
-          const color = isIn ? INFLOW_COLOR : OUTFLOW_COLOR;
-          return (
-            <View style={styles.modal}>
-              <View style={styles.modalHeader}>
-                <View style={[styles.detailTypeBadge, { backgroundColor: color + '18' }]}>
-                  <Ionicons name={isIn ? 'arrow-down-circle' : 'arrow-up-circle'} size={16} color={color} />
-                  <Text style={[styles.detailTypeText, { color }]}>{isIn ? 'Inflow' : 'Outflow'}</Text>
-                </View>
-                <TouchableOpacity onPress={() => setShowDetail(null)}>
-                  <Ionicons name="close" size={24} color={Colors.text} />
-                </TouchableOpacity>
-              </View>
-              <View style={styles.detailAmountBox}>
-                <Text style={[styles.detailAmount, { color }]}>
-                  {isIn ? '+' : '-'}{fmt(showDetail.amount)}
-                </Text>
-              </View>
-              <View style={styles.detailRows}>
-                <View style={styles.detailRow}>
-                  <Ionicons name="document-text-outline" size={16} color={Colors.textMuted} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.detailRowLabel}>Description</Text>
-                    <Text style={styles.detailRowValue}>{showDetail.description}</Text>
-                  </View>
-                </View>
-                <View style={styles.detailRow}>
-                  <Ionicons name="calendar-outline" size={16} color={Colors.textMuted} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.detailRowLabel}>Date</Text>
-                    <Text style={styles.detailRowValue}>
-                      {formatExpenseDate(showDetail.date, showDetail.created_at)}
-                    </Text>
-                  </View>
-                </View>
-                {showDetail.category && (
-                  <View style={styles.detailRow}>
-                    <Ionicons name="pricetag-outline" size={16} color={Colors.textMuted} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.detailRowLabel}>Category</Text>
-                      <Text style={styles.detailRowValue}>{showDetail.category}</Text>
-                    </View>
-                  </View>
-                )}
-                {showDetail.added_by_user && (
-                  <View style={styles.detailRow}>
-                    <Ionicons name="person-outline" size={16} color={Colors.textMuted} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.detailRowLabel}>Added By</Text>
-                      <Text style={styles.detailRowValue}>{showDetail.added_by_user.name}</Text>
-                    </View>
-                  </View>
-                )}
-              </View>
-              {canManage && (
-                <View style={styles.detailActions}>
-                  <TouchableOpacity style={styles.detailEditBtn} onPress={() => { setShowDetail(null); openEdit(showDetail); }}>
-                    <Ionicons name="pencil-outline" size={16} color={Colors.primary} />
-                    <Text style={styles.detailEditBtnText}>Edit</Text>
-                  </TouchableOpacity>
-                  {isAdmin && (
-                    <TouchableOpacity style={styles.detailDeleteBtn} onPress={() => { setShowDetail(null); deleteEntry(showDetail.id); }}>
-                      <Ionicons name="trash-outline" size={16} color={Colors.danger} />
-                      <Text style={styles.detailDeleteBtnText}>Delete</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              )}
+      {/* ── Entry Detail ── */}
+      <BottomSheetModal
+        visible={!!showDetail}
+        onClose={() => setShowDetail(null)}
+        title={showDetail?.type === 'inflow' ? 'Inflow' : 'Outflow'}
+        snapPoints={['55%']}
+      >
+        {showDetail ? (
+          <>
+            <View style={[sheetStyles.detailHero, { paddingVertical: 8 }]}>
+              <Text
+                style={[
+                  styles.detailAmount,
+                  { color: showDetail.type === 'inflow' ? INFLOW_COLOR : OUTFLOW_COLOR },
+                ]}
+              >
+                {showDetail.type === 'inflow' ? '+' : '-'}{fmt(showDetail.amount)}
+              </Text>
             </View>
-          );
-        })()}
-      </Modal>
 
-      {/* ── Set Balance Modal ── */}
-      <Modal visible={showSetBalance} animationType="slide" presentationStyle="pageSheet">
-        <View style={styles.modal}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>
-              {summary?.opening_balance !== null ? 'Update Balance' : 'Set Balance'}
-            </Text>
-            <TouchableOpacity onPress={() => setShowSetBalance(false)}>
-              <Ionicons name="close" size={24} color={Colors.text} />
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.modalHint}>Enter the current balance for this wing</Text>
-          <Text style={styles.label}>Balance (₹) *</Text>
-          <TextInput style={styles.input} value={balanceInput} onChangeText={setBalanceInput}
-            placeholder="e.g. 50000" keyboardType="numeric" placeholderTextColor={Colors.textMuted} autoFocus />
-          <TouchableOpacity style={styles.submitBtn} onPress={saveBalance} disabled={submitting}>
-            {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>Save</Text>}
+            <View style={sheetStyles.detailCard}>
+              <DetailRow
+                icon="calendar-outline"
+                label="Date"
+                value={formatExpenseDate(showDetail.date, showDetail.created_at)}
+              />
+              <DetailRow
+                icon="pricetag-outline"
+                label="Category"
+                value={showDetail.category || '—'}
+              />
+              <DetailRow icon="document-text-outline" label="Description" value={showDetail.description} />
+              <DetailRow
+                icon="person-outline"
+                label="Added By"
+                value={showDetail.added_by_user?.name || '—'}
+                isLast
+              />
+            </View>
+
+            {canManage ? (
+              <View style={styles.detailActions}>
+                <TouchableOpacity
+                  style={styles.detailEditBtn}
+                  onPress={() => { setShowDetail(null); openEdit(showDetail); }}
+                >
+                  <Ionicons name="pencil-outline" size={16} color={Colors.white} />
+                  <Text style={styles.detailEditBtnText}>Edit</Text>
+                </TouchableOpacity>
+                {isAdmin ? (
+                  <TouchableOpacity
+                    style={styles.detailDeleteBtn}
+                    onPress={() => { setShowDetail(null); deleteEntry(showDetail.id); }}
+                  >
+                    <Ionicons name="trash-outline" size={16} color={Colors.danger} />
+                    <Text style={styles.detailDeleteBtnText}>Delete</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            ) : null}
+          </>
+        ) : (
+          <View />
+        )}
+      </BottomSheetModal>
+
+      {buildingId ? (
+        <ExpenseExportSheet
+          visible={!!exportFormat}
+          onClose={() => setExportFormat(null)}
+          format={exportFormat || 'pdf'}
+          buildingId={buildingId}
+          wingName={wingName}
+        />
+      ) : null}
+
+      {/* ── Set / Update Balance (compact sheet) ── */}
+      <BottomSheetModal
+        visible={showSetBalance}
+        onClose={() => setShowSetBalance(false)}
+        title={summary?.opening_balance !== null && summary?.opening_balance !== undefined ? 'Update Balance' : 'Set Balance'}
+        subtitle="Enter the current balance for this wing"
+        snapPoints={['42%']}
+      >
+        <Text style={styles.label}>Balance (₹) *</Text>
+        <BottomSheetTextInput
+          style={styles.input}
+          value={balanceInput}
+          onChangeText={setBalanceInput}
+          placeholder="e.g. 50000"
+          keyboardType="numeric"
+          placeholderTextColor={Colors.textMuted}
+          autoFocus
+        />
+        <TouchableOpacity style={styles.submitBtn} onPress={saveBalance} disabled={submitting}>
+          {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>Save</Text>}
+        </TouchableOpacity>
+      </BottomSheetModal>
+
+      {/* ── Add / Edit Entry ── */}
+      <BottomSheetModal
+        visible={showAdd || !!showEdit}
+        onClose={closeEntrySheet}
+        title={showEdit ? 'Edit Entry' : 'New Entry'}
+      >
+        <Text style={styles.label}>Type *</Text>
+        <View style={styles.typeRow}>
+          <TouchableOpacity
+            style={[styles.typeBtn, form.type === 'inflow' && { backgroundColor: INFLOW_COLOR, borderColor: INFLOW_COLOR }]}
+            onPress={() => setForm({ ...form, type: 'inflow' })}
+          >
+            <Ionicons name="arrow-down-circle" size={18} color={form.type === 'inflow' ? Colors.white : INFLOW_COLOR} />
+            <Text style={[styles.typeBtnText, form.type === 'inflow' && { color: Colors.white }]}>Inflow</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.typeBtn, form.type === 'outflow' && { backgroundColor: OUTFLOW_COLOR, borderColor: OUTFLOW_COLOR }]}
+            onPress={() => setForm({ ...form, type: 'outflow' })}
+          >
+            <Ionicons name="arrow-up-circle" size={18} color={form.type === 'outflow' ? Colors.white : OUTFLOW_COLOR} />
+            <Text style={[styles.typeBtnText, form.type === 'outflow' && { color: Colors.white }]}>Outflow</Text>
           </TouchableOpacity>
         </View>
-      </Modal>
 
-      {/* ── Add/Edit Modal ── */}
-      <Modal visible={showAdd || !!showEdit} animationType="slide" presentationStyle="pageSheet">
-        <View style={styles.modal}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>{showEdit ? 'Edit Entry' : 'New Entry'}</Text>
-            <TouchableOpacity onPress={() => { setShowAdd(false); setShowEdit(null); }}>
-              <Ionicons name="close" size={24} color={Colors.text} />
-            </TouchableOpacity>
+        <Text style={styles.label}>Amount (₹) *</Text>
+        <BottomSheetTextInput
+          style={[styles.input, amountError ? styles.inputError : null]}
+          value={form.amount}
+          onChangeText={v => {
+            setForm({ ...form, amount: v });
+            if (amountError) setAmountError(null);
+            if (formError) setFormError(null);
+          }}
+          placeholder="e.g. 10000"
+          keyboardType="numeric"
+          placeholderTextColor={Colors.textMuted}
+        />
+        {amountError ? (
+          <View style={styles.errorRow}>
+            <Ionicons name="alert-circle" size={14} color={Colors.danger} />
+            <Text style={styles.errorText}>{amountError}</Text>
           </View>
-          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={styles.modalContent}>
-            <Text style={styles.label}>Type *</Text>
-            <View style={styles.typeRow}>
-              <TouchableOpacity
-                style={[styles.typeBtn, form.type === 'inflow' && { backgroundColor: INFLOW_COLOR, borderColor: INFLOW_COLOR }]}
-                onPress={() => setForm({ ...form, type: 'inflow' })}
-              >
-                <Ionicons name="arrow-down-circle" size={18} color={form.type === 'inflow' ? Colors.white : INFLOW_COLOR} />
-                <Text style={[styles.typeBtnText, form.type === 'inflow' && { color: Colors.white }]}>Inflow</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.typeBtn, form.type === 'outflow' && { backgroundColor: OUTFLOW_COLOR, borderColor: OUTFLOW_COLOR }]}
-                onPress={() => setForm({ ...form, type: 'outflow' })}
-              >
-                <Ionicons name="arrow-up-circle" size={18} color={form.type === 'outflow' ? Colors.white : OUTFLOW_COLOR} />
-                <Text style={[styles.typeBtnText, form.type === 'outflow' && { color: Colors.white }]}>Outflow</Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.label}>Amount (₹) *</Text>
-            <TextInput style={styles.input} value={form.amount} onChangeText={v => setForm({ ...form, amount: v })}
-              placeholder="e.g. 10000" keyboardType="numeric" placeholderTextColor={Colors.textMuted} />
-            <Text style={styles.label}>Description *</Text>
-            <TextInput style={styles.input} value={form.description} onChangeText={v => setForm({ ...form, description: v })}
-              placeholder="e.g. Watchman salary" placeholderTextColor={Colors.textMuted} numberOfLines={2} />
-            <Text style={styles.label}>Category</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catRow}>
-              {CATEGORIES.map(cat => (
-                <TouchableOpacity
-                  key={cat}
-                  style={[styles.catBtn, form.category === cat && styles.catBtnActive]}
-                  onPress={() => setForm({ ...form, category: form.category === cat ? '' : cat })}
-                >
-                  <Text style={[styles.catBtnText, form.category === cat && styles.catBtnTextActive]}>{cat}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-            <ExpenseDatePicker
-              value={form.date}
-              onChange={date => setForm({ ...form, date })}
-            />
-            <TouchableOpacity style={styles.submitBtn} onPress={showEdit ? saveEdit : addEntry} disabled={submitting}>
-              {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>{showEdit ? 'Update' : 'Add'} Entry</Text>}
+        ) : null}
+
+        <Text style={styles.label}>Description *</Text>
+        <BottomSheetTextInput
+          style={[styles.input, descriptionError ? styles.inputError : null]}
+          value={form.description}
+          onChangeText={v => {
+            setForm({ ...form, description: v });
+            if (descriptionError) setDescriptionError(null);
+            if (formError) setFormError(null);
+          }}
+          placeholder="e.g. Watchman salary"
+          placeholderTextColor={Colors.textMuted}
+          multiline
+          numberOfLines={2}
+        />
+        {descriptionError ? (
+          <View style={styles.errorRow}>
+            <Ionicons name="alert-circle" size={14} color={Colors.danger} />
+            <Text style={styles.errorText}>{descriptionError}</Text>
+          </View>
+        ) : null}
+
+        <Text style={styles.label}>Category</Text>
+        <HorizontalChipScroll>
+          {CATEGORIES.map(cat => (
+            <TouchableOpacity
+              key={cat}
+              style={[chipStyles.chip, form.category === cat && chipStyles.chipOn]}
+              onPress={() => setForm({ ...form, category: form.category === cat ? '' : cat })}
+            >
+              <Text style={[chipStyles.chipText, form.category === cat && chipStyles.chipTextOn]}>{cat}</Text>
             </TouchableOpacity>
-          </ScrollView>
-        </View>
-      </Modal>
+          ))}
+        </HorizontalChipScroll>
+
+        <ExpenseDatePicker
+          value={form.date}
+          onChange={date => {
+            setForm({ ...form, date });
+            if (formError) setFormError(null);
+          }}
+        />
+
+        {formError ? (
+          <View style={styles.formErrorBanner}>
+            <Ionicons name="alert-circle" size={16} color={Colors.danger} />
+            <Text style={styles.errorText}>{formError}</Text>
+          </View>
+        ) : null}
+
+        <TouchableOpacity
+          style={[styles.submitBtn, submitting && { opacity: 0.6 }]}
+          onPress={showEdit ? saveEdit : addEntry}
+          disabled={submitting}
+        >
+          {submitting
+            ? <ActivityIndicator color="#fff" />
+            : <Text style={styles.submitBtnText}>{showEdit ? 'Update' : 'Add'} Entry</Text>}
+        </TouchableOpacity>
+      </BottomSheetModal>
 
       {/* Month picker */}
       <Modal visible={showMonthPicker} animationType="slide" transparent>
@@ -655,29 +778,29 @@ const styles = StyleSheet.create({
   modalHint: { fontSize: 13, color: Colors.textMuted, marginBottom: 16 },
   label: { fontSize: 12, fontWeight: '700', color: Colors.text, marginBottom: 8, marginTop: 12 },
   input: { backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: Colors.text, marginBottom: 12 },
+  inputError: { borderColor: Colors.danger, marginBottom: 6 },
+  errorRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginBottom: 14, marginTop: -2,
+  },
+  formErrorBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#FEF2F2', borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 10,
+    marginBottom: 14, borderWidth: 1, borderColor: '#FECACA',
+  },
+  errorText: { fontSize: 13, color: Colors.danger, flex: 1, fontWeight: '500' },
   typeRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
   typeBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 2, borderColor: Colors.border, borderRadius: 10, paddingVertical: 12 },
   typeBtnText: { fontSize: 14, fontWeight: '700', color: Colors.textMuted },
-  catRow: { marginBottom: 12 },
-  catBtn: { backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, marginRight: 8 },
-  catBtnActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  catBtnText: { fontSize: 12, fontWeight: '600', color: Colors.textMuted },
-  catBtnTextActive: { color: Colors.white },
   submitBtn: { backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginVertical: 20 },
   submitBtnText: { fontSize: 16, fontWeight: '800', color: Colors.white },
-  detailTypeBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
-  detailTypeText: { fontSize: 12, fontWeight: '700' },
-  detailAmountBox: { padding: 24, alignItems: 'center', backgroundColor: Colors.bg + '50' },
-  detailAmount: { fontSize: 40, fontWeight: '800' },
-  detailRows: { padding: 16, gap: 12 },
-  detailRow: { flexDirection: 'row', gap: 12 },
-  detailRowLabel: { fontSize: 11, color: Colors.textMuted, fontWeight: '700' },
-  detailRowValue: { fontSize: 14, fontWeight: '600', color: Colors.text, marginTop: 4 },
-  detailActions: { flexDirection: 'row', gap: 12, padding: 16, borderTopWidth: 1, borderTopColor: Colors.border },
+  detailActions: { flexDirection: 'row', gap: 12, marginTop: 8, marginBottom: 8 },
   detailEditBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: Colors.primary, borderRadius: 10, paddingVertical: 12 },
   detailEditBtnText: { fontSize: 14, fontWeight: '700', color: Colors.white },
   detailDeleteBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: Colors.danger + '20', borderRadius: 10, paddingVertical: 12 },
   detailDeleteBtnText: { fontSize: 14, fontWeight: '700', color: Colors.danger },
+  detailAmount: { fontSize: 36, fontWeight: '800' },
   pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   pickerSheet: { backgroundColor: Colors.white, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '60%' },
   pickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: Colors.border },

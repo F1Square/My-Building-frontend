@@ -551,7 +551,7 @@ function ChequeUploadModal({ record, visible, onClose, onSuccess }: ChequeUpload
   const takePhoto = async () => {
     const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
     if (!permissionResult.granted) {
-      Alert.alert('Permission required', 'Allow camera access to photograph your cheque.');
+      Alert.warning('Permission required', 'Allow camera access to photograph your cheque.', 4000);
       return;
     }
     const pickerResult = await ImagePicker.launchCameraAsync({
@@ -568,7 +568,7 @@ function ChequeUploadModal({ record, visible, onClose, onSuccess }: ChequeUpload
 
   const submit = async () => {
     if (!uri) {
-      Alert.alert('Photo required', 'Add a photo of your cheque before submitting.');
+      Alert.warning('Photo required', 'Add a photo of your cheque before submitting.', 4000);
       return;
     }
     setSubmitting(true);
@@ -590,11 +590,11 @@ function ChequeUploadModal({ record, visible, onClose, onSuccess }: ChequeUpload
       await api.post('/maintenance/upload-receipt', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      Alert.alert('Payment submitted', 'Your cheque payment has been submitted for Pramukh approval.');
+      Alert.success('Payment submitted', 'Your cheque payment has been submitted for Pramukh approval.', 4000);
       onSuccess();
       onClose();
     } catch (e: any) {
-      Alert.alert('Payment error', e?.response?.data?.error || 'Could not submit cheque payment.');
+      Alert.error('Payment error', e?.response?.data?.error || 'Could not submit cheque payment.', 4000);
     } finally {
       setSubmitting(false);
     }
@@ -1088,7 +1088,7 @@ function ExportSheet({ visible, billId, token, onClose }: ExportSheetProps) {
       const url = `${API_BASE}/maintenance/report/${billId}?format=pdf&token=${token}`;
       await Linking.openURL(url);
     } catch {
-      Alert.alert('Error', 'Could not open PDF report.');
+      Alert.error('Error', 'Could not open PDF report.', 4000);
     } finally {
       setExporting(null);
       onClose();
@@ -1107,7 +1107,7 @@ function ExportSheet({ visible, billId, token, onClose }: ExportSheetProps) {
         UTI: 'com.microsoft.excel.xlsx',
       });
     } catch {
-      Alert.alert('Error', 'Could not download Excel report.');
+      Alert.error('Error', 'Could not download Excel report.', 4000);
     } finally {
       setExporting(null);
       onClose();
@@ -1431,9 +1431,9 @@ export default function MaintenanceCategoryScreen() {
     if (paymentAlertShownRef.current) return;
     paymentAlertShownRef.current = true;
     if (st === 'success') {
-      Alert.alert(t('paymentSuccessful'), t('paymentSuccessfulMsg'));
+      Alert.success(t('paymentSuccessful'), t('paymentSuccessfulMsg'), 4000);
     } else if (st === 'failed') {
-      Alert.alert(t('paymentFailed'), t('tryAgain'));
+      Alert.error(t('paymentFailed'), t('tryAgain'), 4000);
     }
   }, [isPramukh, isAdmin, canManage, t]);
 
@@ -1531,7 +1531,7 @@ export default function MaintenanceCategoryScreen() {
           await WebBrowser.coolDownAsync().catch(() => {});
         }
       } catch (e: any) {
-        Alert.alert('Payment Error', e?.response?.data?.error || 'Could not initiate payment.');
+        Alert.error('Payment Error', e?.response?.data?.error || 'Could not initiate payment.', 4000);
       } finally {
         setPaying(null);
       }
@@ -1543,11 +1543,11 @@ export default function MaintenanceCategoryScreen() {
           receipt_url: `manual_${method.toLowerCase()}`,
           payment_method: method
         });
-        Alert.alert('Payment Submitted', `Your ${method} payment has been submitted for Pramukh approval.`);
+        Alert.success('Payment Submitted', `Your ${method} payment has been submitted for Pramukh approval.`, 4000);
         if (canManage) fetchPramukhData();
         else await fetchUserData();
       } catch (e: any) {
-        Alert.alert('Payment Error', e?.response?.data?.error || `Could not submit ${method} payment.`);
+        Alert.error('Payment Error', e?.response?.data?.error || `Could not submit ${method} payment.`, 4000);
       } finally {
         setPaying(null);
       }
@@ -1559,7 +1559,7 @@ export default function MaintenanceCategoryScreen() {
       const url = `${API_BASE}/maintenance/receipt/${record.id}?token=${token}`;
       await Linking.openURL(url);
     } catch {
-      Alert.alert('Error', 'Could not open receipt.');
+      Alert.error('Error', 'Could not open receipt.', 4000);
     }
   };
 
@@ -1611,10 +1611,10 @@ export default function MaintenanceCategoryScreen() {
 
       await api.post('/maintenance/bills', body);
       closeCreateModal();
-      Alert.alert('Success', 'Bill created successfully.');
+      Alert.success('Success', 'Bill created successfully.', 4000);
       fetchPramukhData();
     } catch (e: any) {
-      Alert.alert('Error', e?.response?.data?.error || 'Could not create bill.');
+      Alert.error('Error', e?.response?.data?.error || 'Could not create bill.', 4000);
     }
   };
 
@@ -1669,10 +1669,10 @@ export default function MaintenanceCategoryScreen() {
         body.penalty_amount = parseFloat(editForm.penalty_amount) || 0;
       await api.patch('/maintenance/bills', body);
       setEditBill(null);
-      Alert.alert('Updated', 'Bill updated successfully.');
+      Alert.success('Updated', 'Bill updated successfully.', 4000);
       fetchPramukhData();
     } catch (e: any) {
-      Alert.alert('Error', e?.response?.data?.error || 'Could not update bill.');
+      Alert.error('Error', e?.response?.data?.error || 'Could not update bill.', 4000);
     } finally {
       setEditSubmitting(false);
     }
@@ -1690,10 +1690,10 @@ export default function MaintenanceCategoryScreen() {
               closeDetailModal();
               closeFlatDetailModal();
               await api.patch(`/maintenance/payments/${record.id}/approve`);
-              Alert.alert('Success', 'Payment approved successfully.');
+              Alert.success('Success', 'Payment approved successfully.', 4000);
               fetchPramukhData();
             } catch (e: any) {
-              Alert.alert('Error', e?.response?.data?.error || 'Could not approve payment.');
+              Alert.error('Error', e?.response?.data?.error || 'Could not approve payment.', 4000);
             }
           }
         }
@@ -1980,7 +1980,7 @@ export default function MaintenanceCategoryScreen() {
                                       await api.delete(`/maintenance/bills/${item.id}`);
                                       fetchPramukhData();
                                     } catch (e: any) {
-                                      Alert.alert('Error', e?.response?.data?.error || 'Could not delete bill.');
+                                      Alert.error('Error', e?.response?.data?.error || 'Could not delete bill.', 4000);
                                     }
                                   }
                                 },

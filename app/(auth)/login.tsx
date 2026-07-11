@@ -1,38 +1,57 @@
-import React, { useRef, useState } from 'react';
-import { useLanguage } from '../../context/LanguageContext';
+import React, { useState } from 'react';
 import { Colors } from '../../constants/colors';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator,
 } from 'react-native';
-import { Alert } from '../../utils/alert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../utils/api';
 import { formatApiError } from '../../utils/formatApiError';
+import { isValidEmail } from '../../utils/authValidation';
+import { useKeyboardPad } from '../../hooks/useKeyboardPad';
+import { FieldError, FormErrorBanner, formFieldErrorStyles } from '../../components/FormFieldError';
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+type FormErrors = {
+  email?: string;
+  password?: string;
+  general?: string;
+};
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [errors, setErrors] = useState<FormErrors>({});
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const scrollRef = useRef<ScrollView>(null);
+  const keyboardPad = useKeyboardPad();
   const { login } = useAuth();
   const router = useRouter();
-  const { t } = useLanguage();
 
-  const scrollToInput = () => {
-    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150);
+  const clearFieldError = (field: keyof FormErrors) => {
+    setErrors((prev) => {
+      if (!prev[field] && !prev.general) return prev;
+      return { ...prev, [field]: undefined, general: undefined };
+    });
+  };
+
+  const validate = (): FormErrors => {
+    const next: FormErrors = {};
+    if (!email.trim()) next.email = 'Email is required';
+    else if (!isValidEmail(email)) next.email = 'Enter a valid email address (e.g. user@example.com)';
+    if (!password) next.password = 'Password is required';
+    return next;
   };
 
   const handleLogin = async () => {
-    if (!email.trim() || !password) return Alert.alert('Error', 'Please enter email and password');
-    if (!EMAIL_RE.test(email.trim())) return Alert.alert('Error', 'Please enter a valid email address');
+    const next = validate();
+    setErrors(next);
+    if (Object.keys(next).length > 0) return;
+
     setLoading(true);
+    setErrors({});
     try {
       api.post('/auth/client-log', { action: 'frontend_login_started', userEmail: email.trim(), detail: { step: '1_clicked_button' } }).catch(()=>{});
       const res = await api.post('/auth/login/unified', { email: email.trim(), password });
@@ -41,7 +60,7 @@ export default function LoginScreen() {
       const userPayload = res.data?.user;
       if (typeof token !== 'string' || !token || !userPayload?.id) {
         api.post('/auth/client-log', { action: 'frontend_login_invalid_payload', userEmail: email.trim(), detail: { step: 'error_no_token' } }).catch(()=>{});
-        Alert.alert('Login Failed', 'Invalid response from server. Please try again.');
+        setErrors({ general: 'Invalid response from server. Please try again.' });
         return;
       }
       api.post('/auth/client-log', { action: 'frontend_login_context_start', userEmail: email.trim(), detail: { step: '3_calling_auth_context_login' } }).catch(()=>{});
@@ -57,88 +76,96 @@ export default function LoginScreen() {
         status === 401 || status === 400 || status === 422
           ? 'Invalid email or password'
           : 'Login failed. Please try again.';
-      Alert.alert('Login Failed', formatApiError(e, fallback));
+      setErrors({ general: formatApiError(e, fallback) });
     } finally {
       setLoading(false);
     }
   };
 
-
-
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
       >
         <ScrollView
-          ref={scrollRef}
-          contentContainerStyle={styles.scroll}
+          style={styles.flex}
+          contentContainerStyle={[
+            styles.scroll,
+            { paddingBottom: Math.max(48, keyboardPad + 32) },
+          ]}
           keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          automaticallyAdjustKeyboardInsets
-          showsVerticalScrollIndicator={false}
+          keyboardDismissMode="interactive"
+          showsVerticalScrollIndicator
+          bounces
         >
-
-        <View style={styles.header}>
-          <Text style={styles.logo}>🏢</Text>
-          <Text style={styles.title}>My Building</Text>
-          <Text style={styles.subtitle}>Society Management App</Text>
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Welcome back</Text>
-          <Text style={styles.cardSub}>Sign in to continue</Text>
-
-          <Text style={styles.label}>Email</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="your@email.com"
-            value={email}
-            onChangeText={setEmail}
-            onFocus={scrollToInput}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            placeholderTextColor={Colors.textMuted}
-          />
-
-          <Text style={styles.label}>Password</Text>
-          <View style={styles.passwordRow}>
-            <TextInput
-              style={styles.passwordInput}
-              placeholder="••••••••"
-              value={password}
-              onChangeText={setPassword}
-              onFocus={scrollToInput}
-              secureTextEntry={!showPassword}
-              placeholderTextColor={Colors.textMuted}
-            />
-            <TouchableOpacity onPress={() => setShowPassword((v) => !v)} style={styles.eyeBtn}>
-              <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={20} color={Colors.textMuted} />
-            </TouchableOpacity>
+          <View style={styles.header}>
+            <Text style={styles.logo}>🏢</Text>
+            <Text style={styles.title}>My Building</Text>
+            <Text style={styles.subtitle}>Society Management App</Text>
           </View>
 
-          <TouchableOpacity style={styles.btn} onPress={handleLogin} disabled={loading}>
-            {loading
-              ? <View style={styles.loadingRow}>
-                <ActivityIndicator color="#fff" size="small" />
-                <Text style={styles.btnText}>Signing in...</Text>
-              </View>
-              : <Text style={styles.btnText}>Sign In</Text>
-            }
-          </TouchableOpacity>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Welcome back</Text>
+            <Text style={styles.cardSub}>Sign in to continue</Text>
 
-          <TouchableOpacity onPress={() => router.push('/forgot-password' as any)} style={styles.forgotLink}>
-            <Text style={styles.forgotText}>Forgot Password?</Text>
-          </TouchableOpacity>
+            <Text style={styles.label}>Email</Text>
+            <TextInput
+              style={[styles.input, errors.email ? formFieldErrorStyles.inputError : null]}
+              placeholder="your@email.com"
+              value={email}
+              onChangeText={(v) => {
+                setEmail(v);
+                clearFieldError('email');
+              }}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              placeholderTextColor={Colors.textMuted}
+            />
+            <FieldError message={errors.email} />
 
-          <TouchableOpacity onPress={() => router.push('/register' as any)} style={styles.link}>
-            <Text style={styles.linkText}>
-              Don't have an account? <Text style={styles.linkBold}>Register</Text>
-            </Text>
-          </TouchableOpacity>
-        </View>
+            <Text style={styles.label}>Password</Text>
+            <View style={[styles.passwordRow, errors.password ? formFieldErrorStyles.inputError : null]}>
+              <TextInput
+                style={styles.passwordInput}
+                placeholder="••••••••"
+                value={password}
+                onChangeText={(v) => {
+                  setPassword(v);
+                  clearFieldError('password');
+                }}
+                secureTextEntry={!showPassword}
+                placeholderTextColor={Colors.textMuted}
+              />
+              <TouchableOpacity onPress={() => setShowPassword((v) => !v)} style={styles.eyeBtn}>
+                <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={20} color={Colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <FieldError message={errors.password} />
 
+            <FormErrorBanner message={errors.general} />
+
+            <TouchableOpacity style={styles.btn} onPress={handleLogin} disabled={loading}>
+              {loading
+                ? <View style={styles.loadingRow}>
+                  <ActivityIndicator color="#fff" size="small" />
+                  <Text style={styles.btnText}>Signing in...</Text>
+                </View>
+                : <Text style={styles.btnText}>Sign In</Text>
+              }
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => router.push('/forgot-password' as any)} style={styles.forgotLink}>
+              <Text style={styles.forgotText}>Forgot Password?</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => router.push('/register' as any)} style={styles.link}>
+              <Text style={styles.linkText}>
+                Don't have an account? <Text style={styles.linkBold}>Register</Text>
+              </Text>
+            </TouchableOpacity>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -148,7 +175,7 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.primary },
   flex: { flex: 1 },
-  scroll: { flexGrow: 1, padding: 24, paddingBottom: 40 },
+  scroll: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 24 },
   header: { alignItems: 'center', marginBottom: 32 },
   logo: { fontSize: 64 },
   title: { fontSize: 32, fontWeight: '800', color: Colors.white, marginTop: 8 },
@@ -157,8 +184,15 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 22, fontWeight: '800', color: Colors.text, marginBottom: 4 },
   cardSub: { fontSize: 14, color: Colors.textMuted, marginBottom: 24 },
   label: { fontSize: 13, fontWeight: '600', color: Colors.text, marginBottom: 6 },
-  input: { borderWidth: 1.5, borderColor: Colors.border, borderRadius: 10, padding: 12, fontSize: 15, color: Colors.text, marginBottom: 16, backgroundColor: Colors.bg, letterSpacing: 0 },
-  passwordRow: { flexDirection: 'row', alignItems: 'center', borderWidth: 1.5, borderColor: Colors.border, borderRadius: 10, backgroundColor: Colors.bg, marginBottom: 20 },
+  input: {
+    borderWidth: 1.5, borderColor: Colors.border, borderRadius: 10, padding: 12,
+    fontSize: 15, color: Colors.text, marginBottom: 4, backgroundColor: Colors.bg, letterSpacing: 0,
+  },
+  passwordRow: {
+    flexDirection: 'row', alignItems: 'center',
+    borderWidth: 1.5, borderColor: Colors.border, borderRadius: 10,
+    backgroundColor: Colors.bg, marginBottom: 4,
+  },
   passwordInput: { flex: 1, padding: 12, fontSize: 15, color: Colors.text, letterSpacing: 0 },
   eyeBtn: { paddingHorizontal: 12 },
   btn: { backgroundColor: Colors.primary, borderRadius: 12, padding: 15, alignItems: 'center' },

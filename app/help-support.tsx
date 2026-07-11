@@ -42,7 +42,7 @@ export default function HelpSupportScreen() {
       const res = await api.get('/support-tickets/my');
       setTickets(res.data);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to load tickets');
+      Alert.error('Error', e.response?.data?.error || 'Failed to load tickets', 4000);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -53,7 +53,7 @@ export default function HelpSupportScreen() {
 
   const createTicket = async () => {
     if (!form.subject.trim() || !form.message.trim()) {
-      return Alert.alert('Required', 'Subject and message are required');
+      return Alert.warning('Required', 'Subject and message are required', 4000);
     }
     setSubmitting(true);
     try {
@@ -61,9 +61,9 @@ export default function HelpSupportScreen() {
       setShowAdd(false);
       setForm({ subject: '', message: '', category: 'General' });
       fetchTickets();
-      Alert.alert('Submitted', 'Your support request has been sent. Admin will reply soon.');
+      Alert.success('Submitted', 'Your support request has been sent. Admin will reply soon.', 4000);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to submit');
+      Alert.error('Error', e.response?.data?.error || 'Failed to submit', 4000);
     } finally {
       setSubmitting(false);
     }

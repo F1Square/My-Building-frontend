@@ -16,7 +16,7 @@ import api from '../utils/api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ModuleHeader } from '../components/ModuleHeader';
-import BottomSheetModal from '../components/BottomSheetModal';
+import BottomSheetModal, { BottomSheetTextInput } from '../components/BottomSheetModal';
 
 const CATEGORIES = ['General', 'Water', 'Electricity', 'Cleanliness', 'Security', 'Parking', 'Noise', 'Other'];
 
@@ -91,6 +91,8 @@ export default function ComplaintsScreen() {
   const [showAdd, setShowAdd] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({ title: '', description: '', category: 'General' });
+  const [formError, setFormError] = useState<string | null>(null);
+  const [titleError, setTitleError] = useState<string | null>(null);
   const [imageUri, setImageUri] = useState<string | null>(null);
   const photoBase64Ref = useRef('');
 
@@ -123,7 +125,7 @@ export default function ComplaintsScreen() {
       const cacheKey = isMyView ? 'complaints_my_cache' : 'complaints_building_cache';
       AsyncStorage.setItem(cacheKey, JSON.stringify(data)).catch(() => {});
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || e.message || 'Failed to load');
+      Alert.error('Error', e.response?.data?.error || e.message || 'Failed to load', 4000);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -205,10 +207,17 @@ export default function ComplaintsScreen() {
     setForm({ title: '', description: '', category: 'General' });
     setImageUri(null);
     photoBase64Ref.current = '';
+    setFormError(null);
+    setTitleError(null);
   };
 
   const submitComplaint = async () => {
-    if (!form.title.trim()) return Alert.alert('Error', 'Title is required');
+    setFormError(null);
+    if (!form.title.trim()) {
+      setTitleError('Title is required');
+      return;
+    }
+    setTitleError(null);
     setSubmitting(true);
     try {
       await api.post('/complaints', {
@@ -216,12 +225,14 @@ export default function ComplaintsScreen() {
         photo_url: photoBase64Ref.current || undefined,
       });
       logEvent('complaint_submitted', 'complaints', { title: form.title, category: form.category });
-      resetForm(); setShowAdd(false);
+      resetForm();
+      setShowAdd(false);
       fetchComplaints();
-      Alert.alert('Submitted', 'Your complaint has been submitted.');
+      Alert.success('Submitted', 'Your complaint has been submitted.', 4000);
     } catch (e: any) {
-      logEvent('complaint_submit_failed', 'complaints', { title: form.title, error: e.response?.data?.error });
-      Alert.alert('Error', e.response?.data?.error || 'Failed to submit');
+      const msg = e.response?.data?.error || 'Failed to submit';
+      logEvent('complaint_submit_failed', 'complaints', { title: form.title, error: msg });
+      setFormError(msg);
     } finally { setSubmitting(false); }
   };
 
@@ -241,9 +252,10 @@ export default function ComplaintsScreen() {
         new_status: updateForm.status,
         remark: updateForm.remark || undefined,
       });
-      setShowUpdate(false); fetchComplaints();
+      setShowUpdate(false);
+      fetchComplaints();
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.error || 'Failed to update');
+      Alert.error('Error', e.response?.data?.error || 'Failed to update', 4000);
     } finally { setUpdating(false); }
   };
 
@@ -411,13 +423,23 @@ export default function ComplaintsScreen() {
         title="New Complaint"
       >
         <Text style={styles.label}>Title *</Text>
-        <TextInput
-          style={styles.input}
+        <BottomSheetTextInput
+          style={[styles.input, titleError ? styles.inputError : null]}
           placeholder="e.g. Water leakage in corridor"
           value={form.title}
-          onChangeText={text => setForm(f => ({ ...f, title: text }))}
+          onChangeText={text => {
+            setForm(f => ({ ...f, title: text }));
+            if (titleError) setTitleError(null);
+            if (formError) setFormError(null);
+          }}
           placeholderTextColor={Colors.textMuted}
         />
+        {titleError ? (
+          <View style={styles.errorRow}>
+            <Ionicons name="alert-circle" size={14} color={Colors.danger} />
+            <Text style={styles.errorText}>{titleError}</Text>
+          </View>
+        ) : null}
 
         <Text style={styles.label}>Category</Text>
         <CategoryChips
@@ -426,14 +448,18 @@ export default function ComplaintsScreen() {
         />
 
         <Text style={styles.label}>Description</Text>
-        <TextInput
+        <BottomSheetTextInput
           style={[styles.input, styles.textArea]}
           placeholder="Describe the issue in detail..."
           value={form.description}
-          onChangeText={text => setForm(f => ({ ...f, description: text }))}
+          onChangeText={text => {
+            setForm(f => ({ ...f, description: text }));
+            if (formError) setFormError(null);
+          }}
           multiline
           numberOfLines={4}
           placeholderTextColor={Colors.textMuted}
+          scrollEnabled
         />
 
         <Text style={styles.label}>Attach Photo (optional)</Text>
@@ -447,6 +473,13 @@ export default function ComplaintsScreen() {
             </View>
           )}
         </TouchableOpacity>
+
+        {formError ? (
+          <View style={styles.formErrorBanner}>
+            <Ionicons name="alert-circle" size={16} color={Colors.danger} />
+            <Text style={styles.errorText}>{formError}</Text>
+          </View>
+        ) : null}
 
         <TouchableOpacity
           style={[styles.submitBtn, submitting && { opacity: 0.6 }]}
@@ -599,7 +632,7 @@ export default function ComplaintsScreen() {
         </View>
 
         <Text style={styles.label}>Remark (optional)</Text>
-        <TextInput
+        <BottomSheetTextInput
           style={[styles.input, styles.textArea]}
           placeholder="Add a resolution note or remark..."
           value={updateForm.remark}
@@ -753,7 +786,22 @@ const styles = StyleSheet.create({
     fontSize: 15, color: Colors.text, marginBottom: 18,
     borderWidth: 1.5, borderColor: Colors.border,
   },
+  inputError: {
+    borderColor: Colors.danger,
+    marginBottom: 6,
+  },
   textArea: { height: 100, textAlignVertical: 'top' },
+  errorRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginBottom: 14, marginTop: -2,
+  },
+  formErrorBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#FEF2F2', borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 10,
+    marginBottom: 14, borderWidth: 1, borderColor: '#FECACA',
+  },
+  errorText: { fontSize: 13, color: Colors.danger, flex: 1, fontWeight: '500' },
 
   // Status tabs
   tabBar: { flexDirection: 'row', backgroundColor: Colors.white, borderBottomWidth: 1, borderBottomColor: Colors.border },

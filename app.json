@@ -2,7 +2,7 @@
   "expo": {
     "name": "My Building",
     "slug": "My_Building",
-    "version": "1.17.41",
+    "version": "1.17.42",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "splash": {
@@ -25,7 +25,7 @@
       "softwareKeyboardLayoutMode": "resize",
       "package": "com.f1square.mybuilding",
       "googleServicesFile": "./google-services.json",
-      "versionCode": 31,
+      "versionCode": 32,
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",

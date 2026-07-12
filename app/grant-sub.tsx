@@ -32,6 +32,7 @@ export default function GrantSubScreen() {
   const [grantMode, setGrantMode] = useState<GrantMode>('plan');
   const [form, setForm] = useState({
     user_id: '', plan: '', months: '1', remark: '', include_newspaper: false,
+    newspaper_term: 'monthly' as 'monthly' | 'yearly',
   });
 
   useEffect(() => {
@@ -73,7 +74,13 @@ export default function GrantSubScreen() {
     [plans, form.plan],
   );
 
-  const canIncludeNewspaper = grantMode === 'plan' && !!selectedPlan?.allow_newspaper_addon;
+  const isLifetimePlan = selectedPlan?.months == null;
+  const isYearlyPlan = selectedPlan?.months === 12;
+  // Lifetime has no paid newspaper SKU, but admin can still grant monthly/yearly newspaper access.
+  const canIncludeNewspaper =
+    grantMode === 'plan' && (!!selectedPlan?.allow_newspaper_addon || isLifetimePlan);
+  const needsNewspaperTerm =
+    grantMode === 'newspaper' || (canIncludeNewspaper && isLifetimePlan && form.include_newspaper);
 
   useEffect(() => {
     if (!canIncludeNewspaper && form.include_newspaper) {
@@ -85,6 +92,24 @@ export default function GrantSubScreen() {
     if (!form.user_id) return Alert.error('Error', 'Select a user', 4000);
     if (!form.remark.trim()) return Alert.error('Error', 'Remark is required — add who is handling this', 4000);
     if (grantMode === 'plan' && !form.plan) return Alert.error('Error', 'Select a plan', 4000);
+    if (needsNewspaperTerm && form.newspaper_term !== 'monthly' && form.newspaper_term !== 'yearly') {
+      return Alert.error('Error', 'Select monthly or yearly newspaper add-on', 4000);
+    }
+
+    let monthsToGrant: number | undefined;
+    if (grantMode === 'plan' && selectedPlan && selectedPlan.months != null) {
+      const duration = Number(form.months);
+      if (!Number.isFinite(duration) || duration < 1) {
+        return Alert.error('Error', isYearlyPlan ? 'Enter at least 1 year' : 'Enter at least 1 month', 4000);
+      }
+      if (isYearlyPlan && duration * 12 > 120) {
+        return Alert.error('Error', 'Years cannot exceed 10', 4000);
+      }
+      if (!isYearlyPlan && duration > 120) {
+        return Alert.error('Error', 'Months cannot exceed 120', 4000);
+      }
+      monthsToGrant = isYearlyPlan ? duration * 12 : duration;
+    }
 
     setSubmitting(true);
     try {
@@ -92,19 +117,24 @@ export default function GrantSubScreen() {
         await api.post('/subscriptions/grant-newspaper', {
           user_id: form.user_id,
           remark: form.remark.trim(),
+          newspaper_term: form.newspaper_term,
         });
-        Alert.success('Done', 'Newspaper add-on granted', 4000);
+        Alert.success('Done', `Newspaper add-on granted (${form.newspaper_term})`, 4000);
         router.back();
       } else {
+        const withNews = canIncludeNewspaper && form.include_newspaper;
         await api.post('/subscriptions/grant', {
           user_id: form.user_id,
           plan: form.plan,
-          months: selectedPlan && selectedPlan.months != null ? Number(form.months) : undefined,
+          months: monthsToGrant,
           remark: form.remark.trim(),
-          include_newspaper: canIncludeNewspaper && form.include_newspaper,
+          include_newspaper: withNews,
+          newspaper_term: withNews && isLifetimePlan ? form.newspaper_term : undefined,
         });
-        const msg = canIncludeNewspaper && form.include_newspaper
-          ? 'Subscription granted with newspaper add-on'
+        const msg = withNews
+          ? isLifetimePlan
+            ? `Subscription granted with ${form.newspaper_term} newspaper add-on`
+            : 'Subscription granted with newspaper add-on'
           : 'Subscription granted';
         Alert.success('Done', msg, 4000);
         router.back();
@@ -121,6 +151,28 @@ export default function GrantSubScreen() {
     !search.trim() ||
     u.name.toLowerCase().includes(search.toLowerCase()) ||
     u.email.toLowerCase().includes(search.toLowerCase()),
+  );
+
+  const newspaperTermPicker = (
+    <>
+      <Text style={styles.label}>Newspaper term *</Text>
+      <View style={{ flexDirection: 'row', gap: 10 }}>
+        {([
+          { key: 'monthly' as const, label: 'Month newspaper' },
+          { key: 'yearly' as const, label: 'Year newspaper' },
+        ]).map((opt) => (
+          <TouchableOpacity
+            key={opt.key}
+            style={[styles.planToggle, form.newspaper_term === opt.key && styles.planToggleActive]}
+            onPress={() => setForm({ ...form, newspaper_term: opt.key })}
+          >
+            <Text style={[styles.planToggleText, form.newspaper_term === opt.key && { color: Colors.white }]}>
+              {opt.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </>
   );
 
   return (
@@ -150,12 +202,16 @@ export default function GrantSubScreen() {
         </View>
 
         {grantMode === 'newspaper' && (
-          <View style={styles.infoBox}>
-            <Ionicons name="information-circle-outline" size={18} color={Colors.primary} />
-            <Text style={styles.infoText}>
-              User must already have an active subscription. This enables the Newspaper module only.
-            </Text>
-          </View>
+          <>
+            <View style={styles.infoBox}>
+              <Ionicons name="information-circle-outline" size={18} color={Colors.primary} />
+              <Text style={styles.infoText}>
+                User must already have an active subscription. For lifetime users, pick monthly or yearly newspaper access below.
+              </Text>
+            </View>
+
+            {newspaperTermPicker}
+          </>
         )}
 
         <Text style={styles.label}>User *</Text>
@@ -240,7 +296,7 @@ export default function GrantSubScreen() {
                 <TouchableOpacity
                   key={p.slug}
                   style={[styles.planToggle, form.plan === p.slug && styles.planToggleActive]}
-                  onPress={() => setForm({ ...form, plan: p.slug })}
+                  onPress={() => setForm({ ...form, plan: p.slug, months: '1' })}
                 >
                   <Text style={[styles.planToggleText, form.plan === p.slug && { color: Colors.white }]}>{p.title}</Text>
                 </TouchableOpacity>
@@ -252,12 +308,12 @@ export default function GrantSubScreen() {
 
             {selectedPlan?.months != null && (
               <>
-                <Text style={styles.label}>Months *</Text>
+                <Text style={styles.label}>{isYearlyPlan ? 'Years *' : 'Months *'}</Text>
                 <TextInput
                   style={styles.input}
                   value={form.months}
                   onChangeText={(v) => setForm({ ...form, months: v })}
-                  placeholder="e.g. 1 (or match plan duration)"
+                  placeholder={isYearlyPlan ? 'e.g. 1 (number of years)' : 'e.g. 1 (number of months)'}
                   keyboardType="number-pad"
                   placeholderTextColor={Colors.textMuted}
                 />
@@ -268,7 +324,11 @@ export default function GrantSubScreen() {
               <View style={styles.switchRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.switchLabel}>Include Newspaper add-on</Text>
-                  <Text style={styles.switchSub}>Grants access to the daily Newspaper module</Text>
+                  <Text style={styles.switchSub}>
+                    {isLifetimePlan
+                      ? 'Lifetime plan — choose month or year newspaper below'
+                      : 'Grants access to the daily Newspaper module'}
+                  </Text>
                 </View>
                 <Switch
                   value={form.include_newspaper}
@@ -278,6 +338,8 @@ export default function GrantSubScreen() {
                 />
               </View>
             )}
+
+            {needsNewspaperTerm && grantMode === 'plan' && newspaperTermPicker}
           </>
         )}
 

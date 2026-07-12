@@ -445,6 +445,33 @@ export default function SubscribeScreen() {
     );
   };
 
+  // Disable newspaper add-on only (keeps main plan active)
+  const disableNewspaperAddon = () => {
+    Alert.alert(
+      'Disable newspaper',
+      'This will turn off newspaper access only. Your subscription plan stays active.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Disable',
+          style: 'destructive',
+          onPress: async () => {
+            setNewspaperAddonLoading(true);
+            try {
+              await api.post('/subscriptions/newspaper-addon', { enable: false });
+              await refreshSubscription();
+              Alert.success('Newspaper disabled', 'Newspaper add-on is now off.', 4000);
+            } catch (e: any) {
+              Alert.error('Error', e.response?.data?.error || 'Failed to disable newspaper', 4000);
+            } finally {
+              setNewspaperAddonLoading(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const applyPromo = async () => {
     if (!promoCode.trim()) return;
     const planForPromo = catalogPlans[0]?.slug || 'monthly';
@@ -464,6 +491,11 @@ export default function SubscribeScreen() {
   const isYearly = currentCat ? currentCat.months === 12 : subscription?.plan === 'yearly';
   const expiresAt = subscription?.expires_at ? new Date(subscription.expires_at) : null;
   const daysLeft = expiresAt ? Math.ceil((expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null;
+  const newspaperExpiresAt = subscription?.newspaper_expires_at
+    ? new Date(subscription.newspaper_expires_at)
+    : null;
+  // Prefer dedicated newspaper expiry; fall back to plan expiry for older grants.
+  const newspaperExpiryShown = newspaperExpiresAt || (!isLifetime ? expiresAt : null);
 
   const planLabel = currentCat?.title || (isLifetime ? 'Lifetime Plan' : isYearly ? 'Yearly Plan' : subscription?.plan ? subscription.plan : 'Plan');
   const planPrice = currentCat
@@ -588,7 +620,28 @@ export default function SubscribeScreen() {
 
                   {subscription?.newspaper_addon ? (
                     <View style={styles.addonActiveInfo}>
-                      <Text style={styles.addonStatusText}>✓ Access unlocked until your plan expires</Text>
+                      {newspaperExpiryShown ? (
+                        <View style={styles.infoRow}>
+                          <Ionicons name="calendar-outline" size={16} color={Colors.textMuted} />
+                          <Text style={styles.infoText}>
+                            Expires on {newspaperExpiryShown.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+                          </Text>
+                        </View>
+                      ) : (
+                        <View style={styles.infoRow}>
+                          <Ionicons name="checkmark-circle" size={16} color={Colors.success} />
+                          <Text style={styles.infoText}>Newspaper access is active</Text>
+                        </View>
+                      )}
+                      <TouchableOpacity
+                        onPress={disableNewspaperAddon}
+                        style={[styles.addonDisableBtn, { alignSelf: 'stretch', marginTop: 12, alignItems: 'center' }]}
+                        disabled={newspaperAddonLoading}
+                      >
+                        {newspaperAddonLoading
+                          ? <ActivityIndicator size="small" color={Colors.danger} />
+                          : <Text style={styles.addonDisableBtnText}>Disable plan</Text>}
+                      </TouchableOpacity>
                     </View>
                   ) : (
                     <View style={styles.addonOptionsGrid}>

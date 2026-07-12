@@ -18,6 +18,7 @@ type User = {
   phone?: string;
   wing?: string;
   total_members?: number;
+  app_language?: string | null;
 };
 
 type Subscription = {
@@ -25,6 +26,7 @@ type Subscription = {
   status: 'active' | 'expired' | 'cancelled';
   expires_at: string | null;
   newspaper_addon?: boolean;
+  newspaper_expires_at?: string | null;
 } | null;
 
 type AuthContextType = {

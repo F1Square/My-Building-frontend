@@ -8,7 +8,8 @@ type LanguageContextType = {
   hasChosen: boolean;
   loading: boolean;
   setLanguage: (lang: Language) => void;
-  initForUser: (userId: string) => Promise<void>;
+  /** Optional preferredLang skips an extra /auth/me when login/session already has it. */
+  initForUser: (userId: string, preferredLang?: string | null) => Promise<void>;
   t: (key: string) => string;
 };
 
@@ -50,7 +51,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
       });
   }, []);
 
-  const initForUser = useCallback(async (userId: string) => {
+  const initForUser = useCallback(async (userId: string, preferredLang?: string | null) => {
     const requestId = ++initRequestIdRef.current;
     setLoading(true);
 
@@ -75,7 +76,11 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
       if (requestId !== initRequestIdRef.current) return;
 
       let resolvedLang: Language | null = isValidLang(localLang) ? localLang : null;
-      let chosen = Boolean(resolvedLang);
+
+      // Login/session payload — avoid a second /auth/me round-trip when possible
+      if (!resolvedLang && isValidLang(preferredLang)) {
+        resolvedLang = preferredLang;
+      }
 
       if (!resolvedLang) {
         try {
@@ -83,29 +88,34 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
           const serverLang = res.data?.user?.app_language;
           if (isValidLang(serverLang)) {
             resolvedLang = serverLang;
-            chosen = true;
-            await AsyncStorage.setItem(key, serverLang);
           }
         } catch (error) {
           console.warn('Could not load app language from server:', error);
         }
       }
 
+      // Device-level choice already means the user picked a language on this phone
       if (!resolvedLang) {
         const deviceLang = await AsyncStorage.getItem('app_language');
         if (requestId !== initRequestIdRef.current) return;
         if (isValidLang(deviceLang)) {
           resolvedLang = deviceLang;
-        } else {
-          resolvedLang = 'en';
         }
-        chosen = false;
       }
 
       if (requestId !== initRequestIdRef.current) return;
-      setLang(resolvedLang);
-      setHasChosen(chosen);
-      await syncLanguageToServer(resolvedLang);
+
+      if (resolvedLang) {
+        setLang(resolvedLang);
+        setHasChosen(true);
+        await AsyncStorage.setItem(key, resolvedLang);
+        await AsyncStorage.setItem('app_language', resolvedLang);
+        // Don't block navigation on network sync
+        void syncLanguageToServer(resolvedLang);
+      } else {
+        setLang('en');
+        setHasChosen(false);
+      }
     } catch (error) {
       console.error('Error initializing language state:', error);
       setHasChosen(false);

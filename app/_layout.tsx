@@ -92,7 +92,7 @@ function RootNavigator() {
       // Only call initForUser once per user session to avoid re-triggering
       if (initializedRef.current !== user.id) {
         initializedRef.current = user.id;
-        initForUser(user.id);
+        initForUser(user.id, user.app_language);
       }
     } else {
       // No user logged in — unblock language loading immediately
@@ -196,12 +196,9 @@ function RootNavigator() {
     }
   }, [user, authLoading, hasChosen, langLoading, isMaintenance, maintenanceMessage, configLoading, router, rootNav?.key, user?.role]);
 
-  // After login, LanguageContext sets langLoading=true while it reads per-user prefs.
-  // Showing the full-screen splash during that phase unmounts the root Stack and
-  // remounts it — on New Architecture release builds that races router.replace
-  // and crashes the app ("My Building keeps stopping"). Only block the UI on
-  // language bootstrap when there is no logged-in user yet (cold start / logout).
-  const showInitialSplash = authLoading || configLoading || (!user && langLoading);
+  // Keep splash up while language resolves so login never flashes choose-language
+  // then home. newArchEnabled is false, so unmounting Stack here is safe.
+  const showInitialSplash = authLoading || configLoading || langLoading;
 
   const waitingForRedirect =
     !authLoading &&

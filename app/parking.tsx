@@ -17,6 +17,7 @@ import BuildingDropdown from '../components/BuildingDropdown';
 import type { Building } from '../hooks/useBuildings';
 import { useActivityLog } from '../hooks/useActivityLog';
 import ParkingReportDetailModal, { ParkingReport } from '../components/ParkingReportDetailModal';
+import ParkingOwnerDetailModal, { ParkingOwner } from '../components/ParkingOwnerDetailModal';
 import { ModuleHeader, ModuleHeaderIconButton, ModuleHeaderTextButton } from '../components/ModuleHeader';
 import { useKeyboardPad } from '../hooks/useKeyboardPad';
 
@@ -158,6 +159,7 @@ export default function ParkingScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedReport, setSelectedReport] = useState<ParkingReport | null>(null);
+  const [selectedOwner, setSelectedOwner] = useState<ParkingOwner | null>(null);
 
   // For admin report modal, track selected building separately
   const [reportBuilding, setReportBuilding] = useState<Building | null>(null);
@@ -328,12 +330,24 @@ export default function ParkingScreen() {
     return Array.from(map.values());
   }, [vehicles, search]);
 
+  const openOwnerDetails = useCallback((user: ParkingOwner | null | undefined) => {
+    if (!user) return;
+    setSelectedOwner(user);
+  }, []);
+
   const renderUserCard = ({ item }: { item: { user: any, vehicles: any[] } }) => {
     const hasUser = !!item.user;
     const wingFlat = formatWingFlat(item.user);
     return (
       <View style={styles.card}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+        <TouchableOpacity
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}
+          onPress={() => openOwnerDetails(item.user)}
+          disabled={!hasUser}
+          activeOpacity={hasUser ? 0.7 : 1}
+          accessibilityRole="button"
+          accessibilityLabel="View resident details"
+        >
           <View style={styles.userIconBadge}>
             <Ionicons name="person" size={20} color={Colors.primary} />
           </View>
@@ -343,7 +357,10 @@ export default function ParkingScreen() {
               <Text style={styles.userFlat}>{wingFlat}</Text>
             )}
           </View>
-        </View>
+          {hasUser && (
+            <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
+          )}
+        </TouchableOpacity>
 
         <View style={styles.vehiclesContainer}>
           {item.vehicles.map(v => (
@@ -658,6 +675,12 @@ export default function ParkingScreen() {
         visible={!!selectedReport}
         report={selectedReport}
         onClose={() => setSelectedReport(null)}
+      />
+
+      <ParkingOwnerDetailModal
+        visible={!!selectedOwner}
+        owner={selectedOwner}
+        onClose={() => setSelectedOwner(null)}
       />
     </View>
   );

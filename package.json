@@ -12,7 +12,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "jest"
+    "test": "jest",
+    "adb:api": "node scripts/adb-reverse-api.js"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -27,6 +28,7 @@
     "axios": "^1.13.6",
     "burnt": "^0.13.0",
     "expo": "~54.0.33",
+    "expo-build-properties": "~1.0.10",
     "expo-clipboard": "~8.0.8",
     "expo-constants": "~18.0.13",
     "expo-dev-client": "~6.0.20",

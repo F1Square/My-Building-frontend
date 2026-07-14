@@ -3,7 +3,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  ActivityIndicator, ToastAndroid, Modal,
+  ActivityIndicator, ToastAndroid,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -18,18 +18,19 @@ export default function PaymentReviewScreen() {
   const router = useRouter();
   const { t } = useLanguage();
   const { user } = useAuth();
-  const { recordId, billAmount, billMonth, billYear, billId } = useLocalSearchParams<{
+  const { recordId, billAmount, penaltyAmount, totalAmount, billMonth, billYear, billId, category } = useLocalSearchParams<{
     recordId: string;
     billAmount: string;
+    penaltyAmount?: string;
+    totalAmount?: string;
     billMonth: string;
     billYear: string;
     billId: string;
+    category?: string;
   }>();
 
   const [loading, setLoading] = useState(false);
   const [paymentDetails, setPaymentDetails] = useState<any>(null);
-  const [showTerms, setShowTerms] = useState(false);
-  const [termsAccepted, setTermsAccepted] = useState(false);
 
   React.useEffect(() => {
     loadPaymentDetails();
@@ -56,38 +57,49 @@ export default function PaymentReviewScreen() {
   };
 
   const handleCheckout = async () => {
-    if (!termsAccepted) {
-      ToastAndroid.show('Please accept terms & conditions', ToastAndroid.SHORT);
-      return;
-    }
-
     setLoading(true);
     try {
       const res = await api.post('/maintenance/pay/order', { payment_record_id: recordId });
       const { checkout_url } = res.data;
 
-      // Open payment gateway
-      const result = await WebBrowser.openAuthSessionAsync(checkout_url, 'mybuilding://my-payments');
+      // Must match backend easebuzz return deep-link (maintenance-category + Paid tab)
+      const billCategory =
+        category ||
+        paymentDetails?.maintenance_bills?.category ||
+        'maintenance';
+
+      const result = await WebBrowser.openAuthSessionAsync(checkout_url, 'mybuilding://maintenance-category');
 
       if (result.type === 'success' && 'url' in result && result.url) {
         const queryPart = result.url.includes('?') ? result.url.split('?')[1] : '';
         const status = new URLSearchParams(queryPart).get('status');
-        
+        const returnCategory =
+          new URLSearchParams(queryPart).get('category') || billCategory;
+
         if (status === 'success') {
           ToastAndroid.show('Payment successful!', ToastAndroid.LONG);
-          // Navigate back to payments screen with success status
           router.replace({
-            pathname: '/my-payments',
-            params: { status: 'success' },
+            pathname: '/maintenance-category',
+            params: { category: returnCategory, status: 'success' },
           } as any);
         } else if (status === 'failed') {
           ToastAndroid.show('Payment failed. Please try again.', ToastAndroid.LONG);
-          router.back();
+          router.replace({
+            pathname: '/maintenance-category',
+            params: { category: returnCategory, status: 'failed' },
+          } as any);
         } else {
-          router.back();
+          router.replace({
+            pathname: '/maintenance-category',
+            params: { category: billCategory },
+          } as any);
         }
       } else {
-        router.back();
+        // User closed gateway — still leave payment details
+        router.replace({
+          pathname: '/maintenance-category',
+          params: { category: billCategory },
+        } as any);
       }
 
       await WebBrowser.coolDownAsync().catch(() => {});
@@ -99,6 +111,19 @@ export default function PaymentReviewScreen() {
   };
 
   const fmt = (n: number) => `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 0 })}`;
+
+  // Prefer live API amounts (includes overdue penalty); fall back to nav params
+  const baseAmt = Number(paymentDetails?.amount ?? billAmount ?? 0) || 0;
+  const penaltyAmt = paymentDetails
+    ? (paymentDetails.is_overdue ? Number(paymentDetails.penalty_amount || 0) : 0)
+    : (Number(penaltyAmount || 0) || 0);
+  const totalDue = Number(
+    paymentDetails?.display_amount ?? totalAmount ?? (baseAmt + penaltyAmt),
+  ) || baseAmt;
+
+  const wing = paymentDetails?.users?.wing || user?.wing;
+  const flatNo = paymentDetails?.users?.flat_no || user?.flat_no;
+  const wingFlat = flatNo ? (wing ? `${wing}-${flatNo}` : String(flatNo)) : 'N/A';
 
   return (
     <View style={styles.container}>
@@ -119,12 +144,14 @@ export default function PaymentReviewScreen() {
 
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Tenant Name</Text>
-            <Text style={styles.detailValue}>{user?.name || 'N/A'}</Text>
+            <Text style={styles.detailValue}>
+              {paymentDetails?.users?.name || user?.name || 'N/A'}
+            </Text>
           </View>
 
           <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Flat/Unit</Text>
-            <Text style={styles.detailValue}>{user?.flat_no || 'N/A'}</Text>
+            <Text style={styles.detailLabel}>Flat No.</Text>
+            <Text style={styles.detailValue}>{wingFlat}</Text>
           </View>
 
           <View style={styles.detailRow}>
@@ -162,83 +189,22 @@ export default function PaymentReviewScreen() {
         <View style={styles.amountCard}>
           <View style={styles.amountRow}>
             <Text style={styles.amountLabel}>Maintenance Bill</Text>
-            <Text style={styles.amountValue}>{fmt(parseFloat(billAmount || '0'))}</Text>
+            <Text style={styles.amountValue}>{fmt(baseAmt)}</Text>
           </View>
+
+          {penaltyAmt > 0 && (
+            <View style={styles.amountRow}>
+              <Text style={styles.amountLabel}>Late Penalty</Text>
+              <Text style={styles.amountValue}>{fmt(penaltyAmt)}</Text>
+            </View>
+          )}
 
           <View style={styles.amountDivider} />
 
           <View style={styles.amountRowTotal}>
             <Text style={styles.totalLabel}>Total Amount Due</Text>
-            <Text style={styles.totalAmount}>{fmt(parseFloat(billAmount || '0'))}</Text>
+            <Text style={styles.totalAmount}>{fmt(totalDue)}</Text>
           </View>
-        </View>
-
-        {/* Terms & Conditions */}
-        <View style={styles.termsCard}>
-          <TouchableOpacity
-            style={styles.termsHeader}
-            onPress={() => setShowTerms(!showTerms)}
-            activeOpacity={0.7}
-          >
-            <View style={styles.checkboxContainer}>
-              <View
-                style={[
-                  styles.checkbox,
-                  termsAccepted && styles.checkboxChecked,
-                ]}
-              >
-                {termsAccepted && (
-                  <Ionicons name="checkmark" size={14} color={Colors.white} />
-                )}
-              </View>
-            </View>
-            <Text style={styles.termsText}>
-              I agree to the payment terms & conditions
-            </Text>
-            <Ionicons
-              name={showTerms ? 'chevron-up' : 'chevron-down'}
-              size={18}
-              color={Colors.textMuted}
-            />
-          </TouchableOpacity>
-
-          {showTerms && (
-            <View style={styles.termsContent}>
-              <Text style={styles.termsContentText}>
-                • Payment is due on or before the due date{'\n'}
-                • Late payment may incur additional charges{'\n'}
-                • All payments are non-refundable{'\n'}
-                • Receipt will be sent via email after payment{'\n'}
-                • Disputes must be reported within 7 days
-              </Text>
-            </View>
-          )}
-
-          <TouchableOpacity
-            style={styles.acceptCheckbox}
-            onPress={() => setTermsAccepted(!termsAccepted)}
-            activeOpacity={0.7}
-          >
-            <View
-              style={[
-                styles.checkbox,
-                termsAccepted && styles.checkboxChecked,
-              ]}
-            >
-              {termsAccepted && (
-                <Ionicons name="checkmark" size={16} color={Colors.white} />
-              )}
-            </View>
-            <Text style={styles.acceptText}>I accept the terms</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Payment Method Info */}
-        <View style={styles.infoCard}>
-          <Ionicons name="information-circle" size={20} color={Colors.primary} />
-          <Text style={styles.infoText}>
-            You will be redirected to a secure payment gateway after clicking Checkout
-          </Text>
         </View>
       </ScrollView>
 
@@ -247,7 +213,7 @@ export default function PaymentReviewScreen() {
         <TouchableOpacity
           style={[styles.checkoutBtn, loading && styles.checkoutBtnDisabled]}
           onPress={handleCheckout}
-          disabled={loading || !termsAccepted}
+          disabled={loading}
           activeOpacity={0.8}
         >
           {loading ? (
@@ -412,65 +378,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '800',
     color: Colors.primary,
-  },
-  termsCard: {
-    backgroundColor: Colors.white,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  termsHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  checkboxContainer: {
-    marginRight: 12,
-  },
-  checkbox: {
-    width: 20,
-    height: 20,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: Colors.border,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  checkboxChecked: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
-  termsText: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.text,
-  },
-  termsContent: {
-    backgroundColor: Colors.bg,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 12,
-  },
-  termsContentText: {
-    fontSize: 12,
-    color: Colors.textMuted,
-    lineHeight: 18,
-  },
-  acceptCheckbox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  acceptText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.text,
   },
   infoCard: {
     backgroundColor: Colors.primary + '15',

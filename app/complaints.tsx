@@ -14,7 +14,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { cacheManager, CACHE_PRESETS } from '../utils/CacheManager';
+import { uploadComplaintPhoto } from '../utils/uploadComplaintPhoto';
 import { ModuleHeader } from '../components/ModuleHeader';
 import BottomSheetModal, { BottomSheetTextInput } from '../components/BottomSheetModal';
 
@@ -111,41 +112,45 @@ export default function ComplaintsScreen() {
     [isMyView],
   );
 
-  const fetchComplaints = useCallback(async () => {
+  const fetchComplaints = useCallback(async (forceRefresh = false) => {
     if (!user?.building_id) {
       setComplaints([]);
       setLoading(false);
       setRefreshing(false);
       return;
     }
+
+    const endpoint = getEndpoint();
+    const cacheKey = cacheManager.generateKey(
+      'complaints',
+      endpoint,
+      {},
+      user?.role,
+      user?.building_id,
+    );
+
+    if (!forceRefresh) {
+      const cached = await cacheManager.get<any[]>(cacheKey, CACHE_PRESETS.buildingWide);
+      if (cached) {
+        setComplaints(cached);
+        setLoading(false);
+      }
+    }
+
     try {
-      const res = await api.get(getEndpoint());
+      const res = await api.get(endpoint);
       const data = Array.isArray(res.data) ? res.data : [];
+      await cacheManager.set(cacheKey, data, CACHE_PRESETS.buildingWide);
       setComplaints(data);
-      const cacheKey = isMyView ? 'complaints_my_cache' : 'complaints_building_cache';
-      AsyncStorage.setItem(cacheKey, JSON.stringify(data)).catch(() => {});
     } catch (e: any) {
       Alert.error('Error', e.response?.data?.error || e.message || 'Failed to load', 4000);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [user?.building_id, getEndpoint, isMyView]);
+  }, [user?.building_id, user?.role, getEndpoint]);
 
   useFocusEffect(useCallback(() => {
-    const cacheKey = isMyView ? 'complaints_my_cache' : 'complaints_building_cache';
-    AsyncStorage.getItem(cacheKey).then(cached => {
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setComplaints(parsed);
-            setLoading(false);
-          }
-        } catch { /* ignore invalid cache */ }
-      }
-    }).catch(() => {});
-
     InteractionManager.runAfterInteractions(() => {
       fetchComplaints();
     });
@@ -220,14 +225,24 @@ export default function ComplaintsScreen() {
     setTitleError(null);
     setSubmitting(true);
     try {
+      let photo_url: string | undefined;
+      if (imageUri) {
+        try {
+          photo_url = (await uploadComplaintPhoto(imageUri)) || undefined;
+        } catch {
+          // Fallback: data-URI handled server-side by resolveComplaintPhotoUrl
+          photo_url = photoBase64Ref.current || undefined;
+        }
+      }
       await api.post('/complaints', {
         ...form,
-        photo_url: photoBase64Ref.current || undefined,
+        photo_url,
       });
       logEvent('complaint_submitted', 'complaints', { title: form.title, category: form.category });
       resetForm();
       setShowAdd(false);
-      fetchComplaints();
+      await cacheManager.invalidate('complaints:*');
+      fetchComplaints(true);
       Alert.success('Submitted', 'Your complaint has been submitted.', 4000);
     } catch (e: any) {
       const msg = e.response?.data?.error || 'Failed to submit';
@@ -253,7 +268,8 @@ export default function ComplaintsScreen() {
         remark: updateForm.remark || undefined,
       });
       setShowUpdate(false);
-      fetchComplaints();
+      await cacheManager.invalidate('complaints:*');
+      fetchComplaints(true);
     } catch (e: any) {
       Alert.error('Error', e.response?.data?.error || 'Failed to update', 4000);
     } finally { setUpdating(false); }
@@ -386,7 +402,7 @@ export default function ComplaintsScreen() {
             maxToRenderPerBatch={10}
             initialNumToRender={8}
             contentContainerStyle={{ paddingBottom: 100, paddingTop: 8 }}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchComplaints(); }} tintColor={Colors.primary} />}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchComplaints(true); }} tintColor={Colors.primary} />}
             ListEmptyComponent={
               <View style={styles.empty}>
                 <View style={styles.emptyIconBox}>

@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter , useFocusEffect } from 'expo-router';
 
 import { Colors } from '../constants/colors';
+import { REFER_AND_EARN_TERMS } from '../constants/referAndEarnTerms';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import { ModuleHeader } from '../components/ModuleHeader';
@@ -277,8 +278,20 @@ export default function ReferAndEarnScreen() {
                     </View>
                   </View>
                   <Text style={styles.rewardsHint}>
-                    Share your code when someone registers a new society via the app.
+                    Share your code when someone registers a new society via the app or website.
                   </Text>
+                </View>
+              )}
+
+              {!isAdmin && (
+                <View style={styles.termsCard}>
+                  <Text style={styles.termsTitle}>Terms & Conditions</Text>
+                  {REFER_AND_EARN_TERMS.map((term, index) => (
+                    <View key={index} style={styles.termRow}>
+                      <Text style={styles.termIndex}>{index + 1}.</Text>
+                      <Text style={styles.termText}>{term}</Text>
+                    </View>
+                  ))}
                 </View>
               )}
 
@@ -394,6 +407,16 @@ const styles = StyleSheet.create({
   rewardName: { fontSize: 14, fontWeight: '700', color: Colors.text },
   rewardDesc: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
   rewardsHint: { fontSize: 12, color: Colors.textMuted, marginTop: 8, lineHeight: 18 },
+
+  termsCard: {
+    backgroundColor: Colors.white, borderRadius: 16, padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 2,
+  },
+  termsTitle: { fontSize: 15, fontWeight: '800', color: Colors.text, marginBottom: 12 },
+  termRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 10 },
+  termIndex: { fontSize: 13, fontWeight: '700', color: Colors.primary, minWidth: 18 },
+  termText: { flex: 1, fontSize: 13, color: Colors.textMuted, lineHeight: 19 },
 
   // Search
   searchBar: {

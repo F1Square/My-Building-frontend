@@ -1421,8 +1421,10 @@ export default function MaintenanceCategoryScreen() {
     const st = new URLSearchParams(q).get('status');
     if (isPramukh && !isAdmin) {
       setPramukhTab('my-bill');
+      if (st === 'success') setActiveTab('paid');
       await fetchPramukhData();
     } else if (canManage) {
+      if (st === 'success') setActiveTab('paid');
       await fetchPramukhData();
     } else {
       if (st === 'success') setActiveTab('paid');
@@ -1482,14 +1484,20 @@ export default function MaintenanceCategoryScreen() {
 
   const navigateToPaymentReview = (record: PaymentRecord) => {
     const bill = record.maintenance_bills;
+    const overdue = record.status === 'pending' && bill?.due_date ? isOverdue(bill.due_date) : false;
+    const penaltyAmount = cat === 'maintenance' && overdue && bill?.penalty_amount ? Number(bill.penalty_amount) : 0;
+    const totalDue = Number(record.amount) + penaltyAmount;
     router.push({
       pathname: '/payment-review',
       params: {
         recordId: record.id,
         billAmount: String(record.amount),
+        penaltyAmount: String(penaltyAmount),
+        totalAmount: String(totalDue),
         billMonth: String(bill?.month || 0),
         billYear: String(bill?.year || new Date().getFullYear()),
         billId: String(bill?.id || ''),
+        category: cat,
       },
     } as any);
   };

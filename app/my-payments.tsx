@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
@@ -7,22 +7,29 @@ import {
 } from 'react-native';
 import { Alert } from '../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter , useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../utils/api';
 import { API_BASE } from '../constants/api';
-import * as WebBrowser from 'expo-web-browser';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
 import { ModuleHeader } from '../components/ModuleHeader';
 
 const MONTHS = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+type HistoryTab = 'all' | 'paid' | 'pending';
+
+const CATEGORY_LABELS: Record<string, string> = {
+  maintenance: 'Maintenance',
+  water_meter: 'Water',
+  special: 'Special',
+};
+
 function getPaymentActions(
   status: string,
-  paymentMethod: string | null
+  paymentMethod: string | null,
 ): ('pay_now' | 'mark_cash' | 'upload_receipt')[] {
   if (status !== 'pending' && status !== 'partial') return [];
   const m = paymentMethod ?? 'Online (Payment Gateway)';
@@ -40,6 +47,17 @@ function getPaymentActions(
   return actions;
 }
 
+function formatMoney(n: number) {
+  return `₹${Number(n || 0).toLocaleString('en-IN')}`;
+}
+
+function statusMeta(item: any) {
+  if (item.status === 'paid') return { label: 'Paid', color: Colors.success };
+  if (item.status === 'receipt_uploaded') return { label: 'Submitted', color: Colors.primary };
+  if (item.status === 'partial') return { label: 'Partial', color: '#7C3AED' };
+  return { label: 'Pending', color: '#D97706' };
+}
+
 export default function MyPaymentsScreen() {
   const router = useRouter();
   const { t } = useLanguage();
@@ -47,27 +65,33 @@ export default function MyPaymentsScreen() {
   const isLocked = user?.role !== 'admin' && !hasActiveSubscription;
   const processGuardRef = useRef(0);
   const { status: linkStatus } = useLocalSearchParams<{ status?: string }>();
+
   const [payments, setPayments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [uploadingReceipt, setUploadingReceipt] = useState<string | null>(null);
-  const [tcExpanded, setTcExpanded] = useState(false);
+  const [downloading, setDownloading] = useState<string | null>(null);
+  const [tab, setTab] = useState<HistoryTab>('all');
 
-  const fetch = async () => {
+  const fetchPayments = useCallback(async () => {
     try {
       const paymentsRes = await api.get('/maintenance/payments?mine=true');
-      setPayments(paymentsRes.data);
-    } catch { }
-    finally { setLoading(false); setRefreshing(false); }
-  };
+      setPayments(Array.isArray(paymentsRes.data) ? paymentsRes.data : []);
+    } catch (e: any) {
+      Alert.error('Error', e?.response?.data?.error || 'Failed to load payment history', 4000);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
 
   useFocusEffect(useCallback(() => {
     if (isLocked) {
       setLoading(false);
       return;
     }
-    fetch();
-  }, [isLocked]));
+    fetchPayments();
+  }, [isLocked, fetchPayments]));
 
   const processPaymentUrl = useCallback(async (url: string) => {
     const isReturn =
@@ -80,13 +104,14 @@ export default function MyPaymentsScreen() {
 
     const queryPart = url.includes('?') ? url.split('?')[1] : '';
     const status = new URLSearchParams(queryPart).get('status');
-    await fetch();
+    await fetchPayments();
     if (status === 'success') {
+      setTab('paid');
       Alert.success('Payment successful', 'Your payment was recorded.', 4000);
     } else if (status === 'failed') {
       Alert.error('Payment not completed', 'The payment did not finish. If your account was debited, refresh this screen.', 4000);
     }
-  }, []);
+  }, [fetchPayments]);
 
   useEffect(() => {
     if (linkStatus === 'success' || linkStatus === 'failed') {
@@ -107,17 +132,24 @@ export default function MyPaymentsScreen() {
     return () => sub.remove();
   }, [processPaymentUrl]);
 
-  const payNow = async (recordId: string, item: any) => {
-    // Navigate to payment review page instead of directly initiating payment
+  const payNow = (recordId: string, item: any) => {
     const bill = item.maintenance_bills;
+    const base = Number(item.amount) || 0;
+    const total = Number(item.display_amount ?? item.amount) || base;
+    const penalty = item.is_overdue
+      ? Number(item.penalty_amount ?? Math.max(0, total - base))
+      : 0;
     router.push({
       pathname: '/payment-review',
       params: {
-        recordId: recordId,
-        billAmount: String(item.display_amount ?? item.amount),
+        recordId,
+        billAmount: String(base),
+        penaltyAmount: String(penalty),
+        totalAmount: String(total),
         billMonth: String(bill?.month || 0),
         billYear: String(bill?.year || new Date().getFullYear()),
         billId: String(bill?.id || ''),
+        category: bill?.category || 'maintenance',
       },
     } as any);
   };
@@ -135,15 +167,13 @@ export default function MyPaymentsScreen() {
       await api.patch(`/maintenance/payments/${recordId}/receipt`, {
         receipt_url: `data:image/jpeg;base64,${asset.base64}`,
       });
-      fetch();
+      fetchPayments();
     } catch (e: any) {
       Alert.error('Upload Failed', e.response?.data?.error || 'Could not upload receipt. Please try again.', 4000);
     } finally {
       setUploadingReceipt(null);
     }
   };
-
-  const [downloading, setDownloading] = useState<string | null>(null);
 
   const downloadReceipt = async (recordId: string) => {
     setDownloading(recordId);
@@ -171,24 +201,165 @@ export default function MyPaymentsScreen() {
       } else {
         Alert.success('Downloaded', `Receipt saved to: ${result.uri}`, 4000);
       }
-    } catch (e: any) {
+    } catch {
       Alert.error('Error', 'Could not download receipt. Check your connection.', 4000);
     } finally {
       setDownloading(null);
     }
   };
 
-  const totalPaid = payments.filter(p => p.status === 'paid').reduce((s, p) => s + Number(p.display_amount ?? p.amount), 0);
-  const totalPending = payments.filter(p => p.status === 'pending' || p.status === 'partial').reduce((s, p) => s + Number(p.amount_due ?? p.display_amount ?? p.amount), 0);
+  const { paidList, pendingList, totalPaid, totalPending } = useMemo(() => {
+    const paid: any[] = [];
+    const pending: any[] = [];
+    let paidSum = 0;
+    let pendingSum = 0;
+    for (const p of payments) {
+      if (p.status === 'paid') {
+        paid.push(p);
+        paidSum += Number(p.display_amount ?? p.amount) || 0;
+      } else if (p.status === 'pending' || p.status === 'partial' || p.status === 'receipt_uploaded') {
+        pending.push(p);
+        pendingSum += Number(p.amount_due ?? p.display_amount ?? p.amount) || 0;
+      }
+    }
+    return { paidList: paid, pendingList: pending, totalPaid: paidSum, totalPending: pendingSum };
+  }, [payments]);
+
+  const filteredPayments = useMemo(() => {
+    if (tab === 'paid') return paidList;
+    if (tab === 'pending') return pendingList;
+    return payments;
+  }, [tab, payments, paidList, pendingList]);
 
   const buildingPaymentMethod = payments[0]?.building_payment_method ?? null;
-  const buildingPaymentTc = payments[0]?.building_payment_tc ?? null;
 
+  const renderItem = ({ item }: { item: any }) => {
+    const isPaid = item.status === 'paid';
+    const isReceiptUploaded = item.status === 'receipt_uploaded';
+    const isPartial = item.status === 'partial';
+    const bill = item.maintenance_bills;
+    const actions = getPaymentActions(item.status, buildingPaymentMethod);
+    const status = statusMeta(item);
+    const categoryKey = bill?.category || 'maintenance';
+    const categoryLabel = CATEGORY_LABELS[categoryKey] || 'Bill';
 
+    return (
+      <View style={[styles.card, isPaid && styles.cardPaid]}>
+        <View style={styles.cardTop}>
+          <View style={styles.monthBox}>
+            <Text style={styles.monthText}>{MONTHS[bill?.month] || '—'}</Text>
+            <Text style={styles.yearText}>{bill?.year || ''}</Text>
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.cardAmount}>{formatMoney(item.display_amount ?? item.amount)}</Text>
+            <Text style={styles.cardCategory}>{categoryLabel}</Text>
+            {item.is_overdue && Number(item.penalty_amount) > 0 ? (
+              <Text style={styles.cardDesc}>
+                Bill {formatMoney(item.amount)} + Penalty {formatMoney(item.penalty_amount)}
+              </Text>
+            ) : null}
+            {bill?.description ? (
+              <Text style={styles.cardDesc} numberOfLines={1}>{bill.description}</Text>
+            ) : null}
+            {!isPaid && bill?.due_date ? (
+              <Text style={styles.cardDue}>
+                Due {new Date(bill.due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+              </Text>
+            ) : null}
+          </View>
+          <View style={[styles.statusBadge, { backgroundColor: status.color + '18' }]}>
+            <Text style={[styles.statusText, { color: status.color }]}>{status.label}</Text>
+          </View>
+        </View>
+
+        {isPaid && item.paid_at ? (
+          <View style={styles.metaRow}>
+            <Ionicons name="checkmark-circle" size={14} color={Colors.success} />
+            <Text style={styles.metaText} numberOfLines={2}>
+              Paid on {new Date(item.paid_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+              {item.payment_method === 'advance' ? ' · via advance credit' : ''}
+            </Text>
+          </View>
+        ) : null}
+
+        {isPartial ? (
+          <View style={styles.metaRow}>
+            <Ionicons name="wallet-outline" size={14} color="#7C3AED" />
+            <Text style={[styles.metaText, { color: '#7C3AED' }]} numberOfLines={2}>
+              {formatMoney(item.advance_credit_applied || 0)} via advance · {formatMoney(item.amount_due || 0)} remaining
+            </Text>
+          </View>
+        ) : null}
+
+        {isReceiptUploaded ? (
+          <View style={styles.metaRow}>
+            <Ionicons name="cloud-upload-outline" size={14} color={Colors.primary} />
+            <Text style={[styles.metaText, { color: Colors.primary }]}>
+              Receipt submitted — awaiting verification
+            </Text>
+          </View>
+        ) : null}
+
+        {(actions.length > 0 || isPaid) && (
+          <View style={styles.cardActions}>
+            {actions.includes('pay_now') && (
+              <TouchableOpacity style={styles.payBtn} onPress={() => payNow(item.id, item)}>
+                <Ionicons name="card-outline" size={15} color={Colors.white} />
+                <Text style={styles.payBtnText}>Pay Now</Text>
+              </TouchableOpacity>
+            )}
+            {actions.includes('mark_cash') && (
+              <TouchableOpacity
+                style={styles.outlineBtn}
+                onPress={() => Alert.warning('Cash Payment', 'Please inform your Pramukh about your cash payment.', 4000)}
+              >
+                <Text style={[styles.outlineBtnText, { color: Colors.accent }]}>Cash</Text>
+              </TouchableOpacity>
+            )}
+            {actions.includes('upload_receipt') && (
+              <TouchableOpacity
+                style={styles.outlineBtn}
+                onPress={() => uploadReceipt(item.id)}
+                disabled={uploadingReceipt === item.id}
+              >
+                {uploadingReceipt === item.id ? (
+                  <ActivityIndicator size="small" color={Colors.primary} />
+                ) : (
+                  <>
+                    <Ionicons name="cloud-upload-outline" size={15} color={Colors.primary} />
+                    <Text style={styles.outlineBtnText}>Upload</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+            {isPaid && (
+              <TouchableOpacity
+                style={styles.outlineBtn}
+                onPress={() => downloadReceipt(item.id)}
+                disabled={downloading === item.id}
+              >
+                {downloading === item.id ? (
+                  <ActivityIndicator size="small" color={Colors.primary} />
+                ) : (
+                  <>
+                    <Ionicons name="download-outline" size={15} color={Colors.primary} />
+                    <Text style={styles.outlineBtnText}>{t('receipt')}</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+      </View>
+    );
+  };
 
   return (
     <View style={styles.container}>
-      <ModuleHeader title={t('paymentHistory')} />
+      <ModuleHeader
+        title={t('paymentHistory')}
+        subtitle={!isLocked && !loading ? `${payments.length} record${payments.length === 1 ? '' : 's'}` : undefined}
+      />
 
       {isLocked ? (
         <View style={styles.lockedContainer}>
@@ -206,156 +377,75 @@ export default function MyPaymentsScreen() {
         </View>
       ) : (
         <>
-      {/* Summary */}
-      {!loading && payments.length > 0 && (
-        <View style={styles.summaryRow}>
-          <View style={[styles.summaryCard, { borderLeftColor: Colors.success }]}>
-            <Text style={styles.summaryLabel}>{t('totalPaid')}</Text>
-            <Text style={[styles.summaryAmount, { color: Colors.success }]}>₹{totalPaid.toLocaleString('en-IN')}</Text>
-          </View>
-          <View style={[styles.summaryCard, { borderLeftColor: '#F59E0B' }]}>
-            <Text style={styles.summaryLabel}>{t('pending')}</Text>
-            <Text style={[styles.summaryAmount, { color: '#F59E0B' }]}>₹{totalPending.toLocaleString('en-IN')}</Text>
-          </View>
-        </View>
-      )}
-
-      {loading ? (
-        <ActivityIndicator style={{ marginTop: 48 }} size="large" color={Colors.primary} />
-      ) : (
-        <FlatList
-          data={payments}
-          keyExtractor={i => i.id}
-          contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetch(); }} />}
-          ListHeaderComponent={buildingPaymentTc ? (
-            <TouchableOpacity style={styles.tcSection} onPress={() => setTcExpanded(e => !e)} activeOpacity={0.8}>
-              <View style={styles.tcHeader}>
-                <Ionicons name="document-text-outline" size={16} color={Colors.primary} />
-                <Text style={styles.tcTitle}>Payment Terms & Conditions</Text>
-                <Ionicons name={tcExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={Colors.primary} />
+          {!loading && payments.length > 0 && (
+            <View style={styles.summaryRow}>
+              <View style={[styles.summaryCard, { borderLeftColor: Colors.success }]}>
+                <Text style={styles.summaryLabel}>{t('totalPaid')}</Text>
+                <Text style={[styles.summaryAmount, { color: Colors.success }]}>{formatMoney(totalPaid)}</Text>
               </View>
-              {tcExpanded && <Text style={styles.tcBody}>{buildingPaymentTc}</Text>}
-            </TouchableOpacity>
-          ) : null}
-          ListEmptyComponent={
-            <View style={styles.empty}>
-              <Text style={styles.emptyIcon}>🧾</Text>
-              <Text style={styles.emptyTitle}>No payment records</Text>
-              <Text style={styles.emptyText}>Your maintenance bills will appear here</Text>
+              <View style={[styles.summaryCard, { borderLeftColor: '#F59E0B' }]}>
+                <Text style={styles.summaryLabel}>{t('pending')}</Text>
+                <Text style={[styles.summaryAmount, { color: '#F59E0B' }]}>{formatMoney(totalPending)}</Text>
+              </View>
             </View>
-          }
-          renderItem={({ item }) => {
-            const isPaid = item.status === 'paid';
-            const isReceiptUploaded = item.status === 'receipt_uploaded';
-            const isPartial = item.status === 'partial';
-            const bill = item.maintenance_bills;
-            const actions = getPaymentActions(item.status, buildingPaymentMethod);
-            return (
-              <View style={[styles.card, (isPaid || isReceiptUploaded) && styles.cardPaid]}>
-                <View style={styles.cardTop}>
-                  <View style={styles.monthBox}>
-                    <Text style={styles.monthText}>{MONTHS[bill?.month]}</Text>
-                    <Text style={styles.yearText}>{bill?.year}</Text>
+          )}
+
+          {!loading && payments.length > 0 && (
+            <View style={styles.tabRow}>
+              {([
+                { key: 'all' as const, label: `All (${payments.length})` },
+                { key: 'paid' as const, label: `Paid (${paidList.length})` },
+                { key: 'pending' as const, label: `Pending (${pendingList.length})` },
+              ]).map((item) => {
+                const active = tab === item.key;
+                return (
+                  <TouchableOpacity
+                    key={item.key}
+                    style={[styles.tabBtn, active && styles.tabBtnActive]}
+                    onPress={() => setTab(item.key)}
+                  >
+                    <Text style={[styles.tabBtnText, active && styles.tabBtnTextActive]}>{item.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+
+          {loading ? (
+            <ActivityIndicator style={{ marginTop: 48 }} size="large" color={Colors.primary} />
+          ) : (
+            <FlatList
+              data={filteredPayments}
+              keyExtractor={(i) => i.id}
+              contentContainerStyle={styles.list}
+              refreshControl={(
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={() => { setRefreshing(true); fetchPayments(); }}
+                />
+              )}
+              ListEmptyComponent={(
+                <View style={styles.empty}>
+                  <View style={styles.emptyIconBox}>
+                    <Ionicons name="receipt-outline" size={36} color={Colors.textMuted} />
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.cardAmount}>₹{Number(item.display_amount ?? item.amount).toLocaleString('en-IN')}</Text>
-                    {item.is_overdue && item.penalty_amount > 0 ? (
-                      <Text style={styles.cardDesc}>
-                        Bill ₹{Number(item.amount).toLocaleString('en-IN')} + Penalty ₹{Number(item.penalty_amount).toLocaleString('en-IN')}
-                      </Text>
-                    ) : null}
-                    {bill?.description ? <Text style={styles.cardDesc} numberOfLines={1}>{bill.description}</Text> : null}
-                    {bill?.due_date ? <Text style={styles.cardDue}>Due: {new Date(bill.due_date).toLocaleDateString('en-IN')}</Text> : null}
-                  </View>
-                  <View style={[styles.statusBadge, {
-                    backgroundColor: isPaid ? Colors.success + '20' : isReceiptUploaded ? Colors.primary + '20' : isPartial ? '#7C3AED20' : '#FEF3C7'
-                  }]}>
-                    <Text style={[styles.statusText, {
-                      color: isPaid ? Colors.success : isReceiptUploaded ? Colors.primary : isPartial ? '#7C3AED' : '#D97706'
-                    }]}>
-                      {isPaid ? 'PAID' : isReceiptUploaded ? 'SUBMITTED' : isPartial ? 'PARTIAL' : 'PENDING'}
-                    </Text>
-                  </View>
+                  <Text style={styles.emptyTitle}>
+                    {tab === 'paid'
+                      ? 'No paid bills yet'
+                      : tab === 'pending'
+                        ? 'No pending bills'
+                        : 'No payment records'}
+                  </Text>
+                  <Text style={styles.emptyText}>
+                    {tab === 'all'
+                      ? 'Your maintenance bills will appear here'
+                      : 'Try another filter or pull to refresh'}
+                  </Text>
                 </View>
-
-                {isPaid && item.paid_at ? (
-                  <View style={styles.paidRow}>
-                    <Ionicons name="checkmark-circle" size={13} color={Colors.success} />
-                    <Text style={styles.paidText}>
-                      Paid on {new Date(item.paid_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                      {(item.gateway_payment_id || item.razorpay_payment_id) ? ` · ${item.gateway_payment_id || item.razorpay_payment_id}` : ''}
-                      {item.payment_method === 'advance' ? ' · via advance credit' : ''}
-                    </Text>
-                  </View>
-                ) : null}
-
-                {isPartial ? (
-                  <View style={styles.paidRow}>
-                    <Ionicons name="wallet-outline" size={13} color="#7C3AED" />
-                    <Text style={[styles.paidText, { color: '#7C3AED' }]}>
-                      ₹{Number(item.advance_credit_applied || 0).toLocaleString('en-IN')} paid via advance · ₹{Number(item.amount_due || 0).toLocaleString('en-IN')} remaining
-                    </Text>
-                  </View>
-                ) : null}
-
-                {isReceiptUploaded ? (
-                  <View style={styles.paidRow}>
-                    <Ionicons name="cloud-upload-outline" size={13} color={Colors.primary} />
-                    <Text style={[styles.paidText, { color: Colors.primary }]}>Receipt Submitted — awaiting verification</Text>
-                  </View>
-                ) : null}
-
-                <View style={styles.cardActions}>
-                  {actions.includes('pay_now') && (
-                    <TouchableOpacity
-                      style={styles.payBtn}
-                      onPress={() => payNow(item.id, item)}
-                    >
-                      <Text style={styles.payBtnText}>Pay Now</Text>
-                    </TouchableOpacity>
-                  )}
-                  {actions.includes('mark_cash') && (
-                    <TouchableOpacity style={styles.cashBtn} onPress={() => Alert.warning('Cash Payment', 'Please inform your Pramukh about your cash payment.', 4000)}>
-                      <Text style={styles.cashBtnText}>Mark as Cash</Text>
-                    </TouchableOpacity>
-                  )}
-                  {actions.includes('upload_receipt') && (
-                    <TouchableOpacity
-                      style={styles.uploadBtn}
-                      onPress={() => uploadReceipt(item.id)}
-                      disabled={uploadingReceipt === item.id}
-                    >
-                      {uploadingReceipt === item.id
-                        ? <ActivityIndicator size="small" color={Colors.primary} />
-                        : <>
-                          <Ionicons name="cloud-upload-outline" size={15} color={Colors.primary} />
-                          <Text style={styles.uploadBtnText}>Upload Receipt</Text>
-                        </>
-                      }
-                    </TouchableOpacity>
-                  )}
-                  {isPaid && (
-                    <TouchableOpacity
-                      style={styles.receiptBtn}
-                      onPress={() => downloadReceipt(item.id)}
-                      disabled={downloading === item.id}
-                    >
-                      {downloading === item.id
-                        ? <ActivityIndicator size="small" color={Colors.primary} />
-                        : <>
-                          <Ionicons name="download-outline" size={15} color={Colors.primary} />
-                          <Text style={styles.receiptBtnText}>{t('receipt')}</Text>
-                        </>
-                      }
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-            );
-          }}
-        />
-      )}
+              )}
+              renderItem={renderItem}
+            />
+          )}
         </>
       )}
     </View>
@@ -364,60 +454,141 @@ export default function MyPaymentsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
-  header: { backgroundColor: '#3B5FC0', paddingTop: 56, paddingBottom: 16, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
-  headerTitle: { fontSize: 18, fontWeight: '800', color: Colors.white },
-  summaryRow: { flexDirection: 'row', gap: 12, padding: 16, paddingBottom: 0 },
-  summaryCard: { flex: 1, backgroundColor: Colors.white, borderRadius: 12, padding: 14, borderLeftWidth: 4, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 },
-  summaryLabel: { fontSize: 12, color: Colors.textMuted, marginBottom: 4 },
-  summaryAmount: { fontSize: 20, fontWeight: '800' },
-  list: { padding: 16 },
-  card: { backgroundColor: Colors.white, borderRadius: 14, padding: 16, marginBottom: 10, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 6, elevation: 2 },
+  summaryRow: { flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingTop: 16 },
+  summaryCard: {
+    flex: 1,
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    padding: 14,
+    borderLeftWidth: 4,
+  },
+  summaryLabel: { fontSize: 12, color: Colors.textMuted, marginBottom: 4, fontWeight: '600' },
+  summaryAmount: { fontSize: 18, fontWeight: '800' },
+  tabRow: {
+    flexDirection: 'row',
+    backgroundColor: Colors.white,
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 12,
+    padding: 4,
+  },
+  tabBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10 },
+  tabBtnActive: { backgroundColor: Colors.primary },
+  tabBtnText: { fontSize: 12, fontWeight: '600', color: Colors.textMuted },
+  tabBtnTextActive: { color: Colors.white },
+  list: { padding: 16, paddingBottom: 40 },
+  card: {
+    backgroundColor: Colors.white,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
   cardPaid: { borderLeftWidth: 3, borderLeftColor: Colors.success },
-  cardTop: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 },
-  monthBox: { width: 48, height: 48, borderRadius: 12, backgroundColor: Colors.primary + '15', justifyContent: 'center', alignItems: 'center' },
+  cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  monthBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: Colors.primary + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   monthText: { fontSize: 13, fontWeight: '800', color: Colors.primary },
   yearText: { fontSize: 10, color: Colors.textMuted },
   cardAmount: { fontSize: 18, fontWeight: '800', color: Colors.text },
-  cardDesc: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
-  cardDue: { fontSize: 11, color: '#F59E0B', marginTop: 2 },
-  statusBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
-  statusText: { fontSize: 10, fontWeight: '800' },
-  paidRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 8 },
-  paidText: { fontSize: 12, color: Colors.success, flex: 1 },
-  cardActions: { flexDirection: 'row', justifyContent: 'flex-end' },
-  payBtn: { backgroundColor: Colors.primary, borderRadius: 10, paddingHorizontal: 20, paddingVertical: 10 },
-  payBtnText: { color: Colors.white, fontWeight: '700', fontSize: 14 },
-  receiptBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1.5, borderColor: Colors.primary, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8 },
-  receiptBtnText: { color: Colors.primary, fontWeight: '700', fontSize: 13 },
-  empty: { alignItems: 'center', marginTop: 60, gap: 8 },
-  emptyIcon: { fontSize: 52 },
+  cardCategory: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.primary,
+    marginTop: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  cardDesc: { fontSize: 12, color: Colors.textMuted, marginTop: 3 },
+  cardDue: { fontSize: 11, color: '#D97706', marginTop: 3, fontWeight: '600' },
+  statusBadge: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
+  statusText: { fontSize: 11, fontWeight: '800' },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  metaText: { fontSize: 12, color: Colors.success, flex: 1, lineHeight: 17 },
+  cardActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginTop: 12,
+  },
+  payBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Colors.primary,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  payBtnText: { color: Colors.white, fontWeight: '700', fontSize: 13 },
+  outlineBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  outlineBtnText: { color: Colors.primary, fontWeight: '700', fontSize: 13 },
+  empty: { alignItems: 'center', marginTop: 56, gap: 10, paddingHorizontal: 32 },
+  emptyIconBox: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: Colors.white,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
   emptyTitle: { fontSize: 17, fontWeight: '700', color: Colors.text },
-  emptyText: { fontSize: 14, color: Colors.textMuted },
-  tcSection: { backgroundColor: Colors.white, borderRadius: 12, padding: 14, marginBottom: 12, borderLeftWidth: 3, borderLeftColor: Colors.primary },
-  tcHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  tcTitle: { flex: 1, fontSize: 13, fontWeight: '700', color: Colors.primary },
-  tcBody: { fontSize: 13, color: Colors.text, marginTop: 10, lineHeight: 20 },
-  cashBtn: { borderWidth: 1.5, borderColor: Colors.accent, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, marginRight: 8 },
-  cashBtnText: { color: Colors.accent, fontWeight: '700', fontSize: 13 },
-  uploadBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1.5, borderColor: Colors.primary, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 8, marginRight: 8 },
-  uploadBtnText: { color: Colors.primary, fontWeight: '700', fontSize: 13 },
+  emptyText: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', lineHeight: 20 },
   lockedContainer: {
-    flex: 1, alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 40, gap: 16,
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 40,
+    gap: 16,
   },
   lockedIconBox: {
-    width: 88, height: 88, borderRadius: 44,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     backgroundColor: Colors.primary + '15',
-    justifyContent: 'center', alignItems: 'center',
+    justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: 4,
   },
   lockedTitle: { fontSize: 20, fontWeight: '800', color: Colors.text, textAlign: 'center' },
   lockedDesc: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', lineHeight: 22 },
   lockedBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: Colors.primary, borderRadius: 14,
-    paddingHorizontal: 28, paddingVertical: 14, marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.primary,
+    borderRadius: 14,
+    paddingHorizontal: 28,
+    paddingVertical: 14,
+    marginTop: 8,
   },
   lockedBtnText: { fontSize: 15, fontWeight: '800', color: Colors.white },
 });

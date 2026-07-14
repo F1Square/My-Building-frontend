@@ -28,8 +28,10 @@ const GATED_ROUTES = [
 
 const TYPE_TO_ROUTE: Record<string, string> = {
   bill: '/maintenance', payment: '/maintenance', reminder: '/maintenance',
-  visitor: '/visitors', announcement: '/announcements',
+  visitor: '/visitors',   announcement: '/announcements',
   announcement_urgent: '/announcements',
+  society_rule: '/society-rules',
+  society_rule_updated: '/society-rules',
   complaint: '/complaints?view=society',
   expense: '/expenses',
   meeting: '/meetings', join_request: '/join-requests',
@@ -85,7 +87,7 @@ const MODULE_ICONS: Record<string, string> = {
 
 export default function HomeScreen() {
   const { t } = useLanguage();
-  const { user, hasActiveSubscription, subscription: authSubscription } = useAuth();
+  const { user, refreshUser, hasActiveSubscription, subscription: authSubscription } = useAuth();
   const router = useRouter();
   const { logEvent } = useActivityLog();
   const [refreshing, setRefreshing] = useState(false);
@@ -100,6 +102,20 @@ export default function HomeScreen() {
 
   const isPendingUser = user?.role === 'user' && !user?.building_id;
   const needsSubscription = user?.role !== 'admin' && !hasActiveSubscription;
+
+  // Prefer API display name (getMe / login already normalize via userDisplayName).
+  const displayName = (user?.name || '').trim() || 'Resident';
+
+  // Stale clients may still have email-as-name in AsyncStorage — refresh once from /auth/me.
+  useEffect(() => {
+    if (!user?.id) return;
+    const name = String(user.name || '').trim();
+    const email = String(user.email || '').trim().toLowerCase();
+    const nameLooksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i.test(name);
+    if (nameLooksLikeEmail || (email && name.toLowerCase() === email)) {
+      void refreshUser();
+    }
+  }, [user?.id, refreshUser]);
 
   // Use subscription from AuthContext (already fetched at login) — no separate fetch needed
   // This prevents the lock flicker on first render
@@ -290,6 +306,7 @@ export default function HomeScreen() {
     await cacheManager.invalidate('maintenance:*');
     await cacheManager.invalidate('visitors:*');
     await cacheManager.invalidate('newspaper:*');
+    await cacheManager.invalidate('complaints:*');
     await Promise.all([fetchData(), fetchBadges()]);
     setRefreshing(false);
   };
@@ -300,7 +317,7 @@ export default function HomeScreen() {
         <View style={styles.gradientHeader}>
           <View style={styles.headerTop}>
             <TouchableOpacity onPress={() => router.push('/profile' as any)} style={styles.avatarCircle}>
-              <Text style={styles.avatarText}>{user?.name?.[0]?.toUpperCase()}</Text>
+              <Text style={styles.avatarText}>{displayName[0]?.toUpperCase()}</Text>
             </TouchableOpacity>
             {(user?.role === 'user' || user?.role === 'pramukh') && (
               <TouchableOpacity onPress={() => router.push('/help-support' as any)} style={styles.bellBtn}>
@@ -308,7 +325,7 @@ export default function HomeScreen() {
               </TouchableOpacity>
             )}
           </View>
-          <Text style={styles.greetingText}>{t('welcome')} {user?.name}</Text>
+          <Text style={styles.greetingText}>{t('welcome')} {displayName}</Text>
         </View>
         <View style={styles.pendingContainer}>
           <Ionicons name="business-outline" size={64} color={Colors.primary} style={{ marginBottom: 16 }} />
@@ -343,7 +360,7 @@ export default function HomeScreen() {
                 />
               </View>
             ) : (
-              <Text style={styles.avatarText}>{user?.name?.[0]?.toUpperCase()}</Text>
+              <Text style={styles.avatarText}>{displayName[0]?.toUpperCase()}</Text>
             )}
           </TouchableOpacity>
           <View style={styles.headerActions}>
@@ -365,11 +382,13 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Greeting */}
+        {/* Greeting: society name + display name (never email) */}
         {buildingName === null && user?.building_id ? (
           <View style={{ height: 26, width: 220, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 8, marginBottom: 16 }} />
         ) : (
-          <Text style={styles.greetingText} numberOfLines={1}>{buildingName ? `${buildingName}, ` : `${t('welcome')} `}{user?.name?.split(' ')[0]} 👋</Text>
+          <Text style={styles.greetingText} numberOfLines={2}>
+            {buildingName ? `${buildingName}, ` : `${t('welcome')} `}{displayName}
+          </Text>
         )}
 
         {/* Search bar */}

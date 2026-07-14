@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput,
@@ -13,37 +13,14 @@ import api from '../utils/api';
 import { useBuildings, Building } from '../hooks/useBuildings';
 import BuildingDropdown from '../components/BuildingDropdown';
 import { ModuleHeader, ModuleHeaderIconButton } from '../components/ModuleHeader';
+import SocietyRuleDetailModal, { SocietyRuleDetail } from '../components/SocietyRuleDetailModal';
+import { RULE_CATEGORIES, CAT_ICONS, CAT_COLORS } from '../constants/societyRules';
 
-const RULE_CATEGORIES = ['General', 'Parking', 'Noise', 'Cleanliness', 'Security', 'Pets', 'Guests', 'Other'];
-
-const CAT_ICONS: Record<string, string> = {
-  General: 'document-text-outline',
-  Parking: 'car-outline',
-  Noise: 'volume-high-outline',
-  Cleanliness: 'trash-outline',
-  Security: 'shield-outline',
-  Pets: 'paw-outline',
-  Guests: 'people-outline',
-  Other: 'ellipsis-horizontal-circle-outline',
+type Rule = SocietyRuleDetail & {
+  building_id?: string;
 };
 
-const CAT_COLORS: Record<string, string> = {
-  General: '#3B5FC0', Parking: '#0D9488', Noise: '#D97706',
-  Cleanliness: '#16A34A', Security: '#EF4444', Pets: '#EC4899',
-  Guests: '#7C3AED', Other: '#6B7280',
-};
-
-type Rule = {
-  id: string;
-  title: string;
-  description?: string;
-  category: string;
-  order_index: number;
-  created_at: string;
-  updated_at: string;
-  creator?: { name: string } | null;
-  updater?: { name: string } | null;
-};
+const DESC_PREVIEW_LEN = 110;
 
 export default function SocietyRulesScreen() {
   const router = useRouter();
@@ -52,6 +29,7 @@ export default function SocietyRulesScreen() {
   const isAdmin = user?.role === 'admin';
   const isPramukh = user?.role === 'pramukh';
   const canEdit = isAdmin || isPramukh;
+  const canDelete = canEdit;
   const isLocked = !isAdmin && !hasActiveSubscription;
 
   const { buildings, loading: buildingsLoading } = useBuildings(isAdmin);
@@ -60,31 +38,46 @@ export default function SocietyRulesScreen() {
   const [rules, setRules] = useState<Rule[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<string>('All');
+  const [selectedRule, setSelectedRule] = useState<Rule | null>(null);
 
-  // Form state
   const [showForm, setShowForm] = useState(false);
   const [editTarget, setEditTarget] = useState<Rule | null>(null);
-  const [form, setForm] = useState({ title: '', description: '', category: 'General', order_index: '0' });
+  const [form, setForm] = useState({ title: '', description: '', category: 'General' });
   const [submitting, setSubmitting] = useState(false);
 
   const effectiveBuildingId = isAdmin ? selectedBuilding?.id : user?.building_id;
 
   const fetchRules = useCallback(async () => {
-    if (!effectiveBuildingId) { setLoading(false); setRefreshing(false); return; }
+    if (!effectiveBuildingId) {
+      setRules([]);
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
     try {
       const res = await api.get('/society-rules', {
         params: isAdmin ? { building_id: effectiveBuildingId } : undefined,
       });
-      setRules(res.data);
-    } catch {}
-    finally { setLoading(false); setRefreshing(false); }
-  }, [effectiveBuildingId]);
+      setRules(Array.isArray(res.data) ? res.data : []);
+    } catch (e: any) {
+      Alert.error('Error', e?.response?.data?.error || 'Failed to load rules', 4000);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [effectiveBuildingId, isAdmin]);
 
-  useFocusEffect(useCallback(() => { fetchRules(); }, [effectiveBuildingId]));
+  useFocusEffect(useCallback(() => { fetchRules(); }, [fetchRules]));
+
+  const filteredRules = useMemo(() => {
+    if (categoryFilter === 'All') return rules;
+    return rules.filter((r) => (r.category || 'General') === categoryFilter);
+  }, [rules, categoryFilter]);
 
   const openAdd = () => {
     setEditTarget(null);
-    setForm({ title: '', description: '', category: 'General', order_index: String(rules.length) });
+    setForm({ title: '', description: '', category: 'General' });
     setShowForm(true);
   };
 
@@ -94,7 +87,6 @@ export default function SocietyRulesScreen() {
       title: rule.title,
       description: rule.description || '',
       category: rule.category || 'General',
-      order_index: String(rule.order_index ?? 0),
     });
     setShowForm(true);
   };
@@ -103,45 +95,65 @@ export default function SocietyRulesScreen() {
     if (!form.title.trim()) return Alert.error('Error', 'Title is required', 4000);
     setSubmitting(true);
     try {
-      const body: any = {
+      const body: Record<string, any> = {
         title: form.title.trim(),
         description: form.description.trim() || undefined,
         category: form.category,
-        order_index: parseInt(form.order_index) || 0,
       };
       if (isAdmin && effectiveBuildingId) body.building_id = effectiveBuildingId;
 
       if (editTarget) {
-        await api.patch(`/society-rules/${editTarget.id}`, body);
+        const res = await api.patch(`/society-rules/${editTarget.id}`, body);
+        setRules((prev) => prev.map((r) => (r.id === editTarget.id ? { ...r, ...res.data } : r)));
+        setSelectedRule((prev) => (prev?.id === editTarget.id ? { ...prev, ...res.data } : prev));
       } else {
-        await api.post('/society-rules', body);
+        const res = await api.post('/society-rules', body);
+        setRules((prev) => [...prev, res.data].sort((a, b) =>
+          (a.order_index ?? 0) - (b.order_index ?? 0) ||
+          String(a.created_at).localeCompare(String(b.created_at)),
+        ));
       }
       setShowForm(false);
-      fetchRules();
     } catch (e: any) {
       Alert.error('Error', e?.response?.data?.error || 'Failed to save rule', 4000);
-    } finally { setSubmitting(false); }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleDelete = (rule: Rule) => {
     Alert.alert('Delete Rule', `Delete "${rule.title}"?`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: async () => {
-        try {
-          await api.delete(`/society-rules/${rule.id}`);
-          fetchRules();
-        } catch (e: any) {
-          Alert.error('Error', e?.response?.data?.error || 'Failed to delete', 4000);
-        }
-      }},
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await api.delete(`/society-rules/${rule.id}`);
+            setRules((prev) => prev.filter((r) => r.id !== rule.id));
+            if (selectedRule?.id === rule.id) setSelectedRule(null);
+          } catch (e: any) {
+            Alert.error('Error', e?.response?.data?.error || 'Failed to delete', 4000);
+          }
+        },
+      },
     ]);
   };
 
   const renderRule = ({ item, index }: { item: Rule; index: number }) => {
     const color = CAT_COLORS[item.category] || CAT_COLORS.General;
     const icon = CAT_ICONS[item.category] || CAT_ICONS.General;
+    const desc = item.description?.trim() || '';
+    const preview = desc.length > DESC_PREVIEW_LEN
+      ? `${desc.slice(0, DESC_PREVIEW_LEN).trim()}…`
+      : desc;
+
     return (
-      <View style={[styles.card, { borderLeftColor: color }]}>
+      <TouchableOpacity
+        style={[styles.card, { borderLeftColor: color }]}
+        onPress={() => setSelectedRule(item)}
+        activeOpacity={0.75}
+      >
         <View style={styles.cardTop}>
           <View style={[styles.numBadge, { backgroundColor: color + '18' }]}>
             <Text style={[styles.numText, { color }]}>{index + 1}</Text>
@@ -151,32 +163,38 @@ export default function SocietyRulesScreen() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.ruleTitle}>{item.title}</Text>
-            {item.description ? (
-              <Text style={styles.ruleDesc}>{item.description}</Text>
-            ) : null}
+            {preview ? <Text style={styles.ruleDesc} numberOfLines={2}>{preview}</Text> : null}
             <View style={styles.ruleMeta}>
               <View style={[styles.catChip, { backgroundColor: color + '15' }]}>
                 <Text style={[styles.catChipText, { color }]}>{item.category}</Text>
               </View>
-              {item.updater?.name && (
+              {item.updater?.name ? (
                 <Text style={styles.updatedBy}>Updated by {item.updater.name}</Text>
-              )}
+              ) : null}
             </View>
           </View>
           {canEdit && (
             <View style={styles.actions}>
-              <TouchableOpacity style={styles.actionBtn} onPress={() => openEdit(item)}>
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={(e) => { e.stopPropagation?.(); openEdit(item); }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
                 <Ionicons name="pencil-outline" size={16} color={Colors.primary} />
               </TouchableOpacity>
-              {isAdmin && (
-                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: Colors.danger + '15' }]} onPress={() => handleDelete(item)}>
+              {canDelete && (
+                <TouchableOpacity
+                  style={[styles.actionBtn, { backgroundColor: Colors.danger + '15' }]}
+                  onPress={(e) => { e.stopPropagation?.(); handleDelete(item); }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
                   <Ionicons name="trash-outline" size={16} color={Colors.danger} />
                 </TouchableOpacity>
               )}
             </View>
           )}
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -184,27 +202,24 @@ export default function SocietyRulesScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <ModuleHeader
         title={t('societyRules')}
         subtitle={isAdmin ? (selectedBuilding?.name || 'Select a society') : `${rules.length} rule${rules.length !== 1 ? 's' : ''}`}
         rightAction={canEdit && showContent && !isLocked ? <ModuleHeaderIconButton icon="add" onPress={openAdd} /> : undefined}
       />
 
-      {/* Admin: building dropdown */}
       {isAdmin && (
         <View style={styles.dropdownWrap}>
           <BuildingDropdown
             buildings={buildings}
             loading={buildingsLoading}
             selected={selectedBuilding}
-            onSelect={setSelectedBuilding}
+            onSelect={(b) => { setSelectedBuilding(b); setCategoryFilter('All'); }}
             label="Select Society"
           />
         </View>
       )}
 
-      {/* Content */}
       {isLocked ? (
         <View style={styles.lockedContainer}>
           <View style={styles.lockedIconBox}>
@@ -229,24 +244,65 @@ export default function SocietyRulesScreen() {
         <ActivityIndicator style={{ marginTop: 60 }} size="large" color={Colors.primary} />
       ) : (
         <FlatList
-          data={rules}
-          keyExtractor={i => i.id}
+          data={filteredRules}
+          keyExtractor={(i) => i.id}
           renderItem={renderRule}
           contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchRules(); }} />}
+          refreshControl={(
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => { setRefreshing(true); fetchRules(); }}
+            />
+          )}
+          ListHeaderComponent={
+            rules.length > 0 ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.filterRow}
+                style={{ marginBottom: 12 }}
+              >
+                {['All', ...RULE_CATEGORIES].map((cat) => {
+                  const active = categoryFilter === cat;
+                  const color = cat === 'All' ? Colors.primary : (CAT_COLORS[cat] || Colors.primary);
+                  return (
+                    <TouchableOpacity
+                      key={cat}
+                      style={[styles.filterChip, active && { backgroundColor: color, borderColor: color }]}
+                      onPress={() => setCategoryFilter(cat)}
+                    >
+                      {cat !== 'All' && (
+                        <Ionicons
+                          name={(CAT_ICONS[cat] || CAT_ICONS.General) as any}
+                          size={12}
+                          color={active ? Colors.white : Colors.textMuted}
+                        />
+                      )}
+                      <Text style={[styles.filterChipText, active && { color: Colors.white }]}>{cat}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            ) : null
+          }
           ListEmptyComponent={
             <View style={styles.empty}>
               <Ionicons name="document-text-outline" size={52} color={Colors.border} />
-              <Text style={styles.emptyTitle}>No Rules Yet</Text>
+              <Text style={styles.emptyTitle}>
+                {categoryFilter !== 'All' ? 'No rules in this category' : 'No Rules Yet'}
+              </Text>
               <Text style={styles.emptySub}>
-                {canEdit ? 'Tap + to add the first rule' : 'No society rules have been added yet'}
+                {categoryFilter !== 'All'
+                  ? 'Try another filter or add a new rule'
+                  : canEdit
+                    ? 'Tap + to add the first rule'
+                    : 'No society rules have been added yet'}
               </Text>
             </View>
           }
         />
       )}
 
-      {/* Add / Edit Modal */}
       <Modal visible={showForm} transparent animationType="slide" onRequestClose={() => setShowForm(false)}>
         <View style={styles.overlay}>
           <View style={styles.sheet}>
@@ -264,8 +320,9 @@ export default function SocietyRulesScreen() {
                 style={styles.input}
                 placeholder="e.g. No loud music after 10 PM"
                 value={form.title}
-                onChangeText={v => setForm(f => ({ ...f, title: v }))}
+                onChangeText={(v) => setForm((f) => ({ ...f, title: v }))}
                 placeholderTextColor={Colors.textMuted}
+                maxLength={150}
               />
 
               <Text style={styles.label}>Description</Text>
@@ -273,22 +330,23 @@ export default function SocietyRulesScreen() {
                 style={[styles.input, { height: 90, textAlignVertical: 'top' }]}
                 placeholder="Optional details..."
                 value={form.description}
-                onChangeText={v => setForm(f => ({ ...f, description: v }))}
+                onChangeText={(v) => setForm((f) => ({ ...f, description: v }))}
                 multiline
                 placeholderTextColor={Colors.textMuted}
+                maxLength={2000}
               />
 
               <Text style={styles.label}>Category</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
                 <View style={{ flexDirection: 'row', gap: 8, paddingRight: 8 }}>
-                  {RULE_CATEGORIES.map(cat => {
+                  {RULE_CATEGORIES.map((cat) => {
                     const active = form.category === cat;
                     const color = CAT_COLORS[cat] || CAT_COLORS.General;
                     return (
                       <TouchableOpacity
                         key={cat}
                         style={[styles.chip, active && { backgroundColor: color, borderColor: color }]}
-                        onPress={() => setForm(f => ({ ...f, category: cat }))}
+                        onPress={() => setForm((f) => ({ ...f, category: cat }))}
                       >
                         <Ionicons name={CAT_ICONS[cat] as any} size={13} color={active ? Colors.white : Colors.textMuted} />
                         <Text style={[styles.chipText, active && { color: Colors.white }]}>{cat}</Text>
@@ -298,16 +356,6 @@ export default function SocietyRulesScreen() {
                 </View>
               </ScrollView>
 
-              <Text style={styles.label}>Order (lower = first)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="0"
-                value={form.order_index}
-                onChangeText={v => setForm(f => ({ ...f, order_index: v }))}
-                keyboardType="numeric"
-                placeholderTextColor={Colors.textMuted}
-              />
-
               <TouchableOpacity
                 style={[styles.submitBtn, submitting && { opacity: 0.6 }]}
                 onPress={handleSubmit}
@@ -315,37 +363,49 @@ export default function SocietyRulesScreen() {
               >
                 {submitting
                   ? <ActivityIndicator color={Colors.white} />
-                  : <Text style={styles.submitBtnText}>{editTarget ? 'Save Changes' : 'Add Rule'}</Text>
-                }
+                  : <Text style={styles.submitBtnText}>{editTarget ? 'Save Changes' : 'Add Rule'}</Text>}
               </TouchableOpacity>
               <View style={{ height: 40 }} />
             </ScrollView>
           </View>
         </View>
       </Modal>
+
+      <SocietyRuleDetailModal
+        visible={!!selectedRule}
+        rule={selectedRule}
+        onClose={() => setSelectedRule(null)}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
-  header: {
-    backgroundColor: '#3B5FC0', paddingTop: 56, paddingBottom: 20, paddingHorizontal: 20,
-    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
-  },
-  backBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center', marginTop: 2 },
-  headerTitle: { color: Colors.white, fontSize: 22, fontWeight: '800' },
-  headerSub: { color: 'rgba(255,255,255,0.75)', fontSize: 13, marginTop: 3 },
-  addBtn: {
-    width: 38, height: 38, borderRadius: 19,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center', alignItems: 'center', marginTop: 2,
-  },
   dropdownWrap: { padding: 16, paddingBottom: 0 },
+  filterRow: { flexDirection: 'row', gap: 8, paddingRight: 8 },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: Colors.white,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+  },
+  filterChipText: { fontSize: 12, fontWeight: '600', color: Colors.textMuted },
   card: {
-    backgroundColor: Colors.white, borderRadius: 14, padding: 14,
-    marginBottom: 10, borderLeftWidth: 4,
-    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
+    backgroundColor: Colors.white,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+    borderLeftWidth: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
   },
   cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   numBadge: { width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
@@ -359,56 +419,106 @@ const styles = StyleSheet.create({
   updatedBy: { fontSize: 11, color: Colors.textMuted, fontStyle: 'italic' },
   actions: { flexDirection: 'row', gap: 6, marginLeft: 4 },
   actionBtn: {
-    width: 32, height: 32, borderRadius: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 10,
     backgroundColor: Colors.primary + '15',
-    justifyContent: 'center', alignItems: 'center',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   empty: { alignItems: 'center', marginTop: 60, gap: 10, paddingHorizontal: 32 },
   emptyTitle: { fontSize: 17, fontWeight: '700', color: Colors.text },
   emptySub: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', lineHeight: 20 },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
   sheet: {
-    backgroundColor: Colors.white, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: 24, maxHeight: '90%',
+    backgroundColor: Colors.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    maxHeight: '90%',
   },
-  sheetHandle: { width: 40, height: 4, backgroundColor: Colors.border, borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
-  sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: Colors.border,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
   sheetTitle: { fontSize: 18, fontWeight: '800', color: Colors.text },
-  label: { fontSize: 12, fontWeight: '700', color: Colors.textMuted, marginBottom: 6, marginTop: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
+  label: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.textMuted,
+    marginBottom: 6,
+    marginTop: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
   input: {
-    borderWidth: 1.5, borderColor: Colors.border, borderRadius: 10,
-    paddingHorizontal: 14, paddingVertical: 10, fontSize: 15, color: Colors.text,
-    backgroundColor: Colors.bg, marginBottom: 4,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: Colors.text,
+    backgroundColor: Colors.bg,
+    marginBottom: 4,
   },
   chip: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: 12, paddingVertical: 7,
-    borderRadius: 20, backgroundColor: Colors.bg,
-    borderWidth: 1.5, borderColor: Colors.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: Colors.bg,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
   },
   chipText: { fontSize: 12, fontWeight: '600', color: Colors.textMuted },
   submitBtn: {
-    marginTop: 20, backgroundColor: Colors.primary, borderRadius: 12,
-    paddingVertical: 14, alignItems: 'center',
+    marginTop: 20,
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
   },
   submitBtnText: { color: Colors.white, fontWeight: '700', fontSize: 15 },
-  // Locked / paywall state
   lockedContainer: {
-    flex: 1, alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 40, gap: 16,
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 40,
+    gap: 16,
   },
   lockedIconBox: {
-    width: 88, height: 88, borderRadius: 44,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     backgroundColor: Colors.primary + '15',
-    justifyContent: 'center', alignItems: 'center',
+    justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: 4,
   },
   lockedTitle: { fontSize: 20, fontWeight: '800', color: Colors.text, textAlign: 'center' },
   lockedDesc: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', lineHeight: 22 },
   lockedBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: Colors.primary, borderRadius: 14,
-    paddingHorizontal: 28, paddingVertical: 14, marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.primary,
+    borderRadius: 14,
+    paddingHorizontal: 28,
+    paddingVertical: 14,
+    marginTop: 8,
   },
   lockedBtnText: { fontSize: 15, fontWeight: '800', color: Colors.white },
 });

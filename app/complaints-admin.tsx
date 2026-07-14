@@ -15,6 +15,8 @@ import type { Building } from '../hooks/useBuildings';
 import { useBuildings } from '../hooks/useBuildings';
 import { ModuleHeader, ModuleHeaderIconButton } from '../components/ModuleHeader';
 import BottomSheetModal from '../components/BottomSheetModal';
+import { uploadComplaintPhoto } from '../utils/uploadComplaintPhoto';
+import { cacheManager } from '../utils/CacheManager';
 
 const CATEGORIES = ['General', 'Water', 'Electricity', 'Cleanliness', 'Security', 'Parking', 'Noise', 'Other'];
 
@@ -140,19 +142,31 @@ export default function AdminComplaintsScreen() {
     }
   };
 
+  const resolvePhotoUrl = async (uri: string | null, base64Fallback: string) => {
+    if (!uri) return undefined;
+    if (uri.startsWith('http')) return uri;
+    try {
+      return (await uploadComplaintPhoto(uri)) || undefined;
+    } catch {
+      return base64Fallback || undefined;
+    }
+  };
+
   const submitAdd = async () => {
     if (!addForm.title.trim()) return Alert.error('Error', 'Title is required', 4000);
     if (!addBuilding) return Alert.error('Error', 'Select a building', 4000);
     setSubmitting(true);
     try {
+      const photo_url = await resolvePhotoUrl(addImageUri, addPhotoBase64Ref.current);
       await api.post('/complaints/admin', {
         ...addForm,
         building_id: addBuilding.id,
-        photo_url: addPhotoBase64Ref.current || undefined,
+        photo_url,
       });
       setAddForm({ title: '', description: '', category: 'General' });
       addPhotoBase64Ref.current = '';
       setAddBuilding(null); setAddImageUri(null); setShowAdd(false);
+      await cacheManager.invalidate('complaints:*');
       fetchComplaints();
     } catch (e: any) {
       Alert.error('Error', e.response?.data?.error || 'Failed', 4000);
@@ -175,11 +189,14 @@ export default function AdminComplaintsScreen() {
     if (!editTarget) return;
     setSaving(true);
     try {
+      const photo_url = await resolvePhotoUrl(editImageUri, editPhotoBase64Ref.current);
       await api.put(`/complaints/admin/${editTarget.id}`, {
         ...editForm,
-        photo_url: editPhotoBase64Ref.current || editForm.photo_url || undefined,
+        photo_url,
       });
-      setShowEdit(false); fetchComplaints();
+      setShowEdit(false);
+      await cacheManager.invalidate('complaints:*');
+      fetchComplaints();
     } catch (e: any) {
       Alert.error('Error', e.response?.data?.error || 'Failed', 4000);
     } finally { setSaving(false); }
@@ -190,7 +207,11 @@ export default function AdminComplaintsScreen() {
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete', style: 'destructive', onPress: async () => {
-          try { await api.delete(`/complaints/admin/${id}`); fetchComplaints(); }
+          try {
+            await api.delete(`/complaints/admin/${id}`);
+            await cacheManager.invalidate('complaints:*');
+            fetchComplaints();
+          }
           catch (e: any) { Alert.error('Error', e.response?.data?.error || 'Failed', 4000); }
         },
       },

@@ -9,6 +9,8 @@ import { useActivityLog } from '../hooks/useActivityLog';
 import * as ImagePicker from 'expo-image-picker';
 import api from '../utils/api';
 import { ModuleHeader } from '../components/ModuleHeader';
+import { uploadComplaintPhoto } from '../utils/uploadComplaintPhoto';
+import { cacheManager } from '../utils/CacheManager';
 
 const CATEGORIES = ['General', 'Water', 'Electricity', 'Cleanliness', 'Security', 'Parking', 'Noise', 'Other'];
 const CAT_ICONS: Record<string, string> = {
@@ -95,7 +97,12 @@ export default function ComplaintDetailScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], base64: true, quality: 0.6 });
     if (!result.canceled && result.assets[0]) {
       setEditImageUri(result.assets[0].uri);
-      setEditForm(f => ({ ...f, photo_url: `data:image/jpeg;base64,${result.assets[0].base64}` }));
+      setEditForm(f => ({
+        ...f,
+        photo_url: result.assets[0].base64
+          ? `data:image/jpeg;base64,${result.assets[0].base64}`
+          : f.photo_url,
+      }));
     }
   };
 
@@ -107,6 +114,7 @@ export default function ComplaintDetailScreen() {
       logEvent('complaint_status_updated', 'complaints', { complaint_id: detailItem.id, new_status: updateForm.status });
       setShowUpdate(false);
       setDetailItem({ ...detailItem, status: updateForm.status, remark: updateForm.remark });
+      await cacheManager.invalidate('complaints:*');
     } catch (e: any) {
       Alert.error('Error', e.response?.data?.error || 'Failed to update', 4000);
     } finally { setUpdating(false); }
@@ -116,11 +124,20 @@ export default function ComplaintDetailScreen() {
     if (!detailItem) return;
     setUpdating(true);
     try {
-      await api.put(`/complaints/admin/${detailItem.id}`, editForm);
+      let photo_url = editForm.photo_url;
+      if (editImageUri && !editImageUri.startsWith('http')) {
+        try {
+          photo_url = (await uploadComplaintPhoto(editImageUri)) || photo_url;
+        } catch {
+          // keep data-URI fallback in editForm.photo_url for server-side upload
+        }
+      }
+      await api.put(`/complaints/admin/${detailItem.id}`, { ...editForm, photo_url });
       setShowEdit(false);
-      setDetailItem({ ...detailItem, ...editForm });
+      await cacheManager.invalidate('complaints:*');
+      setDetailItem({ ...detailItem, ...editForm, photo_url });
     } catch (e: any) {
-      Alert.error('Error', e.response?.data?.error || 'Failed', 4000);
+      Alert.error('Error', e.response?.data?.error || 'Failed to update', 4000);
     } finally { setUpdating(false); }
   };
 
@@ -132,6 +149,7 @@ export default function ComplaintDetailScreen() {
         text: 'Delete', style: 'destructive', onPress: async () => {
           try {
             await api.delete(`/complaints/admin/${detailItem.id}`);
+            await cacheManager.invalidate('complaints:*');
             router.back();
           } catch (e: any) { Alert.error('Error', e.response?.data?.error || 'Failed', 4000); }
         },

@@ -2,7 +2,7 @@
   "expo": {
     "name": "My Building",
     "slug": "My_Building",
-    "version": "1.17.42",
+    "version": "1.17.43",
     "orientation": "default",
     "icon": "./assets/images/icon.png",
     "splash": {
@@ -25,7 +25,7 @@
       "softwareKeyboardLayoutMode": "resize",
       "package": "com.f1square.mybuilding",
       "googleServicesFile": "./google-services.json",
-      "versionCode": 32,
+      "versionCode": 33,
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
@@ -70,7 +70,17 @@
           "cameraPermission": "Allow My Building to use your camera for visitor photos."
         }
       ],
-      "./plugins/withAndroidPlayCompliance"
+      "./plugins/withAndroidPlayCompliance",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "extraProguardRules": "-keep class com.swmansion.reanimated.** { *; }\n-keep class com.facebook.react.turbomodule.** { *; }\n-keep class com.facebook.hermes.** { *; }\n-keep class com.facebook.jni.** { *; }\n-keep class expo.modules.** { *; }\n-dontwarn com.facebook.react.**\n-dontwarn com.facebook.hermes.**\n-dontwarn expo.modules.**"
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

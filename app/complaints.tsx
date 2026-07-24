@@ -15,7 +15,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { cacheManager, CACHE_PRESETS } from '../utils/CacheManager';
-import { uploadComplaintPhoto } from '../utils/uploadComplaintPhoto';
+import { uploadComplaintPhotos, getComplaintPhotos, MAX_COMPLAINT_PHOTOS } from '../utils/uploadComplaintPhoto';
 import { ModuleHeader } from '../components/ModuleHeader';
 import BottomSheetModal, { BottomSheetTextInput } from '../components/BottomSheetModal';
 
@@ -94,8 +94,8 @@ export default function ComplaintsScreen() {
   const [form, setForm] = useState({ title: '', description: '', category: 'General' });
   const [formError, setFormError] = useState<string | null>(null);
   const [titleError, setTitleError] = useState<string | null>(null);
-  const [imageUri, setImageUri] = useState<string | null>(null);
-  const photoBase64Ref = useRef('');
+  const [imageUris, setImageUris] = useState<string[]>([]);
+  const photoBase64MapRef = useRef<Record<string, string>>({});
 
   const [selectedComplaint, setSelectedComplaint] = useState<any>(null);
   const [showDetail, setShowDetail] = useState(false);
@@ -195,23 +195,43 @@ export default function ComplaintsScreen() {
   );
 
   const pickImage = async () => {
+    const remaining = MAX_COMPLAINT_PHOTOS - imageUris.length;
+    if (remaining <= 0) {
+      Alert.error('Limit reached', `You can attach up to ${MAX_COMPLAINT_PHOTOS} photos.`, 3000);
+      return;
+    }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       base64: true,
       quality: 0.5,
+      allowsMultipleSelection: true,
+      selectionLimit: remaining,
     });
-    if (!result.canceled && result.assets[0]) {
-      setImageUri(result.assets[0].uri);
-      photoBase64Ref.current = result.assets[0].base64
-        ? `data:image/jpeg;base64,${result.assets[0].base64}`
-        : '';
+    if (result.canceled || !result.assets?.length) return;
+
+    const nextUris: string[] = [];
+    const nextMap = { ...photoBase64MapRef.current };
+    for (const asset of result.assets) {
+      if (!asset.uri || imageUris.includes(asset.uri) || nextUris.includes(asset.uri)) continue;
+      if (imageUris.length + nextUris.length >= MAX_COMPLAINT_PHOTOS) break;
+      nextUris.push(asset.uri);
+      if (asset.base64) nextMap[asset.uri] = `data:image/jpeg;base64,${asset.base64}`;
     }
+    photoBase64MapRef.current = nextMap;
+    if (nextUris.length) setImageUris((prev) => [...prev, ...nextUris].slice(0, MAX_COMPLAINT_PHOTOS));
+  };
+
+  const removeImage = (uri: string) => {
+    setImageUris((prev) => prev.filter((u) => u !== uri));
+    const next = { ...photoBase64MapRef.current };
+    delete next[uri];
+    photoBase64MapRef.current = next;
   };
 
   const resetForm = () => {
     setForm({ title: '', description: '', category: 'General' });
-    setImageUri(null);
-    photoBase64Ref.current = '';
+    setImageUris([]);
+    photoBase64MapRef.current = {};
     setFormError(null);
     setTitleError(null);
   };
@@ -225,14 +245,21 @@ export default function ComplaintsScreen() {
     setTitleError(null);
     setSubmitting(true);
     try {
-      let photo_url: string | undefined;
-      if (imageUri) {
+      let photo_url: string[] | undefined;
+      if (imageUris.length) {
         try {
-          photo_url = (await uploadComplaintPhoto(imageUri)) || undefined;
+          photo_url = await uploadComplaintPhotos(imageUris);
         } catch {
-          // Fallback: data-URI handled server-side by resolveComplaintPhotoUrl
-          photo_url = photoBase64Ref.current || undefined;
+          photo_url = undefined;
         }
+        if (!photo_url?.length) {
+          // Fallback: data-URIs handled server-side
+          photo_url = imageUris
+            .map((uri) => photoBase64MapRef.current[uri])
+            .filter(Boolean)
+            .slice(0, MAX_COMPLAINT_PHOTOS);
+        }
+        if (!photo_url.length) photo_url = undefined;
       }
       await api.post('/complaints', {
         ...form,
@@ -478,17 +505,23 @@ export default function ComplaintsScreen() {
           scrollEnabled
         />
 
-        <Text style={styles.label}>Attach Photo (optional)</Text>
-        <TouchableOpacity style={styles.photoPicker} onPress={pickImage}>
-          {imageUri ? (
-            <Image source={{ uri: imageUri }} style={styles.photoPreview} />
-          ) : (
-            <View style={styles.photoPlaceholder}>
-              <Ionicons name="image-outline" size={32} color={Colors.textMuted} />
-              <Text style={styles.photoPlaceholderText}>Tap to select photo</Text>
+        <Text style={styles.label}>Attach Photos (optional, max {MAX_COMPLAINT_PHOTOS})</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoRow} contentContainerStyle={styles.photoRowContent}>
+          {imageUris.map((uri) => (
+            <View key={uri} style={styles.photoThumbWrap}>
+              <Image source={{ uri }} style={styles.photoThumb} />
+              <TouchableOpacity style={styles.photoRemoveBtn} onPress={() => removeImage(uri)} hitSlop={8}>
+                <Ionicons name="close-circle" size={22} color={Colors.danger} />
+              </TouchableOpacity>
             </View>
-          )}
-        </TouchableOpacity>
+          ))}
+          {imageUris.length < MAX_COMPLAINT_PHOTOS ? (
+            <TouchableOpacity style={styles.photoAddBtn} onPress={pickImage}>
+              <Ionicons name="image-outline" size={28} color={Colors.textMuted} />
+              <Text style={styles.photoPlaceholderText}>{imageUris.length ? 'Add' : 'Add photos'}</Text>
+            </TouchableOpacity>
+          ) : null}
+        </ScrollView>
 
         {formError ? (
           <View style={styles.formErrorBanner}>
@@ -575,13 +608,19 @@ export default function ComplaintsScreen() {
                     </View>
                   ) : null}
 
-                  {selectedComplaint.photo_url ? (
+                  {getComplaintPhotos(selectedComplaint).length ? (
                     <View style={styles.detailBlock}>
-                      <Text style={styles.detailBlockLabel}>Attachment</Text>
-                      <Pressable onPress={() => setImageViewerUri(selectedComplaint.photo_url)}>
-                        <Image source={{ uri: selectedComplaint.photo_url }} style={styles.detailPhoto} resizeMode="cover" />
-                        <Text style={styles.tapToExpand}>Tap to expand</Text>
-                      </Pressable>
+                      <Text style={styles.detailBlockLabel}>
+                        Attachment{getComplaintPhotos(selectedComplaint).length > 1 ? 's' : ''}
+                      </Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photoRowContent}>
+                        {getComplaintPhotos(selectedComplaint).map((uri) => (
+                          <Pressable key={uri} onPress={() => setImageViewerUri(uri)}>
+                            <Image source={{ uri }} style={styles.detailPhotoThumb} resizeMode="cover" />
+                          </Pressable>
+                        ))}
+                      </ScrollView>
+                      <Text style={styles.tapToExpand}>Tap a photo to expand</Text>
                     </View>
                   ) : null}
 
@@ -883,9 +922,19 @@ const styles = StyleSheet.create({
     borderRadius: 14, borderWidth: 1.5, borderColor: Colors.border,
     borderStyle: 'dashed', marginBottom: 20, overflow: 'hidden',
   },
+  photoRow: { marginBottom: 16 },
+  photoRowContent: { gap: 10, paddingVertical: 4 },
+  photoThumbWrap: { position: 'relative' },
+  photoThumb: { width: 88, height: 88, borderRadius: 12, backgroundColor: Colors.bg },
+  photoRemoveBtn: { position: 'absolute', top: -6, right: -6, backgroundColor: Colors.white, borderRadius: 11 },
+  photoAddBtn: {
+    width: 88, height: 88, borderRadius: 12, borderWidth: 1.5, borderColor: Colors.border,
+    borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', gap: 4,
+  },
   photoPlaceholder: { height: 110, justifyContent: 'center', alignItems: 'center', gap: 8 },
-  photoPlaceholderText: { fontSize: 13, color: Colors.textMuted },
+  photoPlaceholderText: { fontSize: 12, color: Colors.textMuted },
   photoPreview: { width: '100%', height: 160 },
+  detailPhotoThumb: { width: 120, height: 120, borderRadius: 12, backgroundColor: Colors.bg },
 
   submitBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,

@@ -416,7 +416,7 @@ export default function ParkingScreen() {
         title={t('parking')}
         rightAction={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            {user?.role === 'user' && (
+            {(user?.role === 'user' || user?.role === 'pramukh') && (
               <ModuleHeaderIconButton icon="add" onPress={() => setShowAddVehicle(true)} />
             )}
             <ModuleHeaderTextButton

@@ -36,6 +36,7 @@ const TYPE_TO_ROUTE: Record<string, string> = {
   expense: '/expenses',
   meeting: '/meetings', join_request: '/join-requests',
   join_response: '/join-requests', parking_report: '/parking',
+  newspaper: '/newspaper',
 };
 
 // Pastel bg + icon color pairs matching the reference design

@@ -1,5 +1,7 @@
 import api from './api';
 
+export const MAX_COMPLAINT_PHOTOS = 5;
+
 /**
  * Upload a local image URI to Cloudinary via /complaints/upload-attachment.
  * Returns the hosted photo_url, or null on failure.
@@ -30,4 +32,28 @@ export async function uploadComplaintPhoto(
     headers: { 'Content-Type': 'multipart/form-data' },
   });
   return res.data?.photo_url || null;
+}
+
+/** Upload up to MAX_COMPLAINT_PHOTOS local URIs sequentially. */
+export async function uploadComplaintPhotos(uris: string[]): Promise<string[]> {
+  const urls: string[] = [];
+  for (const uri of uris.slice(0, MAX_COMPLAINT_PHOTOS)) {
+    try {
+      const url = await uploadComplaintPhoto(uri);
+      if (url) urls.push(url);
+    } catch {
+      /* skip failed uploads; others may still succeed */
+    }
+  }
+  return urls;
+}
+
+/** Normalize detail/list payloads that may have photo_url and/or photo_urls. */
+export function getComplaintPhotos(item: { photo_url?: string | null; photo_urls?: string[] } | null | undefined): string[] {
+  if (!item) return [];
+  if (Array.isArray(item.photo_urls) && item.photo_urls.length) {
+    return item.photo_urls.filter(Boolean).slice(0, MAX_COMPLAINT_PHOTOS);
+  }
+  if (item.photo_url) return [item.photo_url];
+  return [];
 }

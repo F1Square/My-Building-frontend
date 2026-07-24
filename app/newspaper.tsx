@@ -15,7 +15,9 @@ import api from '../utils/api';
 import { cacheManager, CACHE_PRESETS } from '../utils/CacheManager';
 import { ModuleHeader, ModuleHeaderIconButton } from '../components/ModuleHeader';
 import { ExpenseDatePicker } from '../components/ExpenseDatePicker';
+import BottomSheetModal, { BottomSheetTextInput } from '../components/BottomSheetModal';
 import { localDateString } from '../utils/expenseDate';
+import { useMarkNotificationsRead } from '../hooks/useMarkNotificationsRead';
 
 const LANGUAGES = [
   { key: 'english', label: 'English', flag: '🇬🇧' },
@@ -25,6 +27,15 @@ const LANGUAGES = [
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const FULL_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+type EditionMeta = {
+  id: string;
+  title: string;
+  date: string;
+  language: string;
+  source?: string;
+  kind?: 'pdf' | 'external' | string;
+};
 
 function todayStr() { return localDateString(); }
 
@@ -105,11 +116,15 @@ export default function NewspaperScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
+  useMarkNotificationsRead(['newspaper']);
 
   const [language, setLanguage] = useState('english');
   const [selectedDate, setSelectedDate] = useState(todayStr());
+  const [editions, setEditions] = useState<EditionMeta[]>([]);
   const [editionUrl, setEditionUrl] = useState<string | null>(null);
+  const [activeTitle, setActiveTitle] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [openingId, setOpeningId] = useState<string | null>(null);
   const [noAddon, setNoAddon] = useState(false);
   const [notAvailable, setNotAvailable] = useState(false);
   const [availableDates, setAvailableDates] = useState<string[]>([]);
@@ -125,6 +140,7 @@ export default function NewspaperScreen() {
   const [uploadFile, setUploadFile] = useState<{ uri: string; name: string; mimeType: string } | null>(null);
   const [uploadDate, setUploadDate] = useState(todayStr());
   const [uploadLang, setUploadLang] = useState('english');
+  const [uploadTitle, setUploadTitle] = useState('');
   const [uploading, setUploading] = useState(false);
   const [recentEditions, setRecentEditions] = useState<any[]>([]);
   const [pdfLoadFailed, setPdfLoadFailed] = useState(false);
@@ -175,31 +191,53 @@ export default function NewspaperScreen() {
     } catch {}
   }, [language, user?.role]);
 
-  const fetchEdition = useCallback(async () => {
-    setLoading(true);
+  const closeReader = useCallback(() => {
     setEditionUrl(null);
     setEditionKind(null);
+    setActiveTitle(null);
+    setPdfLoadFailed(false);
+    setOpeningId(null);
+  }, []);
+
+  const fetchEditions = useCallback(async () => {
+    setLoading(true);
+    closeReader();
+    setEditions([]);
     setNotAvailable(false);
     setNoAddon(false);
-    setPdfLoadFailed(false);
     try {
       const res = await api.get('/newspapers', { params: { date: selectedDate, language } });
-      setEditionUrl(res.data.url);
-      // Backend returns kind: 'pdf' for admin-uploaded files, 'external' for
-      // URL-pattern fallbacks pointing at third-party newspaper websites.
-      setEditionKind(res.data.kind === 'external' ? 'external' : 'pdf');
+      const list = Array.isArray(res.data?.editions) ? res.data.editions : [];
+      setEditions(list);
+      if (!list.length) setNotAvailable(true);
     } catch (e: any) {
       const errCode = e.response?.data?.error;
       if (errCode === 'newspaper_addon_required') {
         setNoAddon(true);
       } else {
-        // not_available (404) or any other error — show friendly message, no console noise
         setNotAvailable(true);
       }
     } finally {
       setLoading(false);
     }
-  }, [selectedDate, language]);
+  }, [selectedDate, language, closeReader]);
+
+  const openEdition = useCallback(async (item: EditionMeta) => {
+    setOpeningId(item.id);
+    setPdfLoadFailed(false);
+    try {
+      const res = await api.get(`/newspapers/item/${item.id}`);
+      setEditionUrl(res.data.url);
+      setEditionKind(res.data.kind === 'external' ? 'external' : 'pdf');
+      setActiveTitle(res.data.title || item.title);
+    } catch (e: any) {
+      const errCode = e.response?.data?.error;
+      if (errCode === 'newspaper_addon_required') setNoAddon(true);
+      else Alert.error('Error', e.response?.data?.error || 'Could not open newspaper', 4000);
+    } finally {
+      setOpeningId(null);
+    }
+  }, []);
 
   const fetchRecentEditions = useCallback(async () => {
     if (!isAdmin) return;
@@ -217,10 +255,11 @@ export default function NewspaperScreen() {
   useFocusEffect(useCallback(() => {
     fetchAvailableDates();
     if (isAdmin) fetchRecentEditions();
-    else fetchEdition();
-  }, [fetchAvailableDates, fetchEdition, fetchRecentEditions, isAdmin]));
+    else fetchEditions();
+  }, [fetchAvailableDates, fetchEditions, fetchRecentEditions, isAdmin]));
 
   const handleDateSelect = (date: string) => {
+    closeReader();
     setSelectedDate(date);
     setShowCalendar(false);
   };
@@ -235,22 +274,26 @@ export default function NewspaperScreen() {
   );
 
   const submitUpload = async () => {
+    const title = uploadTitle.trim();
+    if (!title) return Alert.error('Error', 'Please enter a newspaper title', 4000);
     if (!uploadFile) return Alert.error('Error', 'Please select a PDF file', 4000);
     setUploading(true);
     try {
       const formData = new FormData();
       formData.append('date', uploadDate);
       formData.append('language', uploadLang);
+      formData.append('title', title);
       formData.append('file', { uri: uploadFile.uri, name: uploadFile.name, type: uploadFile.mimeType } as any);
       await api.post('/newspapers', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       Alert.success('Saved', 'Newspaper edition saved successfully', 4000);
       setUploadFile(null);
+      setUploadTitle('');
       setShowUpload(false);
       await cacheManager.invalidate('newspaper:*');
       fetchRecentEditions();
       fetchAvailableDates();
       if (uploadDate === selectedDate && uploadLang === language && !isAdmin) {
-        fetchEdition();
+        fetchEditions();
       }
     } catch (e: any) {
       Alert.error('Error', e.response?.data?.error || 'Failed to save', 4000);
@@ -259,8 +302,8 @@ export default function NewspaperScreen() {
     }
   };
 
-  const deleteEdition = (id: string, date: string) => {
-    Alert.alert('Delete Edition', `Delete ${date} edition?`, [
+  const deleteEdition = (id: string, title: string) => {
+    Alert.alert('Delete Edition', `Delete "${title}"?`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
         try {
@@ -268,7 +311,7 @@ export default function NewspaperScreen() {
           await cacheManager.invalidate('newspaper:*');
           fetchRecentEditions();
           fetchAvailableDates();
-          if (!isAdmin) fetchEdition();
+          if (!isAdmin) fetchEditions();
         } catch (e: any) {
           Alert.error('Error', e.response?.data?.error || 'Failed', 4000);
         }
@@ -348,6 +391,7 @@ export default function NewspaperScreen() {
               setUploadDate(todayStr());
               setUploadLang(language);
               setUploadFile(null);
+              setUploadTitle('');
               setShowUpload(true);
             }}
           />
@@ -360,7 +404,7 @@ export default function NewspaperScreen() {
           <TouchableOpacity
             key={l.key}
             style={[styles.langTab, language === l.key && styles.langTabActive]}
-            onPress={() => setLanguage(l.key)}
+            onPress={() => { closeReader(); setLanguage(l.key); }}
           >
             <Text style={styles.langFlag}>{l.flag}</Text>
             <Text style={[styles.langLabel, language === l.key && styles.langLabelActive]}>{l.label}</Text>
@@ -389,7 +433,6 @@ export default function NewspaperScreen() {
           <ActivityIndicator size="large" color={Colors.primary} />
         </View>
       ) : isAdmin ? (
-        // Admin: show recent editions list
         <FlatList
           data={editionsForTab}
           keyExtractor={i => i.id}
@@ -406,10 +449,10 @@ export default function NewspaperScreen() {
           renderItem={({ item }) => (
             <View style={styles.editionCard}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.editionDate}>{item.date}</Text>
-                <Text style={styles.editionLang}>{item.language} · {item.source}</Text>
+                <Text style={styles.editionDate}>{item.title || 'Newspaper'}</Text>
+                <Text style={styles.editionLang}>{item.date} · {item.language} · {item.source}</Text>
               </View>
-              <TouchableOpacity onPress={() => deleteEdition(item.id, item.date)} style={styles.deleteBtn} testID="delete-edition-btn">
+              <TouchableOpacity onPress={() => deleteEdition(item.id, item.title || item.date)} style={styles.deleteBtn} testID="delete-edition-btn">
                 <Ionicons name="trash-outline" size={18} color={Colors.danger} />
               </TouchableOpacity>
             </View>
@@ -424,6 +467,61 @@ export default function NewspaperScreen() {
             <Text style={styles.upgradeBtnText}>Enable Add-On</Text>
           </TouchableOpacity>
         </View>
+      ) : editionUrl ? (
+        <View style={{ flex: 1 }}>
+          <View style={styles.readerBar}>
+            <Text style={styles.readerTitle} numberOfLines={1}>{activeTitle || 'Newspaper'}</Text>
+            <TouchableOpacity style={styles.closeReaderBtn} onPress={closeReader} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close" size={20} color={Colors.text} />
+              <Text style={styles.closeReaderText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+          {viewerHtml ? (
+            <WebView
+              originWhitelist={['*']}
+              source={{ html: viewerHtml }}
+              style={{ flex: 1, backgroundColor: '#1f2937' }}
+              startInLoadingState
+              renderLoading={() => (
+                <View style={styles.viewerLoading}>
+                  <ActivityIndicator size="large" color={Colors.primary} />
+                </View>
+              )}
+              javaScriptEnabled
+              domStorageEnabled
+              setSupportMultipleWindows={false}
+              allowFileAccess={false}
+              allowFileAccessFromFileURLs={false}
+              allowUniversalAccessFromFileURLs={false}
+              allowsLinkPreview={false}
+              sharedCookiesEnabled={false}
+              thirdPartyCookiesEnabled={false}
+              mixedContentMode="always"
+              onShouldStartLoadWithRequest={(req) => req.url.startsWith('data:') || req.url.startsWith('about:') || req.url === 'about:blank'}
+              onError={() => setPdfLoadFailed(true)}
+              onHttpError={() => setPdfLoadFailed(true)}
+              onMessage={(e) => {
+                try {
+                  const msg = JSON.parse(e.nativeEvent.data);
+                  if (msg.type === 'error') setPdfLoadFailed(true);
+                } catch (_) {}
+              }}
+            />
+          ) : editionKind === 'external' ? (
+            <WebView
+              originWhitelist={['*']}
+              source={{ uri: editionUrl }}
+              style={{ flex: 1 }}
+              startInLoadingState
+              renderLoading={() => <ActivityIndicator style={{ marginTop: 60 }} size="large" color={Colors.primary} />}
+              setSupportMultipleWindows={false}
+              allowFileAccess={false}
+              allowsLinkPreview={false}
+              onError={() => setPdfLoadFailed(true)}
+              onHttpError={() => setPdfLoadFailed(true)}
+            />
+          ) : null}
+        </View>
       ) : notAvailable ? (
         <View style={styles.empty}>
           <Ionicons name="newspaper-outline" size={52} color={Colors.border} />
@@ -432,59 +530,43 @@ export default function NewspaperScreen() {
             No {LANGUAGES.find(l => l.key === language)?.label || language} edition for this date. Try another date or language tab.
           </Text>
         </View>
-      ) : viewerHtml ? (
-        <View style={{ flex: 1 }}>
-          <WebView
-            originWhitelist={['*']}
-            source={{ html: viewerHtml }}
-            style={{ flex: 1, backgroundColor: '#1f2937' }}
-            startInLoadingState
-            renderLoading={() => (
-              <View style={styles.viewerLoading}>
-                <ActivityIndicator size="large" color={Colors.primary} />
+      ) : (
+        <FlatList
+          data={editions}
+          keyExtractor={(i) => i.id}
+          contentContainerStyle={{ padding: 16, flexGrow: 1 }}
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <Ionicons name="newspaper-outline" size={52} color={Colors.border} />
+              <Text style={styles.emptyTitle}>No newspapers</Text>
+            </View>
+          }
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={styles.editionCard}
+              onPress={() => openEdition(item)}
+              disabled={openingId === item.id}
+              activeOpacity={0.75}
+            >
+              <View style={styles.editionIconWrap}>
+                <Ionicons name="newspaper-outline" size={22} color={Colors.primary} />
               </View>
-            )}
-            javaScriptEnabled
-            domStorageEnabled
-            setSupportMultipleWindows={false}
-            allowFileAccess={false}
-            allowFileAccessFromFileURLs={false}
-            allowUniversalAccessFromFileURLs={false}
-            allowsLinkPreview={false}
-            sharedCookiesEnabled={false}
-            thirdPartyCookiesEnabled={false}
-            mixedContentMode="always"
-            // Block any download attempt the WebView might surface.
-            onShouldStartLoadWithRequest={(req) => req.url.startsWith('data:') || req.url.startsWith('about:') || req.url === 'about:blank'}
-            onError={() => setPdfLoadFailed(true)}
-            onHttpError={() => setPdfLoadFailed(true)}
-            onMessage={(e) => {
-              try {
-                const msg = JSON.parse(e.nativeEvent.data);
-                if (msg.type === 'error') setPdfLoadFailed(true);
-              } catch (_) {}
-            }}
-          />
-        </View>
-      ) : editionUrl && editionKind === 'external' ? (
-        <WebView
-          originWhitelist={['*']}
-          source={{ uri: editionUrl }}
-          style={{ flex: 1 }}
-          startInLoadingState
-          renderLoading={() => <ActivityIndicator style={{ marginTop: 60 }} size="large" color={Colors.primary} />}
-          setSupportMultipleWindows={false}
-          allowFileAccess={false}
-          allowsLinkPreview={false}
-          onError={() => setPdfLoadFailed(true)}
-          onHttpError={() => setPdfLoadFailed(true)}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.editionDate}>{item.title}</Text>
+                <Text style={styles.editionLang}>{item.language} · tap to read</Text>
+              </View>
+              {openingId === item.id
+                ? <ActivityIndicator size="small" color={Colors.primary} />
+                : <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />}
+            </TouchableOpacity>
+          )}
         />
-      ) : null}
+      )}
 
       {pdfLoadFailed && !!editionUrl && (
         <View style={styles.errorBanner}>
           <Text style={styles.errorBannerText}>
-            Could not load newspaper. Pull down to retry or check back shortly.
+            Could not load newspaper. Close and try again shortly.
           </Text>
         </View>
       )}
@@ -503,46 +585,54 @@ export default function NewspaperScreen() {
         </TouchableOpacity>
       </Modal>
 
-      {/* Admin Upload Modal */}
-      <Modal visible={showUpload} transparent animationType="slide">
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowUpload(false)}>
-          <TouchableOpacity activeOpacity={1} style={styles.uploadSheet}>
-            <View style={styles.sheetHandle} />
-            <Text style={styles.sheetTitle}>Upload Newspaper</Text>
+      {/* Admin Upload Sheet */}
+      <BottomSheetModal
+        visible={showUpload}
+        onClose={() => setShowUpload(false)}
+        title="Upload Newspaper"
+        snapPoints={['42%', '85%']}
+      >
+        <ExpenseDatePicker
+          label="Date"
+          value={uploadDate}
+          onChange={setUploadDate}
+        />
 
-            <ExpenseDatePicker
-              label="Date"
-              value={uploadDate}
-              onChange={setUploadDate}
-            />
+        <Text style={styles.inputLabel}>Title *</Text>
+        <BottomSheetTextInput
+          style={styles.titleInput}
+          value={uploadTitle}
+          onChangeText={setUploadTitle}
+          placeholder="e.g. Times of India"
+          placeholderTextColor={Colors.textMuted}
+          maxLength={150}
+        />
 
-            <Text style={styles.inputLabel}>Language</Text>
-            <View style={styles.langRow}>
-              {LANGUAGES.map(l => (
-                <TouchableOpacity
-                  key={l.key}
-                  style={[styles.langChip, uploadLang === l.key && styles.langChipActive]}
-                  onPress={() => setUploadLang(l.key)}
-                >
-                  <Text style={[styles.langChipText, uploadLang === l.key && { color: Colors.white }]}>{l.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <Text style={styles.inputLabel}>PDF File</Text>
-            <TouchableOpacity testID="pick-pdf-btn" style={styles.pdfPickerBtn} onPress={pickPdf}>
-              <Ionicons name="document-attach-outline" size={18} color={Colors.primary} />
-              <Text style={styles.pdfPickerText} numberOfLines={1}>
-                {uploadFile ? uploadFile.name : 'Pick PDF'}
-              </Text>
+        <Text style={styles.inputLabel}>Language</Text>
+        <View style={styles.langRow}>
+          {LANGUAGES.map(l => (
+            <TouchableOpacity
+              key={l.key}
+              style={[styles.langChip, uploadLang === l.key && styles.langChipActive]}
+              onPress={() => setUploadLang(l.key)}
+            >
+              <Text style={[styles.langChipText, uploadLang === l.key && { color: Colors.white }]}>{l.label}</Text>
             </TouchableOpacity>
+          ))}
+        </View>
 
-            <TouchableOpacity style={[styles.saveBtn, uploading && { opacity: 0.5 }]} onPress={submitUpload} disabled={uploading}>
-              {uploading ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.saveBtnText}>Save Edition</Text>}
-            </TouchableOpacity>
-          </TouchableOpacity>
+        <Text style={styles.inputLabel}>PDF File</Text>
+        <TouchableOpacity testID="pick-pdf-btn" style={styles.pdfPickerBtn} onPress={pickPdf}>
+          <Ionicons name="document-attach-outline" size={18} color={Colors.primary} />
+          <Text style={styles.pdfPickerText} numberOfLines={1}>
+            {uploadFile ? uploadFile.name : 'Pick PDF'}
+          </Text>
         </TouchableOpacity>
-      </Modal>
+
+        <TouchableOpacity style={[styles.saveBtn, uploading && { opacity: 0.5 }]} onPress={submitUpload} disabled={uploading}>
+          {uploading ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.saveBtnText}>Save Edition</Text>}
+        </TouchableOpacity>
+      </BottomSheetModal>
     </View>
   );
 }
@@ -605,13 +695,31 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 8,
     shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
   },
+  editionIconWrap: {
+    width: 40, height: 40, borderRadius: 10, marginRight: 12,
+    backgroundColor: Colors.primary + '15', alignItems: 'center', justifyContent: 'center',
+  },
   editionDate: { fontSize: 15, fontWeight: '700', color: Colors.text },
   editionLang: { fontSize: 12, color: Colors.textMuted, marginTop: 2, textTransform: 'capitalize' },
   deleteBtn: { padding: 8 },
+  readerBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#fff', paddingHorizontal: 14, paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
+  },
+  readerTitle: { flex: 1, fontSize: 15, fontWeight: '700', color: Colors.text },
+  closeReaderBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: Colors.bg, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6,
+  },
+  closeReaderText: { fontSize: 13, fontWeight: '700', color: Colors.text },
+  titleInput: {
+    borderWidth: 1.5, borderColor: Colors.border, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 11, fontSize: 14, color: Colors.text,
+  },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
   calendarSheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 36 },
-  uploadSheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 40 },
   sheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: Colors.border, alignSelf: 'center', marginBottom: 16 },
   sheetTitle: { fontSize: 18, fontWeight: '800', color: Colors.text, marginBottom: 16 },
   todayBtn: { backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 12, alignItems: 'center', marginTop: 12 },

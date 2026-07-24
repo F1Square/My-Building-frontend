@@ -560,7 +560,7 @@ export default function ExpensesDetailScreen() {
         onClose={() => setShowSetBalance(false)}
         title={summary?.opening_balance !== null && summary?.opening_balance !== undefined ? 'Update Balance' : 'Set Balance'}
         subtitle="Enter the current balance for this wing"
-        snapPoints={['42%']}
+        snapPoints={['42%', '85%']}
       >
         <Text style={styles.label}>Balance (₹) *</Text>
         <BottomSheetTextInput

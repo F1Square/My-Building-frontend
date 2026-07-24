@@ -4,7 +4,7 @@ import { Colors } from '../constants/colors';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   TextInput, KeyboardAvoidingView, Platform, ActivityIndicator,
-  RefreshControl, Animated, AppState, Keyboard,
+  RefreshControl, Animated, AppState, Keyboard, Dimensions, InteractionManager,
   type NativeSyntheticEvent, type NativeScrollEvent,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,7 +21,17 @@ const POLL_BG_MS = 30000;    // 30s when app is backgrounded
 const NEAR_BOTTOM_PX = 80;
 const ACTIVE_WINDOW_MS = 60000; // Consider "active" if msg received in last 60s
 /** Extra lift so Android IME suggestion/autocomplete strip does not cover the input */
-const ANDROID_IME_EXTRA = 20;
+const ANDROID_IME_EXTRA = 40;
+
+/** Prefer screenY-based inset — more reliable on older Android OEMs than height alone. */
+function androidKeyboardHeight(coords: { height?: number; screenY?: number } | null | undefined): number {
+  if (!coords) return 0;
+  const height = coords.height || 0;
+  const fromScreenY = Number.isFinite(coords.screenY)
+    ? Math.max(0, Dimensions.get('screen').height - (coords.screenY as number))
+    : 0;
+  return Math.max(Math.round(height), Math.round(fromScreenY));
+}
 
 // Sender color palette for avatar backgrounds
 const SENDER_COLORS = [
@@ -132,6 +142,8 @@ export default function ChatScreen() {
   const appStateRef = useRef(AppState.currentState);
   const sendBtnScale = useRef(new Animated.Value(1)).current;
   const keyboardOpeningRef = useRef(false);
+  const keyboardVisibleRef = useRef(false);
+  const baselineWindowHRef = useRef(Dimensions.get('window').height);
   const showJumpRef = useRef(false);
   const initialScrollDoneRef = useRef(false);
   const [androidKeyboardPad, setAndroidKeyboardPad] = useState(0);
@@ -276,14 +288,44 @@ export default function ChatScreen() {
   useEffect(() => {
     if (Platform.OS !== 'android' && Platform.OS !== 'ios') return;
 
-    const applyAndroidPad = (height: number) => {
+    let cancelled = false;
+    let afterInteractionsTask: { cancel: () => void } | null = null;
+
+    // Newer phones: no window resize → full pad. Older adjustResize: subtract shrink to avoid double-lift.
+    // Ignore height 0 while open — old OEMs fire that after show and wipe the pad.
+    const applyAndroidPad = (height: number, { allowClear = false } = {}) => {
       if (height <= 0) {
-        setAndroidKeyboardPad(0);
+        if (allowClear || !keyboardVisibleRef.current) setAndroidKeyboardPad(0);
         return;
       }
-      // height includes keys; +EXTRA clears the suggestion bar above the keyboard
-      const next = Math.max(0, Math.round(height) - Math.round(insets.bottom) + ANDROID_IME_EXTRA);
+      const alreadyResized = Math.max(
+        0,
+        Math.round(baselineWindowHRef.current) - Math.round(Dimensions.get('window').height),
+      );
+      const remaining = Math.max(0, height - alreadyResized);
+      const next = remaining > 0
+        ? Math.max(0, remaining - Math.round(insets.bottom) + ANDROID_IME_EXTRA)
+        : 0;
       setAndroidKeyboardPad((prev) => (prev === next ? prev : next));
+    };
+
+    /** After IME/layout interactions finish — no fixed ms delay. */
+    const afterKeyboardSettled = (
+      fallbackCoords: { height?: number; screenY?: number } | undefined,
+      shouldScroll: boolean,
+    ) => {
+      afterInteractionsTask?.cancel();
+      afterInteractionsTask = InteractionManager.runAfterInteractions(() => {
+        if (cancelled) return;
+        requestAnimationFrame(() => {
+          if (cancelled) return;
+          if (Platform.OS === 'android' && keyboardVisibleRef.current) {
+            applyAndroidPad(androidKeyboardHeight(Keyboard.metrics() ?? fallbackCoords));
+          }
+          keyboardOpeningRef.current = false;
+          if (shouldScroll) scrollToBottom(true);
+        });
+      });
     };
 
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -291,32 +333,45 @@ export default function ChatScreen() {
 
     const showSub = Keyboard.addListener(showEvent, (e) => {
       keyboardOpeningRef.current = true;
-      if (Platform.OS === 'android') applyAndroidPad(e.endCoordinates.height);
-      if (stickToBottomRef.current) {
-        const delay = Platform.OS === 'ios' ? 60 : 120;
-        setTimeout(() => {
-          keyboardOpeningRef.current = false;
-          scrollToBottom(true);
-        }, delay);
-      } else {
-        setTimeout(() => { keyboardOpeningRef.current = false; }, 150);
+      keyboardVisibleRef.current = true;
+      if (Platform.OS === 'android') {
+        applyAndroidPad(androidKeyboardHeight(e.endCoordinates));
       }
+      afterKeyboardSettled(e.endCoordinates, stickToBottomRef.current);
     });
     const hideSub = Keyboard.addListener(hideEvent, () => {
       keyboardOpeningRef.current = false;
-      if (Platform.OS === 'android') setAndroidKeyboardPad(0);
+      keyboardVisibleRef.current = false;
+      if (Platform.OS === 'android') {
+        applyAndroidPad(0, { allowClear: true });
+        baselineWindowHRef.current = Dimensions.get('window').height;
+      }
     });
-    // Suggestion bar can appear after show — refresh pad when IME frame changes
+    // Suggestion bar / IME frame updates — async re-apply when the system reports a new frame
     const frameSub = Platform.OS === 'android'
       ? Keyboard.addListener('keyboardDidChangeFrame', (e) => {
-          applyAndroidPad(e.endCoordinates.height);
+          applyAndroidPad(androidKeyboardHeight(e.endCoordinates));
+        })
+      : null;
+
+    const dimSub = Platform.OS === 'android'
+      ? Dimensions.addEventListener('change', ({ window }) => {
+          if (!keyboardVisibleRef.current) {
+            baselineWindowHRef.current = window.height;
+          } else {
+            // Window resized under an open keyboard — recompute pad (old adjustResize)
+            applyAndroidPad(androidKeyboardHeight(Keyboard.metrics()));
+          }
         })
       : null;
 
     return () => {
+      cancelled = true;
+      afterInteractionsTask?.cancel();
       showSub.remove();
       hideSub.remove();
       frameSub?.remove();
+      dimSub?.remove();
     };
   }, [scrollToBottom, insets.bottom]);
 
@@ -534,7 +589,11 @@ export default function ChatScreen() {
                   keyboardOpeningRef.current = true;
                   stickToBottomRef.current = true;
                   requestAnimationFrame(() => scrollToBottom(false));
-                  setTimeout(() => { keyboardOpeningRef.current = false; }, 280);
+                  InteractionManager.runAfterInteractions(() => {
+                    requestAnimationFrame(() => {
+                      keyboardOpeningRef.current = false;
+                    });
+                  });
                 }}
               />
             </View>

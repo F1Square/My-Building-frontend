@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useRef, type RefObject } from 'react';
+import React, { useState, useCallback, useMemo, useRef, type MutableRefObject } from 'react';
 import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../constants/colors';
 import {
@@ -15,7 +15,7 @@ import type { Building } from '../hooks/useBuildings';
 import { useBuildings } from '../hooks/useBuildings';
 import { ModuleHeader, ModuleHeaderIconButton } from '../components/ModuleHeader';
 import BottomSheetModal from '../components/BottomSheetModal';
-import { uploadComplaintPhoto } from '../utils/uploadComplaintPhoto';
+import { uploadComplaintPhotos, getComplaintPhotos, MAX_COMPLAINT_PHOTOS } from '../utils/uploadComplaintPhoto';
 import { cacheManager } from '../utils/CacheManager';
 
 const CATEGORIES = ['General', 'Water', 'Electricity', 'Cleanliness', 'Security', 'Parking', 'Noise', 'Other'];
@@ -77,16 +77,16 @@ export default function AdminComplaintsScreen() {
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({ title: '', description: '', category: 'General' });
   const [addBuilding, setAddBuilding] = useState<Building | null>(null);
-  const [addImageUri, setAddImageUri] = useState<string | null>(null);
-  const addPhotoBase64Ref = useRef('');
+  const [addImageUris, setAddImageUris] = useState<string[]>([]);
+  const addPhotoBase64MapRef = useRef<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
 
   // Edit modal
   const [showEdit, setShowEdit] = useState(false);
   const [editTarget, setEditTarget] = useState<any>(null);
-  const [editForm, setEditForm] = useState({ title: '', description: '', category: 'General', status: 'open', remark: '', photo_url: '' });
-  const [editImageUri, setEditImageUri] = useState<string | null>(null);
-  const editPhotoBase64Ref = useRef('');
+  const [editForm, setEditForm] = useState({ title: '', description: '', category: 'General', status: 'open', remark: '' });
+  const [editImageUris, setEditImageUris] = useState<string[]>([]);
+  const editPhotoBase64MapRef = useRef<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
   // Detail modal
@@ -127,29 +127,54 @@ export default function AdminComplaintsScreen() {
     [complaints, activeStatus]
   );
 
-  const pickImage = async (
-    setter: (uri: string | null) => void,
-    base64Ref: RefObject<string>,
+  const pickImages = async (
+    current: string[],
+    setUris: (uris: string[]) => void,
+    base64MapRef: MutableRefObject<Record<string, string>>,
   ) => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'], base64: true, quality: 0.5,
-    });
-    if (!result.canceled && result.assets[0]) {
-      setter(result.assets[0].uri);
-      base64Ref.current = result.assets[0].base64
-        ? `data:image/jpeg;base64,${result.assets[0].base64}`
-        : '';
+    const remaining = MAX_COMPLAINT_PHOTOS - current.length;
+    if (remaining <= 0) {
+      Alert.error('Limit reached', `You can attach up to ${MAX_COMPLAINT_PHOTOS} photos.`, 3000);
+      return;
     }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      base64: true,
+      quality: 0.5,
+      allowsMultipleSelection: true,
+      selectionLimit: remaining,
+    });
+    if (result.canceled || !result.assets?.length) return;
+
+    const nextUris: string[] = [];
+    const nextMap = { ...base64MapRef.current };
+    for (const asset of result.assets) {
+      if (!asset.uri || current.includes(asset.uri) || nextUris.includes(asset.uri)) continue;
+      if (current.length + nextUris.length >= MAX_COMPLAINT_PHOTOS) break;
+      nextUris.push(asset.uri);
+      if (asset.base64) nextMap[asset.uri] = `data:image/jpeg;base64,${asset.base64}`;
+    }
+    base64MapRef.current = nextMap;
+    if (nextUris.length) setUris([...current, ...nextUris].slice(0, MAX_COMPLAINT_PHOTOS));
   };
 
-  const resolvePhotoUrl = async (uri: string | null, base64Fallback: string) => {
-    if (!uri) return undefined;
-    if (uri.startsWith('http')) return uri;
-    try {
-      return (await uploadComplaintPhoto(uri)) || undefined;
-    } catch {
-      return base64Fallback || undefined;
+  const resolvePhotoUrls = async (uris: string[], base64Map: Record<string, string>) => {
+    if (!uris.length) return undefined;
+    const existingHttps = uris.filter((u) => u.startsWith('http'));
+    const localUris = uris.filter((u) => !u.startsWith('http'));
+    let uploaded: string[] = [];
+    if (localUris.length) {
+      try {
+        uploaded = await uploadComplaintPhotos(localUris);
+      } catch {
+        uploaded = localUris.map((uri) => base64Map[uri]).filter(Boolean);
+      }
+      if (!uploaded.length) {
+        uploaded = localUris.map((uri) => base64Map[uri]).filter(Boolean);
+      }
     }
+    const merged = [...existingHttps, ...uploaded].slice(0, MAX_COMPLAINT_PHOTOS);
+    return merged.length ? merged : undefined;
   };
 
   const submitAdd = async () => {
@@ -157,15 +182,15 @@ export default function AdminComplaintsScreen() {
     if (!addBuilding) return Alert.error('Error', 'Select a building', 4000);
     setSubmitting(true);
     try {
-      const photo_url = await resolvePhotoUrl(addImageUri, addPhotoBase64Ref.current);
+      const photo_url = await resolvePhotoUrls(addImageUris, addPhotoBase64MapRef.current);
       await api.post('/complaints/admin', {
         ...addForm,
         building_id: addBuilding.id,
         photo_url,
       });
       setAddForm({ title: '', description: '', category: 'General' });
-      addPhotoBase64Ref.current = '';
-      setAddBuilding(null); setAddImageUri(null); setShowAdd(false);
+      addPhotoBase64MapRef.current = {};
+      setAddBuilding(null); setAddImageUris([]); setShowAdd(false);
       await cacheManager.invalidate('complaints:*');
       fetchComplaints();
     } catch (e: any) {
@@ -178,10 +203,10 @@ export default function AdminComplaintsScreen() {
     setEditForm({
       title: item.title, description: item.description || '',
       category: item.category || 'General', status: item.status,
-      remark: item.remark || '', photo_url: item.photo_url || '',
+      remark: item.remark || '',
     });
-    editPhotoBase64Ref.current = item.photo_url || '';
-    setEditImageUri(item.photo_url || null);
+    editPhotoBase64MapRef.current = {};
+    setEditImageUris(getComplaintPhotos(item));
     setShowEdit(true);
   };
 
@@ -189,10 +214,10 @@ export default function AdminComplaintsScreen() {
     if (!editTarget) return;
     setSaving(true);
     try {
-      const photo_url = await resolvePhotoUrl(editImageUri, editPhotoBase64Ref.current);
+      const photo_url = await resolvePhotoUrls(editImageUris, editPhotoBase64MapRef.current);
       await api.put(`/complaints/admin/${editTarget.id}`, {
         ...editForm,
-        photo_url,
+        photo_url: photo_url ?? [],
       });
       setShowEdit(false);
       await cacheManager.invalidate('complaints:*');
@@ -414,7 +439,7 @@ export default function AdminComplaintsScreen() {
       {/* ── Add Modal ── */}
       <BottomSheetModal
         visible={showAdd}
-        onClose={() => { setShowAdd(false); setAddImageUri(null); addPhotoBase64Ref.current = ''; }}
+        onClose={() => { setShowAdd(false); setAddImageUris([]); addPhotoBase64MapRef.current = {}; }}
         title="Add Complaint"
       >
         <Text style={styles.label}>Building *</Text>
@@ -438,16 +463,34 @@ export default function AdminComplaintsScreen() {
           value={addForm.description} onChangeText={text => setAddForm(f => ({ ...f, description: text }))}
           multiline numberOfLines={3} placeholderTextColor={Colors.textMuted}
         />
-        <Text style={styles.label}>Photo (optional)</Text>
-        <TouchableOpacity style={styles.photoPicker} onPress={() => pickImage(setAddImageUri, addPhotoBase64Ref)}>
-          {addImageUri
-            ? <Image source={{ uri: addImageUri }} style={styles.photoPreview} />
-            : <View style={styles.photoPlaceholder}>
-                <Ionicons name="image-outline" size={30} color={Colors.textMuted} />
-                <Text style={styles.photoPlaceholderText}>Tap to attach photo</Text>
-              </View>
-          }
-        </TouchableOpacity>
+        <Text style={styles.label}>Photos (optional, max {MAX_COMPLAINT_PHOTOS})</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photoRowContent}>
+          {addImageUris.map((uri) => (
+            <View key={uri} style={styles.photoThumbWrap}>
+              <Image source={{ uri }} style={styles.photoThumb} />
+              <TouchableOpacity
+                style={styles.photoRemoveBtn}
+                onPress={() => {
+                  setAddImageUris((prev) => prev.filter((u) => u !== uri));
+                  const next = { ...addPhotoBase64MapRef.current };
+                  delete next[uri];
+                  addPhotoBase64MapRef.current = next;
+                }}
+              >
+                <Ionicons name="close-circle" size={22} color={Colors.danger} />
+              </TouchableOpacity>
+            </View>
+          ))}
+          {addImageUris.length < MAX_COMPLAINT_PHOTOS ? (
+            <TouchableOpacity
+              style={styles.photoAddBtn}
+              onPress={() => pickImages(addImageUris, setAddImageUris, addPhotoBase64MapRef)}
+            >
+              <Ionicons name="image-outline" size={26} color={Colors.textMuted} />
+              <Text style={styles.photoPlaceholderText}>{addImageUris.length ? 'Add' : 'Add photos'}</Text>
+            </TouchableOpacity>
+          ) : null}
+        </ScrollView>
         <TouchableOpacity style={[styles.submitBtn, submitting && { opacity: 0.6 }]} onPress={submitAdd} disabled={submitting}>
           {submitting
             ? <ActivityIndicator color={Colors.white} />
@@ -503,16 +546,34 @@ export default function AdminComplaintsScreen() {
           multiline numberOfLines={3} placeholder="Add remark..."
           placeholderTextColor={Colors.textMuted}
         />
-        <Text style={styles.label}>Photo</Text>
-        <TouchableOpacity style={styles.photoPicker} onPress={() => pickImage(setEditImageUri, editPhotoBase64Ref)}>
-          {editImageUri
-            ? <Image source={{ uri: editImageUri }} style={styles.photoPreview} />
-            : <View style={styles.photoPlaceholder}>
-                <Ionicons name="image-outline" size={30} color={Colors.textMuted} />
-                <Text style={styles.photoPlaceholderText}>Tap to change photo</Text>
-              </View>
-          }
-        </TouchableOpacity>
+        <Text style={styles.label}>Photos (max {MAX_COMPLAINT_PHOTOS})</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photoRowContent}>
+          {editImageUris.map((uri) => (
+            <View key={uri} style={styles.photoThumbWrap}>
+              <Image source={{ uri }} style={styles.photoThumb} />
+              <TouchableOpacity
+                style={styles.photoRemoveBtn}
+                onPress={() => {
+                  setEditImageUris((prev) => prev.filter((u) => u !== uri));
+                  const next = { ...editPhotoBase64MapRef.current };
+                  delete next[uri];
+                  editPhotoBase64MapRef.current = next;
+                }}
+              >
+                <Ionicons name="close-circle" size={22} color={Colors.danger} />
+              </TouchableOpacity>
+            </View>
+          ))}
+          {editImageUris.length < MAX_COMPLAINT_PHOTOS ? (
+            <TouchableOpacity
+              style={styles.photoAddBtn}
+              onPress={() => pickImages(editImageUris, setEditImageUris, editPhotoBase64MapRef)}
+            >
+              <Ionicons name="image-outline" size={26} color={Colors.textMuted} />
+              <Text style={styles.photoPlaceholderText}>{editImageUris.length ? 'Add' : 'Add photos'}</Text>
+            </TouchableOpacity>
+          ) : null}
+        </ScrollView>
         <TouchableOpacity style={[styles.submitBtn, saving && { opacity: 0.6 }]} onPress={submitEdit} disabled={saving}>
           {saving
             ? <ActivityIndicator color={Colors.white} />
@@ -578,11 +639,22 @@ export default function AdminComplaintsScreen() {
                       <Text style={styles.detailBlockText}>{detailItem.description}</Text>
                     </View>
                   ) : null}
-                  {detailItem.photo_url
-                    ? <Pressable onPress={() => setImageViewerUri(detailItem.photo_url)}>
-                        <Image source={{ uri: detailItem.photo_url }} style={styles.detailPhoto} resizeMode="cover" />
-                        <Text style={styles.tapToExpand}>Tap to expand</Text>
-                      </Pressable>
+                  {getComplaintPhotos(detailItem).length
+                    ? (
+                      <View style={styles.detailBlock}>
+                        <Text style={styles.detailBlockLabel}>
+                          Attachment{getComplaintPhotos(detailItem).length > 1 ? 's' : ''}
+                        </Text>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photoRowContent}>
+                          {getComplaintPhotos(detailItem).map((uri) => (
+                            <Pressable key={uri} onPress={() => setImageViewerUri(uri)}>
+                              <Image source={{ uri }} style={styles.detailPhotoThumb} resizeMode="cover" />
+                            </Pressable>
+                          ))}
+                        </ScrollView>
+                        <Text style={styles.tapToExpand}>Tap a photo to expand</Text>
+                      </View>
+                    )
                     : null}
                   {detailItem.remark ? (
                     <View style={[styles.detailBlock, { backgroundColor: meta.bg, borderLeftWidth: 3, borderLeftColor: meta.color }]}>
@@ -767,8 +839,17 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed', marginBottom: 20, overflow: 'hidden',
   },
   photoPlaceholder: { height: 100, justifyContent: 'center', alignItems: 'center', gap: 8 },
-  photoPlaceholderText: { fontSize: 13, color: Colors.textMuted },
+  photoPlaceholderText: { fontSize: 12, color: Colors.textMuted },
   photoPreview: { width: '100%', height: 150 },
+  photoRowContent: { gap: 10, paddingVertical: 4, marginBottom: 16 },
+  photoThumbWrap: { position: 'relative' },
+  photoThumb: { width: 88, height: 88, borderRadius: 12, backgroundColor: Colors.bg },
+  photoRemoveBtn: { position: 'absolute', top: -6, right: -6, backgroundColor: Colors.white, borderRadius: 11 },
+  photoAddBtn: {
+    width: 88, height: 88, borderRadius: 12, borderWidth: 1.5, borderColor: Colors.border,
+    borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', gap: 4,
+  },
+  detailPhotoThumb: { width: 120, height: 120, borderRadius: 12, backgroundColor: Colors.bg },
 
   submitBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,

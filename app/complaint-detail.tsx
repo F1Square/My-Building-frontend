@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Image, TextInput, ActivityIndicator, Pressable } from 'react-native';
 import { Alert } from '../utils/alert';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -9,7 +9,7 @@ import { useActivityLog } from '../hooks/useActivityLog';
 import * as ImagePicker from 'expo-image-picker';
 import api from '../utils/api';
 import { ModuleHeader } from '../components/ModuleHeader';
-import { uploadComplaintPhoto } from '../utils/uploadComplaintPhoto';
+import { uploadComplaintPhotos, getComplaintPhotos, MAX_COMPLAINT_PHOTOS } from '../utils/uploadComplaintPhoto';
 import { cacheManager } from '../utils/CacheManager';
 
 const CATEGORIES = ['General', 'Water', 'Electricity', 'Cleanliness', 'Security', 'Parking', 'Noise', 'Other'];
@@ -51,9 +51,10 @@ export default function ComplaintDetailScreen() {
 
   const [showEdit, setShowEdit] = useState(false);
   const [editForm, setEditForm] = useState({
-    title: '', description: '', category: 'General', status: 'open', remark: '', photo_url: '',
+    title: '', description: '', category: 'General', status: 'open', remark: '',
   });
-  const [editImageUri, setEditImageUri] = useState<string | null>(null);
+  const [editImageUris, setEditImageUris] = useState<string[]>([]);
+  const editBase64MapRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
     if (!id) {
@@ -78,9 +79,9 @@ export default function ComplaintDetailScreen() {
           category: item.category || 'General',
           status: item.status || 'open',
           remark: item.remark || '',
-          photo_url: item.photo_url || '',
         });
-        setEditImageUri(item.photo_url || null);
+        setEditImageUris(getComplaintPhotos(item));
+        editBase64MapRef.current = {};
       })
       .catch((e: any) => {
         if (cancelled) return;
@@ -94,16 +95,37 @@ export default function ComplaintDetailScreen() {
   }, [id]);
 
   const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], base64: true, quality: 0.6 });
-    if (!result.canceled && result.assets[0]) {
-      setEditImageUri(result.assets[0].uri);
-      setEditForm(f => ({
-        ...f,
-        photo_url: result.assets[0].base64
-          ? `data:image/jpeg;base64,${result.assets[0].base64}`
-          : f.photo_url,
-      }));
+    const remaining = MAX_COMPLAINT_PHOTOS - editImageUris.length;
+    if (remaining <= 0) {
+      Alert.error('Limit reached', `You can attach up to ${MAX_COMPLAINT_PHOTOS} photos.`, 3000);
+      return;
     }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      base64: true,
+      quality: 0.6,
+      allowsMultipleSelection: true,
+      selectionLimit: remaining,
+    });
+    if (result.canceled || !result.assets?.length) return;
+
+    const nextUris: string[] = [];
+    const nextMap = { ...editBase64MapRef.current };
+    for (const asset of result.assets) {
+      if (!asset.uri || editImageUris.includes(asset.uri) || nextUris.includes(asset.uri)) continue;
+      if (editImageUris.length + nextUris.length >= MAX_COMPLAINT_PHOTOS) break;
+      nextUris.push(asset.uri);
+      if (asset.base64) nextMap[asset.uri] = `data:image/jpeg;base64,${asset.base64}`;
+    }
+    editBase64MapRef.current = nextMap;
+    if (nextUris.length) setEditImageUris((prev) => [...prev, ...nextUris].slice(0, MAX_COMPLAINT_PHOTOS));
+  };
+
+  const removeEditImage = (uri: string) => {
+    setEditImageUris((prev) => prev.filter((u) => u !== uri));
+    const next = { ...editBase64MapRef.current };
+    delete next[uri];
+    editBase64MapRef.current = next;
   };
 
   const submitUpdate = async () => {
@@ -124,18 +146,28 @@ export default function ComplaintDetailScreen() {
     if (!detailItem) return;
     setUpdating(true);
     try {
-      let photo_url = editForm.photo_url;
-      if (editImageUri && !editImageUri.startsWith('http')) {
+      const existingHttps = editImageUris.filter((u) => u.startsWith('http'));
+      const localUris = editImageUris.filter((u) => !u.startsWith('http'));
+      let uploaded: string[] = [];
+      if (localUris.length) {
         try {
-          photo_url = (await uploadComplaintPhoto(editImageUri)) || photo_url;
+          uploaded = await uploadComplaintPhotos(localUris);
         } catch {
-          // keep data-URI fallback in editForm.photo_url for server-side upload
+          uploaded = localUris.map((uri) => editBase64MapRef.current[uri]).filter(Boolean);
         }
       }
+      const photo_url = [...existingHttps, ...uploaded].slice(0, MAX_COMPLAINT_PHOTOS);
       await api.put(`/complaints/admin/${detailItem.id}`, { ...editForm, photo_url });
       setShowEdit(false);
       await cacheManager.invalidate('complaints:*');
-      setDetailItem({ ...detailItem, ...editForm, photo_url });
+      setDetailItem({
+        ...detailItem,
+        ...editForm,
+        photo_url: photo_url[0] || null,
+        photo_urls: photo_url,
+      });
+      setEditImageUris(photo_url);
+      editBase64MapRef.current = {};
     } catch (e: any) {
       Alert.error('Error', e.response?.data?.error || 'Failed to update', 4000);
     } finally { setUpdating(false); }
@@ -244,13 +276,19 @@ export default function ComplaintDetailScreen() {
           </View>
         ) : null}
 
-        {detailItem.photo_url ? (
+        {getComplaintPhotos(detailItem).length ? (
           <View style={styles.detailBlock}>
-            <Text style={styles.detailBlockLabel}>Attachment</Text>
-            <Pressable onPress={() => setImageViewerUri(detailItem.photo_url)}>
-              <Image source={{ uri: detailItem.photo_url }} style={styles.detailPhoto} resizeMode="cover" />
-              <Text style={styles.tapToExpand}>Tap to expand</Text>
-            </Pressable>
+            <Text style={styles.detailBlockLabel}>
+              Attachment{getComplaintPhotos(detailItem).length > 1 ? 's' : ''}
+            </Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
+              {getComplaintPhotos(detailItem).map((uri) => (
+                <Pressable key={uri} onPress={() => setImageViewerUri(uri)}>
+                  <Image source={{ uri }} style={styles.detailPhotoThumb} resizeMode="cover" />
+                </Pressable>
+              ))}
+            </ScrollView>
+            <Text style={styles.tapToExpand}>Tap a photo to expand</Text>
           </View>
         ) : null}
 
@@ -366,10 +404,26 @@ export default function ComplaintDetailScreen() {
               </View>
               <Text style={styles.label}>Remark</Text>
               <TextInput style={[styles.input, styles.textArea]} value={editForm.remark} onChangeText={t => setEditForm(f => ({ ...f, remark: t }))} multiline numberOfLines={3} placeholder="Add remark..." placeholderTextColor={Colors.textMuted} />
-              <Text style={styles.label}>Photo</Text>
-              <TouchableOpacity style={styles.photoPicker} onPress={pickImage}>
-                {editImageUri ? <Image source={{ uri: editImageUri }} style={styles.photoPreview} /> : <View style={styles.photoPlaceholder}><Ionicons name="image-outline" size={30} color={Colors.textMuted} /><Text style={styles.photoPlaceholderText}>Tap to change photo</Text></View>}
-              </TouchableOpacity>
+              <Text style={styles.label}>Photos (max {MAX_COMPLAINT_PHOTOS})</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, marginBottom: 12 }}>
+                {editImageUris.map((uri) => (
+                  <View key={uri} style={{ position: 'relative' }}>
+                    <Image source={{ uri }} style={styles.photoThumb} />
+                    <TouchableOpacity
+                      style={{ position: 'absolute', top: -6, right: -6, backgroundColor: Colors.white, borderRadius: 11 }}
+                      onPress={() => removeEditImage(uri)}
+                    >
+                      <Ionicons name="close-circle" size={22} color={Colors.danger} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+                {editImageUris.length < MAX_COMPLAINT_PHOTOS ? (
+                  <TouchableOpacity style={styles.photoAddBtn} onPress={pickImage}>
+                    <Ionicons name="image-outline" size={26} color={Colors.textMuted} />
+                    <Text style={styles.photoPlaceholderText}>{editImageUris.length ? 'Add' : 'Add photos'}</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </ScrollView>
               <TouchableOpacity style={[styles.submitBtn, updating && { opacity: 0.6 }]} onPress={submitEdit} disabled={updating}>
                 {updating ? <ActivityIndicator color={Colors.white} /> : <Text style={styles.submitBtnText}>{t('saveChanges')}</Text>}
               </TouchableOpacity>
@@ -434,6 +488,12 @@ const styles = StyleSheet.create({
   statusTileText: { fontSize: 11, fontWeight: '700', color: Colors.textMuted, textAlign: 'center' },
   photoPicker: { borderRadius: 14, borderWidth: 1.5, borderColor: Colors.border, borderStyle: 'dashed', marginBottom: 20, overflow: 'hidden' },
   photoPlaceholder: { height: 100, justifyContent: 'center', alignItems: 'center', gap: 8 },
-  photoPlaceholderText: { fontSize: 13, color: Colors.textMuted },
+  photoPlaceholderText: { fontSize: 12, color: Colors.textMuted },
   photoPreview: { width: '100%', height: 150 },
+  detailPhotoThumb: { width: 120, height: 120, borderRadius: 12, backgroundColor: Colors.bg },
+  photoThumb: { width: 88, height: 88, borderRadius: 12, backgroundColor: Colors.bg },
+  photoAddBtn: {
+    width: 88, height: 88, borderRadius: 12, borderWidth: 1.5, borderColor: Colors.border,
+    borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', gap: 4,
+  },
 });
